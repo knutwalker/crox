@@ -1,0 +1,40 @@
+class Breakfast {
+    init(meat, bread) {
+        this.meat = meat;
+        this.bread = bread;
+    }
+
+    cook() {
+        print "Eggs a-fryin'!";
+    }
+
+    serve(who) {
+        print "Enjoy your " + this.meat + " and " + this.bread + ", " + who + ".";
+    }
+}
+
+// Store it invariables.
+var someVariable = Breakfast;
+
+// Pass it to functions.
+someFunction(Breakfast);
+
+var breakfast = Breakfast("bacon", "toast");
+print breakfast; // "Breakfast instance"
+breakfast.serve("Dear reader"); // "Enjoy your bacon and toast, Dear reader."
+
+
+class Brunch < Breakfast {
+    init(meat, bread, drink) {
+        super(meat, bread);
+        this.drink = drink;
+    }
+
+    drink() {
+        print "How about a " + this.drink + "?";
+    }
+}
+
+
+var benedict = Brunch("ham", "English muffin");
+benedict.serve("Noble Reader"); // "Enjoy your ham and English muffin, Noble Reader."

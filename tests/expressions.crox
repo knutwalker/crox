@@ -1,0 +1,28 @@
+add + me;
+subtract - me;
+multiply * me;
+divide / me;
+
+-negateMe;
+
+less < than;
+lessThan <= orEqual;
+greater > than;
+greaterThan >= orEqual;
+
+1 == 2; // false
+"cat" != "dog"; // true
+
+314 == "pi"; // false
+123 == "123"; // false
+
+!true; // false
+!false; // true
+
+true and false; // false
+true and true; // true
+
+false or false; // false
+false or true; // true
+
+var average = (min + max) / 2;

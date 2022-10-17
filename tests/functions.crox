@@ -1,0 +1,42 @@
+makeBreakfast(bacon, eggs, toast);
+
+makeBreakfast();
+
+fun printSum(a, b) {
+    print a + b;
+}
+
+fun returnSum(a, b) {
+    return a + b;
+}
+
+fun addPair(a, b) {
+    return a + b;
+}
+
+fun identity(a) {
+    return a;
+}
+
+print identity(addPair)(1, 2); // "3"
+
+fun outerFunction() {
+    fun localFunction() {
+        print "I'm local!";
+    }
+
+    localFunction();
+}
+
+fun returnFunction() {
+    var outside = "outside";
+
+    fun inner() {
+        print outside;
+    }
+
+    return inner;
+}
+
+var fn = returnFunction();
+fn();
