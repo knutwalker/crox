@@ -242,10 +242,10 @@ impl<'a> Scanner<'a> {
         let offset = offset - line_offset;
         RunError::new(line, offset, message)
     }
+}
 
-    fn offset_from(source: &'a str, origin: &'a str) -> usize {
-        (source.as_ptr() as usize).saturating_sub(origin.as_ptr() as usize)
-    }
+fn offset_from<'a>(input: &'a str, source: &'a str) -> usize {
+    (input.as_ptr() as usize).saturating_sub(source.as_ptr() as usize)
 }
 
 #[cfg(feature = "chumsky")]
@@ -430,6 +430,145 @@ mod chum {
     }
 }
 
+#[cfg(feature = "nom")]
+mod no {
+    use super::*;
+    use crate::token::Span;
+    use nom::{
+        branch::alt,
+        bytes::complete::{tag, take_until, take_while1},
+        character::complete::{alphanumeric1, char, digit1, multispace0},
+        combinator::{all_consuming, cut, into, map_parser, opt, value},
+        multi::many0,
+        sequence::{pair, preceded, terminated, tuple},
+        IResult, Parser,
+    };
+
+    impl<'a> Source<'a> {
+        pub fn into_nom(self) -> Result<Vec<Token>> {
+            let mut lexer = self.lexer();
+            let res = lexer(self.source);
+            match res {
+                Ok((_, tokens)) => Ok(tokens),
+                Err(e) => Err(RunError::new(1, 0, e.to_string())),
+            }
+        }
+    }
+
+    impl<'a> Source<'a> {
+        fn spanned<O, F>(&self, mut parser: F) -> impl FnMut(&'a str) -> IResult<&'a str, (O, Span)>
+        where
+            F: Parser<&'a str, O, nom::error::Error<&'a str>>,
+        {
+            let source = self.source;
+            move |input| {
+                let start = offset_from(input, source);
+                let (input, output) = parser.parse(input)?;
+                let end = offset_from(input, source);
+                Ok((input, (output, start..end)))
+            }
+        }
+
+        fn as_token<F, O>(
+            &self,
+            typ: TokenType,
+            parser: F,
+        ) -> impl FnMut(&'a str) -> IResult<&'a str, Token>
+        where
+            F: Parser<&'a str, O, nom::error::Error<&'a str>>,
+        {
+            into(self.spanned(value(typ, parser)))
+        }
+
+        fn op(&self) -> impl FnMut(&'a str) -> IResult<&'a str, Token> {
+            let op = alt((
+                value(TokenType::LeftParen, tag("(")),
+                value(TokenType::RightParen, tag(")")),
+                value(TokenType::LeftBrace, tag("{")),
+                value(TokenType::RightBrace, tag("}")),
+                value(TokenType::Comma, tag(",")),
+                value(TokenType::Dot, tag(".")),
+                value(TokenType::Minus, tag("-")),
+                value(TokenType::Plus, tag("+")),
+                value(TokenType::Semicolon, tag(";")),
+                value(TokenType::Star, tag("*")),
+                value(TokenType::Slash, tag("/")),
+                value(TokenType::BangEqual, tag("!=")),
+                value(TokenType::EqualEqual, tag("==")),
+                value(TokenType::LessEqual, tag("<=")),
+                value(TokenType::GreaterEqual, tag(">=")),
+                value(TokenType::Bang, tag("!")),
+                value(TokenType::Equal, tag("=")),
+                value(TokenType::Less, tag("<")),
+                value(TokenType::Greater, tag(">")),
+            ));
+            into(self.spanned(op))
+        }
+
+        fn num(&self) -> impl FnMut(&'a str) -> IResult<&'a str, Token> {
+            let num = tuple((digit1, opt(pair(char('.'), digit1))));
+            self.as_token(TokenType::Number, num)
+        }
+
+        fn string(&self) -> impl FnMut(&'a str) -> IResult<&'a str, Token> {
+            let string = take_until("\"");
+            let string = self.as_token(TokenType::String, string);
+            let string = terminated(string, char('\"'));
+            preceded(char('\"'), cut(string))
+        }
+
+        fn ident(&self) -> impl FnMut(&'a str) -> IResult<&'a str, Token> {
+            let ident_token = alt((
+                value(TokenType::And, all_consuming(tag("and"))),
+                value(TokenType::Class, all_consuming(tag("class"))),
+                value(TokenType::Else, all_consuming(tag("else"))),
+                value(TokenType::False, all_consuming(tag("false"))),
+                value(TokenType::Fun, all_consuming(tag("fun"))),
+                value(TokenType::For, all_consuming(tag("for"))),
+                value(TokenType::If, all_consuming(tag("if"))),
+                value(TokenType::Nil, all_consuming(tag("nil"))),
+                value(TokenType::Or, all_consuming(tag("or"))),
+                value(TokenType::Print, all_consuming(tag("print"))),
+                value(TokenType::Return, all_consuming(tag("return"))),
+                value(TokenType::Super, all_consuming(tag("super"))),
+                value(TokenType::This, all_consuming(tag("this"))),
+                value(TokenType::True, all_consuming(tag("true"))),
+                value(TokenType::Var, all_consuming(tag("var"))),
+                value(TokenType::While, all_consuming(tag("while"))),
+                value(TokenType::Identifier, all_consuming(alphanumeric1)),
+            ));
+
+            let ident = take_while1(|c: char| c.is_ascii_alphabetic());
+            let ident = map_parser(ident, ident_token);
+
+            into(self.spanned(ident))
+        }
+
+        fn token(&self) -> impl FnMut(&'a str) -> IResult<&'a str, Token> {
+            alt((self.op(), self.num(), self.string(), self.ident()))
+        }
+
+        fn comment(&self) -> impl FnMut(&'a str) -> IResult<&'a str, ()> {
+            value((), preceded(tag("//"), take_until("\n")))
+        }
+
+        fn lexer(&self) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<Token>> {
+            let comment = preceded(multispace0, self.comment());
+            let comment = many0(comment);
+            let token = preceded(multispace0, self.token());
+            let token = preceded(comment, token);
+            let token = many0(token);
+
+            let comment = preceded(multispace0, self.comment());
+            let comment = many0(comment);
+            let token = terminated(token, comment);
+            let token = terminated(token, multispace0);
+
+            all_consuming(token)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -445,6 +584,12 @@ mod tests {
         #[cfg(feature = "chumsky")]
         {
             let actual = ChumskySource::new(content).into_iter().collect::<Vec<_>>();
+            assert_eq!(actual, expected);
+        }
+
+        #[cfg(feature = "nom")]
+        {
+            let actual = source.into_nom()?;
             assert_eq!(actual, expected);
         }
 
@@ -2901,5 +3046,13 @@ mod tests {
         let input = include_str!("../tests/classes.crox");
         b.bytes = input.len() as u64;
         b.iter(|| ChumskySource::new(input).into_iter().collect::<Vec<_>>());
+    }
+
+    #[cfg(feature = "nom")]
+    #[bench]
+    fn bench_nom(b: &mut Bencher) {
+        let input = include_str!("../tests/classes.crox");
+        b.bytes = input.len() as u64;
+        b.iter(|| Source::new(input).into_nom().unwrap());
     }
 }
