@@ -54,17 +54,28 @@ fn repl() -> io::Result<()> {
             break;
         }
 
-        let source = crox::scan(line);
-        let tokens = source.into_iter().collect::<Result<Vec<_>, _>>();
-
-        match tokens {
-            Ok(tokens) => {
-                for token in tokens {
-                    println!("{:?}", token);
-                }
+        #[cfg(feature = "chumsky")]
+        {
+            let source = crox::scan_chumsky(line);
+            for token in source {
+                println!("{:?}", token);
             }
-            Err(e) => {
-                println!("~~{:#}", e);
+        }
+
+        #[cfg(not(feature = "chumsky"))]
+        {
+            let source = crox::scan(line);
+            let tokens = source.into_iter().collect::<Result<Vec<_>, _>>();
+
+            match tokens {
+                Ok(tokens) => {
+                    for token in tokens {
+                        println!("{:?}", token);
+                    }
+                }
+                Err(e) => {
+                    println!("~~{:#}", e);
+                }
             }
         }
     }

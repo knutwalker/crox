@@ -24,3 +24,8 @@ pub fn run(content: &str) -> Result<()> {
 pub fn scan(content: &str) -> scanner::Source<'_> {
     scanner::Source::new(content)
 }
+
+#[cfg(feature = "chumsky")]
+pub fn scan_chumsky(content: &str) -> scanner::ChumskySource<'_> {
+    scanner::ChumskySource::new(content)
+}

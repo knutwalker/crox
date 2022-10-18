@@ -6,6 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+ariadne = { version = "0.1.5", optional = true }
+chumsky = { version = "0.8.0", optional = true }
+
+[features]
+default = []
+chumsky = ["dep:chumsky", "dep:ariadne"]
 
 [profile.release]
 codegen-units = 1
