@@ -248,6 +248,7 @@ impl<'a> Scanner<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test::Bencher;
     use TokenType::*;
 
     fn run_test(content: &str, expected: Vec<Token>) -> Result {
@@ -2693,5 +2694,12 @@ mod tests {
                 },
             ],
         )
+    }
+
+    #[bench]
+    fn bench_scanner(b: &mut Bencher) {
+        let input = include_str!("../tests/classes.crox");
+        b.bytes = input.len() as u64;
+        b.iter(|| Source::new(input).into_iter().collect::<Vec<_>>());
     }
 }

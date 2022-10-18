@@ -1,6 +1,11 @@
+#![feature(test)]
+
 mod error;
 mod scanner;
 mod token;
+
+#[cfg(test)]
+extern crate test;
 
 pub use error::{Result, RunError};
 pub use token::{Token, TokenType};
