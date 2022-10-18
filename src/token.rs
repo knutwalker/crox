@@ -55,3 +55,15 @@ impl Token {
         Self { typ, offset, len }
     }
 }
+
+pub type Span = std::ops::Range<usize>;
+
+impl From<(TokenType, Span)> for Token {
+    fn from((typ, span): (TokenType, Span)) -> Self {
+        Self {
+            typ,
+            offset: span.start,
+            len: span.len(),
+        }
+    }
+}
