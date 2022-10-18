@@ -54,7 +54,7 @@ fn repl() -> io::Result<()> {
             break;
         }
 
-        let source = crox::parse(line);
+        let source = crox::scan(line);
         let tokens = source.into_iter().collect::<Result<Vec<_>, _>>();
 
         match tokens {
