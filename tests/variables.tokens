@@ -1,0 +1,27 @@
+vec![
+
+Token {  typ:          Var  ,  offset:   0  ,  len:  3  },
+Token {  typ:   Identifier  ,  offset:   4  ,  len: 11  },
+Token {  typ:        Equal  ,  offset:  16  ,  len:  1  },
+Token {  typ:       String  ,  offset:  19  ,  len: 16  },
+Token {  typ:    Semicolon  ,  offset:  36  ,  len:  1  },
+Token {  typ:          Var  ,  offset:  38  ,  len:  3  },
+Token {  typ:   Identifier  ,  offset:  42  ,  len:  6  },
+Token {  typ:    Semicolon  ,  offset:  48  ,  len:  1  },
+Token {  typ:          Var  ,  offset:  51  ,  len:  3  },
+Token {  typ:   Identifier  ,  offset:  55  ,  len:  9  },
+Token {  typ:        Equal  ,  offset:  65  ,  len:  1  },
+Token {  typ:       String  ,  offset:  68  ,  len:  6  },
+Token {  typ:    Semicolon  ,  offset:  75  ,  len:  1  },
+Token {  typ:        Print  ,  offset:  77  ,  len:  5  },
+Token {  typ:   Identifier  ,  offset:  83  ,  len:  9  },
+Token {  typ:    Semicolon  ,  offset:  92  ,  len:  1  },
+Token {  typ:   Identifier  ,  offset: 106  ,  len:  9  },
+Token {  typ:        Equal  ,  offset: 116  ,  len:  1  },
+Token {  typ:       String  ,  offset: 119  ,  len:  8  },
+Token {  typ:    Semicolon  ,  offset: 128  ,  len:  1  },
+Token {  typ:        Print  ,  offset: 130  ,  len:  5  },
+Token {  typ:   Identifier  ,  offset: 136  ,  len:  9  },
+Token {  typ:    Semicolon  ,  offset: 145  ,  len:  1  },
+
+]
