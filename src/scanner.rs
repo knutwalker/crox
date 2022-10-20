@@ -568,6 +568,8 @@ mod tests {
     use TokenType::*;
 
     fn run_test(content: &str, expected: Vec<Token>) -> Result {
+        use pretty_assertions::assert_eq;
+
         let source = Source::new(content);
         let actual = source.into_iter().collect::<Result<Vec<_>>>()?;
         assert_eq!(actual, expected);
