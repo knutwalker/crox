@@ -1,8 +1,3 @@
-#![cfg_attr(benches, feature(test))]
-
-#[cfg(all(benches, test))]
-extern crate test;
-
 mod error;
 mod scanner;
 mod token;
