@@ -210,13 +210,7 @@ impl<'a> Scanner<'a> {
 
     fn error(&mut self, lexeme: &'a str, rest: &'a str, message: impl Into<String>) -> RunError {
         self.advance(rest);
-
-        let offset = offset_from(lexeme, self.source.source);
-        let source = &self.source.source[..=offset];
-        let line_offset = source.bytes().rposition(|b| b == b'\n').unwrap_or(0);
-        let line = source.lines().count();
-        let offset = offset - line_offset;
-        RunError::new(line, offset, message)
+        error(lexeme, self.source.source, message)
     }
 }
 
@@ -224,6 +218,16 @@ fn token<'a>(typ: TokenType, token: &'a str, source: &'a str) -> Token {
     let offset = offset_from(token, source);
     let len = token.len();
     Token::new(typ, offset, len)
+}
+
+fn error<'a>(input: &'a str, source: &'a str, message: impl Into<String>) -> RunError {
+    let offset = offset_from(input, source);
+    let offset = offset.min(source.len() - 1);
+    let source = &source[..=offset];
+    let line_offset = source.bytes().rposition(|b| b == b'\n').unwrap_or(0);
+    let line = source.lines().count();
+    let offset = offset - line_offset;
+    RunError::new(line, offset, message)
 }
 
 fn offset_from<'a>(input: &'a str, source: &'a str) -> usize {
@@ -396,9 +400,10 @@ mod no {
         bytes::complete::{tag, take_until},
         character::complete::{alpha1, alphanumeric0, char, digit1, multispace0},
         combinator::{all_consuming, consumed, cut, map, opt, recognize, value},
+        error::ErrorKind,
         multi::many0,
         sequence::{pair, preceded, terminated, tuple},
-        Parser,
+        Finish, Parser,
     };
 
     type NErr<I> = nom::error::Error<I>;
@@ -407,15 +412,32 @@ mod no {
     impl<'a> Source<'a> {
         pub fn into_nom(self) -> Result<Vec<Token>> {
             let mut lexer = self.lexer();
-            let res = lexer(self.source);
+            let res = lexer(self.source).finish();
             match res {
                 Ok((_, tokens)) => Ok(tokens),
-                Err(e) => Err(RunError::new(1, 0, e.to_string())),
+                Err(e) => Err(self.convert_err(e)),
             }
         }
     }
 
     impl<'a> Source<'a> {
+        fn convert_err(&self, err: NErr<&'a str>) -> RunError {
+            match err.code {
+                ErrorKind::Eof => error(
+                    err.input,
+                    self.source,
+                    format!(
+                        "Unexpected character: {}",
+                        err.input.chars().next().unwrap_or_default()
+                    ),
+                ),
+                ErrorKind::Char | ErrorKind::TakeUntil => {
+                    error(err.input, self.source, "Unterminated string")
+                }
+                _ => error(err.input, self.source, err.to_string()),
+            }
+        }
+
         fn as_token<F>(&self, parser: F) -> impl FnMut(&'a str) -> NRes<&'a str, Token>
         where
             F: Parser<&'a str, TokenType, NErr<&'a str>>,
@@ -442,14 +464,20 @@ mod no {
                 value(TokenType::Semicolon, char(';')),
                 value(TokenType::Star, char('*')),
                 value(TokenType::Slash, char('/')),
-                value(TokenType::BangEqual, tag("!=")),
-                value(TokenType::EqualEqual, tag("==")),
-                value(TokenType::LessEqual, tag("<=")),
-                value(TokenType::GreaterEqual, tag(">=")),
                 value(TokenType::Bang, char('!')),
                 value(TokenType::Equal, char('=')),
                 value(TokenType::Less, char('<')),
                 value(TokenType::Greater, char('>')),
+            ));
+            self.as_token(op)
+        }
+
+        fn two_op(&self) -> impl FnMut(&'a str) -> NRes<&'a str, Token> {
+            let op = alt((
+                value(TokenType::BangEqual, tag("!=")),
+                value(TokenType::EqualEqual, tag("==")),
+                value(TokenType::LessEqual, tag("<=")),
+                value(TokenType::GreaterEqual, tag(">=")),
             ));
             self.as_token(op)
         }
@@ -474,7 +502,13 @@ mod no {
         }
 
         fn token(&self) -> impl FnMut(&'a str) -> NRes<&'a str, Token> {
-            alt((self.op(), self.num(), self.string(), self.ident()))
+            alt((
+                self.ident(),
+                self.string(),
+                self.num(),
+                self.two_op(),
+                self.op(),
+            ))
         }
 
         fn comment(&self) -> impl FnMut(&'a str) -> NRes<&'a str, ()> {

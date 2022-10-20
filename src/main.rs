@@ -54,37 +54,53 @@ fn repl() -> io::Result<()> {
             break;
         }
 
-        #[cfg(feature = "chumsky")]
-        {
-            match crox::scan(line).into_chumsky() {
-                Ok(tokens) => {
-                    for token in tokens {
-                        println!("{:?}", token);
-                    }
-                }
-                Err(e) => {
-                    println!("{}", e.message)
-                }
-            }
-        }
-
-        #[cfg(not(feature = "chumsky"))]
-        {
-            let source = crox::scan(line);
-            let tokens = source.into_iter().collect::<Result<Vec<_>, _>>();
-
-            match tokens {
-                Ok(tokens) => {
-                    for token in tokens {
-                        println!("{:?}", token);
-                    }
-                }
-                Err(e) => {
-                    println!("~~{:#}", e);
-                }
-            }
-        }
+        handle(line);
     }
 
     Ok(())
+}
+
+#[cfg(all(not(feature = "chumsky"), not(feature = "nom")))]
+fn handle(line: &str) {
+    let source = crox::scan(line);
+    let tokens = source.into_iter().collect::<Result<Vec<_>, _>>();
+
+    match tokens {
+        Ok(tokens) => {
+            for token in tokens {
+                println!("{:?}", token);
+            }
+        }
+        Err(e) => {
+            println!("~~{:#}", e);
+        }
+    }
+}
+
+#[cfg(all(feature = "nom", not(feature = "chumsky")))]
+fn handle(line: &str) {
+    match crox::scan(line).into_nom() {
+        Ok(tokens) => {
+            for token in tokens {
+                println!("{:?}", token);
+            }
+        }
+        Err(e) => {
+            println!("~~{:#}", e);
+        }
+    }
+}
+
+#[cfg(feature = "chumsky")]
+fn handle(line: &str) {
+    match crox::scan(line).into_chumsky() {
+        Ok(tokens) => {
+            for token in tokens {
+                println!("{:?}", token);
+            }
+        }
+        Err(e) => {
+            println!("{}", e.message)
+        }
+    }
 }
