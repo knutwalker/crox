@@ -564,7 +564,6 @@ mod no {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test::Bencher;
     use TokenType::*;
 
     fn run_test(content: &str, expected: Vec<Token>) -> Result {
@@ -3025,6 +3024,12 @@ mod tests {
             ],
         )
     }
+}
+
+#[cfg(all(benches, test))]
+mod benches {
+    use super::*;
+    use test::Bencher;
 
     #[bench]
     fn bench_scanner(b: &mut Bencher) {

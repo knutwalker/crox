@@ -1,11 +1,11 @@
-#![feature(test)]
+#![cfg_attr(benches, feature(test))]
+
+#[cfg(all(benches, test))]
+extern crate test;
 
 mod error;
 mod scanner;
 mod token;
-
-#[cfg(test)]
-extern crate test;
 
 pub use error::{Result, RunError};
 pub use token::{Token, TokenType};
