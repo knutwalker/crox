@@ -56,9 +56,15 @@ fn repl() -> io::Result<()> {
 
         #[cfg(feature = "chumsky")]
         {
-            let source = crox::scan_chumsky(line);
-            for token in source {
-                println!("{:?}", token);
+            match crox::scan(line).into_chumsky() {
+                Ok(tokens) => {
+                    for token in tokens {
+                        println!("{:?}", token);
+                    }
+                }
+                Err(e) => {
+                    println!("{}", e.message)
+                }
             }
         }
 
