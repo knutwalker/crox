@@ -178,26 +178,7 @@ impl<'a> Scanner<'a> {
         }
 
         let (identifier, rest) = self.input.split_at(end);
-
-        let typ = match identifier {
-            "and" => TokenType::And,
-            "class" => TokenType::Class,
-            "else" => TokenType::Else,
-            "false" => TokenType::False,
-            "fun" => TokenType::Fun,
-            "for" => TokenType::For,
-            "if" => TokenType::If,
-            "nil" => TokenType::Nil,
-            "or" => TokenType::Or,
-            "print" => TokenType::Print,
-            "return" => TokenType::Return,
-            "super" => TokenType::Super,
-            "this" => TokenType::This,
-            "true" => TokenType::True,
-            "var" => TokenType::Var,
-            "while" => TokenType::While,
-            _ => TokenType::Identifier,
-        };
+        let typ = TokenType::from(identifier);
 
         self.advance(rest);
         Some(self.token(typ, identifier))
@@ -224,9 +205,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn token(&self, typ: TokenType, lexeme: &'a str) -> Token {
-        let offset = offset_from(lexeme, self.source.source);
-        let len = lexeme.len();
-        Token::new(typ, offset, len)
+        token(typ, lexeme, self.source.source)
     }
 
     fn error(&mut self, lexeme: &'a str, rest: &'a str, message: impl Into<String>) -> RunError {
@@ -239,6 +218,12 @@ impl<'a> Scanner<'a> {
         let offset = offset - line_offset;
         RunError::new(line, offset, message)
     }
+}
+
+fn token<'a>(typ: TokenType, token: &'a str, source: &'a str) -> Token {
+    let offset = offset_from(token, source);
+    let len = token.len();
+    Token::new(typ, offset, len)
 }
 
 fn offset_from<'a>(input: &'a str, source: &'a str) -> usize {
@@ -387,26 +372,7 @@ mod chum {
             .then_ignore(just('"'));
 
         let ident = text::ident().map_with_span(|ident: String, span| {
-            let typ = match ident.as_str() {
-                "and" => TokenType::And,
-                "class" => TokenType::Class,
-                "else" => TokenType::Else,
-                "false" => TokenType::False,
-                "fun" => TokenType::Fun,
-                "for" => TokenType::For,
-                "if" => TokenType::If,
-                "nil" => TokenType::Nil,
-                "or" => TokenType::Or,
-                "print" => TokenType::Print,
-                "return" => TokenType::Return,
-                "super" => TokenType::Super,
-                "this" => TokenType::This,
-                "true" => TokenType::True,
-                "var" => TokenType::Var,
-                "while" => TokenType::While,
-                _ => TokenType::Identifier,
-            };
-
+            let typ = TokenType::from(ident.as_str());
             Token::from((typ, span))
         });
 
@@ -425,16 +391,18 @@ mod chum {
 #[cfg(feature = "nom")]
 mod no {
     use super::*;
-    use crate::token::Span;
     use nom::{
         branch::alt,
-        bytes::complete::{tag, take_until, take_while1},
-        character::complete::{alphanumeric1, char, digit1, multispace0},
-        combinator::{all_consuming, cut, into, map_parser, opt, value},
+        bytes::complete::{tag, take_until},
+        character::complete::{alpha1, alphanumeric0, char, digit1, multispace0},
+        combinator::{all_consuming, consumed, cut, map, opt, recognize, value},
         multi::many0,
         sequence::{pair, preceded, terminated, tuple},
-        IResult, Parser,
+        Parser,
     };
+
+    type NErr<I> = nom::error::Error<I>;
+    type NRes<I, O, E = NErr<I>> = Result<(I, O), nom::Err<E>>;
 
     impl<'a> Source<'a> {
         pub fn into_nom(self) -> Result<Vec<Token>> {
@@ -448,103 +416,72 @@ mod no {
     }
 
     impl<'a> Source<'a> {
-        fn spanned<O, F>(&self, mut parser: F) -> impl FnMut(&'a str) -> IResult<&'a str, (O, Span)>
+        fn as_token<F>(&self, parser: F) -> impl FnMut(&'a str) -> NRes<&'a str, Token>
         where
-            F: Parser<&'a str, O, nom::error::Error<&'a str>>,
+            F: Parser<&'a str, TokenType, NErr<&'a str>>,
         {
+            let mut parser = consumed(parser);
             let source = self.source;
             move |input| {
-                let start = offset_from(input, source);
-                let (input, output) = parser.parse(input)?;
-                let end = offset_from(input, source);
-                Ok((input, (output, start..end)))
+                let (input, (consumed, typ)) = parser(input)?;
+                let token = token(typ, consumed, source);
+                Ok((input, token))
             }
         }
 
-        fn as_token<F, O>(
-            &self,
-            typ: TokenType,
-            parser: F,
-        ) -> impl FnMut(&'a str) -> IResult<&'a str, Token>
-        where
-            F: Parser<&'a str, O, nom::error::Error<&'a str>>,
-        {
-            into(self.spanned(value(typ, parser)))
-        }
-
-        fn op(&self) -> impl FnMut(&'a str) -> IResult<&'a str, Token> {
+        fn op(&self) -> impl FnMut(&'a str) -> NRes<&'a str, Token> {
             let op = alt((
-                value(TokenType::LeftParen, tag("(")),
-                value(TokenType::RightParen, tag(")")),
-                value(TokenType::LeftBrace, tag("{")),
-                value(TokenType::RightBrace, tag("}")),
-                value(TokenType::Comma, tag(",")),
-                value(TokenType::Dot, tag(".")),
-                value(TokenType::Minus, tag("-")),
-                value(TokenType::Plus, tag("+")),
-                value(TokenType::Semicolon, tag(";")),
-                value(TokenType::Star, tag("*")),
-                value(TokenType::Slash, tag("/")),
+                value(TokenType::LeftParen, char('(')),
+                value(TokenType::RightParen, char(')')),
+                value(TokenType::LeftBrace, char('{')),
+                value(TokenType::RightBrace, char('}')),
+                value(TokenType::Comma, char(',')),
+                value(TokenType::Dot, char('.')),
+                value(TokenType::Minus, char('-')),
+                value(TokenType::Plus, char('+')),
+                value(TokenType::Semicolon, char(';')),
+                value(TokenType::Star, char('*')),
+                value(TokenType::Slash, char('/')),
                 value(TokenType::BangEqual, tag("!=")),
                 value(TokenType::EqualEqual, tag("==")),
                 value(TokenType::LessEqual, tag("<=")),
                 value(TokenType::GreaterEqual, tag(">=")),
-                value(TokenType::Bang, tag("!")),
-                value(TokenType::Equal, tag("=")),
-                value(TokenType::Less, tag("<")),
-                value(TokenType::Greater, tag(">")),
+                value(TokenType::Bang, char('!')),
+                value(TokenType::Equal, char('=')),
+                value(TokenType::Less, char('<')),
+                value(TokenType::Greater, char('>')),
             ));
-            into(self.spanned(op))
+            self.as_token(op)
         }
 
-        fn num(&self) -> impl FnMut(&'a str) -> IResult<&'a str, Token> {
+        fn num(&self) -> impl FnMut(&'a str) -> NRes<&'a str, Token> {
             let num = tuple((digit1, opt(pair(char('.'), digit1))));
-            self.as_token(TokenType::Number, num)
+            let num = value(TokenType::Number, num);
+            self.as_token(num)
         }
 
-        fn string(&self) -> impl FnMut(&'a str) -> IResult<&'a str, Token> {
-            let string = take_until("\"");
-            let string = self.as_token(TokenType::String, string);
+        fn string(&self) -> impl FnMut(&'a str) -> NRes<&'a str, Token> {
+            let string = value(TokenType::String, take_until("\""));
+            let string = self.as_token(string);
             let string = terminated(string, char('\"'));
             preceded(char('\"'), cut(string))
         }
 
-        fn ident(&self) -> impl FnMut(&'a str) -> IResult<&'a str, Token> {
-            let ident_token = alt((
-                value(TokenType::And, all_consuming(tag("and"))),
-                value(TokenType::Class, all_consuming(tag("class"))),
-                value(TokenType::Else, all_consuming(tag("else"))),
-                value(TokenType::False, all_consuming(tag("false"))),
-                value(TokenType::Fun, all_consuming(tag("fun"))),
-                value(TokenType::For, all_consuming(tag("for"))),
-                value(TokenType::If, all_consuming(tag("if"))),
-                value(TokenType::Nil, all_consuming(tag("nil"))),
-                value(TokenType::Or, all_consuming(tag("or"))),
-                value(TokenType::Print, all_consuming(tag("print"))),
-                value(TokenType::Return, all_consuming(tag("return"))),
-                value(TokenType::Super, all_consuming(tag("super"))),
-                value(TokenType::This, all_consuming(tag("this"))),
-                value(TokenType::True, all_consuming(tag("true"))),
-                value(TokenType::Var, all_consuming(tag("var"))),
-                value(TokenType::While, all_consuming(tag("while"))),
-                value(TokenType::Identifier, all_consuming(alphanumeric1)),
-            ));
-
-            let ident = take_while1(|c: char| c.is_ascii_alphabetic());
-            let ident = map_parser(ident, ident_token);
-
-            into(self.spanned(ident))
+        fn ident(&self) -> impl FnMut(&'a str) -> NRes<&'a str, Token> {
+            let ident = recognize(pair(alpha1, alphanumeric0));
+            let ident = map(ident, TokenType::from);
+            self.as_token(ident)
         }
 
-        fn token(&self) -> impl FnMut(&'a str) -> IResult<&'a str, Token> {
+        fn token(&self) -> impl FnMut(&'a str) -> NRes<&'a str, Token> {
             alt((self.op(), self.num(), self.string(), self.ident()))
         }
 
-        fn comment(&self) -> impl FnMut(&'a str) -> IResult<&'a str, ()> {
+        fn comment(&self) -> impl FnMut(&'a str) -> NRes<&'a str, ()> {
             value((), preceded(tag("//"), take_until("\n")))
         }
 
-        fn lexer(&self) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<Token>> {
+        fn lexer(&self) -> impl FnMut(&'a str) -> NRes<&'a str, Vec<Token>> {
             let comment = preceded(multispace0, self.comment());
             let comment = many0(comment);
             let token = preceded(multispace0, self.token());
