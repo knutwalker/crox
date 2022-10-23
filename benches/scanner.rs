@@ -1,30 +1,34 @@
-#![cfg(benches)]
-#![feature(test)]
+#![cfg_attr(benches, feature(test))]
 
+#[cfg(not(benches))]
+compile_error!("You must use the nightly toolchain to run benchmarks: cargo +nightly bench");
+
+#[cfg(benches)]
 extern crate test;
+
+#[cfg(benches)]
 use test::Bencher;
 
-use crox::scan;
-
+#[cfg(benches)]
 #[bench]
-fn bench_scanner(b: &mut Bencher) {
+fn crox_scanner(b: &mut Bencher) {
     let input = include_str!("../tests/classes.crox");
     b.bytes = input.len() as u64;
-    b.iter(|| scan(input).into_iter().collect::<Vec<_>>());
+    b.iter(|| crox::scan(input).into_iter().collect::<Vec<_>>());
 }
 
-#[cfg(feature = "chumsky")]
+#[cfg(all(benches, feature = "chumsky"))]
 #[bench]
-fn bench_chumsky(b: &mut Bencher) {
+fn chumsky_scanner(b: &mut Bencher) {
     let input = include_str!("../tests/classes.crox");
     b.bytes = input.len() as u64;
-    b.iter(|| scan(input).into_chumsky().unwrap());
+    b.iter(|| crox::scan(input).into_chumsky().unwrap());
 }
 
-#[cfg(feature = "nom")]
+#[cfg(all(benches, feature = "nom"))]
 #[bench]
-fn bench_nom(b: &mut Bencher) {
+fn nom_scanner(b: &mut Bencher) {
     let input = include_str!("../tests/classes.crox");
     b.bytes = input.len() as u64;
-    b.iter(|| scan(input).into_nom().unwrap());
+    b.iter(|| crox::scan(input).into_nom().unwrap());
 }
