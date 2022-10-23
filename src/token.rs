@@ -1,3 +1,5 @@
+use std::fmt::{self, Debug};
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum TokenType {
     LeftParen,
@@ -67,31 +69,69 @@ impl From<&str> for TokenType {
     }
 }
 
-pub type Span = std::ops::Range<usize>;
+pub type Range = std::ops::Range<usize>;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Token {
-    pub typ: TokenType,
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub struct Span {
     pub offset: usize,
     pub len: usize,
 }
 
-impl Token {
-    pub fn new(typ: TokenType, offset: usize, len: usize) -> Self {
-        Self { typ, offset, len }
-    }
-
-    pub fn span(&self) -> Span {
-        self.offset..(self.offset + self.len)
+impl Debug for Span {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Debug::fmt(&Range::from(*self), f)
     }
 }
 
-impl From<(TokenType, Span)> for Token {
-    fn from((typ, span): (TokenType, Span)) -> Self {
+impl Span {
+    pub fn new(offset: usize, len: usize) -> Self {
+        Self { offset, len }
+    }
+
+    pub fn union(self, other: Self) -> Range {
+        self.offset..(other.offset + other.len)
+    }
+}
+
+impl From<Range> for Span {
+    fn from(value: Range) -> Self {
+        Self {
+            offset: value.start,
+            len: value.len(),
+        }
+    }
+}
+
+impl From<Span> for Range {
+    fn from(value: Span) -> Self {
+        value.offset..(value.offset + value.len)
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Token {
+    pub typ: TokenType,
+    pub span: Span,
+}
+
+impl Token {
+    pub fn new(typ: TokenType, offset: usize, len: usize) -> Self {
         Self {
             typ,
-            offset: span.start,
-            len: span.len(),
+            span: Span::new(offset, len),
+        }
+    }
+
+    pub fn span(&self) -> Span {
+        self.span
+    }
+}
+
+impl From<(TokenType, Range)> for Token {
+    fn from((typ, range): (TokenType, Range)) -> Self {
+        Self {
+            typ,
+            span: Span::from(range),
         }
     }
 }

@@ -4,7 +4,7 @@ use super::{Result, ScanError, ScanErrorKind, Token, TokenType};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Source<'a> {
-    source: &'a str,
+    pub source: &'a str,
 }
 
 impl<'a> Source<'a> {

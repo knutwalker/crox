@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use crox::CroxErrors;
+use crox::{CroxErrors, Node, ScanError};
 
 fn main() {
     if let Err(e) = run() {
@@ -63,16 +63,34 @@ fn repl() -> io::Result<()> {
 }
 
 fn handle(line: &str) {
-    let source = crox::scan(line);
-    let tokens = source.scan_all();
+    let mut errs = Vec::new();
 
-    match tokens {
-        Ok(tokens) => {
-            for token in tokens {
-                println!("{:?}", token);
-            }
+    let source = crox::scan(line);
+
+    let tokens = source.into_iter().filter_map(|t| match t {
+        Ok(t) => Some(t),
+        Err(e) => {
+            errs.push(e);
+            None
         }
-        Err(err) => report_error(err),
+    });
+
+    let expr = crox::parser(tokens);
+    let expr = match expr {
+        Ok(expr) => expr,
+        Err((msg, span)) => {
+            errs.push(ScanError {
+                kind: crox::ScanErrorKind::Other(msg),
+                span: span.into(),
+            });
+            Node::nil().into_expr(0..0)
+        }
+    };
+
+    if errs.is_empty() {
+        println!("{:#?}", expr);
+    } else {
+        report_error(CroxErrors::from((source.source, errs)))
     }
 }
 

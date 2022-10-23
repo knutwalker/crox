@@ -1,4 +1,4 @@
-use super::token::Span;
+use super::token::Range;
 use std::{
     error::Error as StdError,
     fmt::{Debug, Display},
@@ -51,7 +51,7 @@ impl StdError for CroxErrors {}
 pub struct ScanError {
     pub kind: ScanErrorKind,
     #[cfg_attr(feature = "fancy", label("{}", kind))]
-    pub span: Span,
+    pub span: Range,
 }
 
 impl Display for ScanError {
@@ -104,7 +104,7 @@ struct SourceScanError<'a> {
 }
 
 impl<'a> SourceScanError<'a> {
-    fn new(source: &'a str, span: Span, kind: &'a ScanErrorKind) -> Self {
+    fn new(source: &'a str, span: Range, kind: &'a ScanErrorKind) -> Self {
         let offset = span.start;
         let offset = offset.min(source.len() - 1);
 
