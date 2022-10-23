@@ -1,6 +1,8 @@
-use super::{Result, RunError, Token, TokenType};
+use crate::error::CroxErrors;
 
-#[derive(Copy, Clone, Debug)]
+use super::{Result, ScanError, ScanErrorKind, Token, TokenType};
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Source<'a> {
     source: &'a str,
 }
@@ -11,12 +13,31 @@ impl<'a> Source<'a> {
     }
 }
 
+impl<'a> Source<'a> {
+    pub fn scan_all(self) -> Result<Vec<Token>> {
+        let source = self.source;
+        let mut oks = Vec::new();
+        let mut errs = Vec::new();
+        for x in self {
+            match x {
+                Ok(t) => oks.push(t),
+                Err(e) => errs.push(e),
+            }
+        }
+        if errs.is_empty() {
+            Ok(oks)
+        } else {
+            Err(CroxErrors::from((source, errs)))
+        }
+    }
+}
+
 impl<'a> IntoIterator for Source<'a> {
-    type Item = Result<Token>;
+    type Item = Result<Token, ScanError>;
     type IntoIter = Scanner<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        Scanner::new(self)
+        Scanner::from(self)
     }
 }
 
@@ -26,8 +47,8 @@ pub struct Scanner<'a> {
     source: Source<'a>,
 }
 
-impl<'a> Scanner<'a> {
-    fn new(source: Source<'a>) -> Self {
+impl<'a> From<Source<'a>> for Scanner<'a> {
+    fn from(source: Source<'a>) -> Self {
         Self {
             source,
             input: source
@@ -37,8 +58,8 @@ impl<'a> Scanner<'a> {
     }
 }
 
-impl Iterator for Scanner<'_> {
-    type Item = Result<Token>;
+impl<'a> Iterator for Scanner<'a> {
+    type Item = Result<Token, ScanError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while !self.is_at_end() {
@@ -55,7 +76,7 @@ impl<'a> Scanner<'a> {
         self.input.is_empty()
     }
 
-    fn next_token(&mut self) -> Result<Option<Token>> {
+    fn next_token(&mut self) -> Result<Option<Token>, ScanError> {
         let (token, rest) = self.next_lexeme();
 
         let typ = match token {
@@ -98,7 +119,8 @@ impl<'a> Scanner<'a> {
                     return Ok(Some(next));
                 }
 
-                return Err(self.error(token, rest, format!("Unexpected character: {}", token)));
+                let input = token.chars().next();
+                return Err(self.error(token, rest, ScanErrorKind::UnexpectedInput(input)));
             }
         };
 
@@ -129,7 +151,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn string(&mut self) -> Result<Token> {
+    fn string(&mut self) -> Result<Token, ScanError> {
         let source = &self.input[1..];
         source
             .find('"')
@@ -139,7 +161,7 @@ impl<'a> Scanner<'a> {
                 self.advance(rest);
                 self.token(TokenType::String, string)
             })
-            .ok_or_else(|| self.error(self.input, "", "Unterminated string"))
+            .ok_or_else(|| self.error(self.input, "", ScanErrorKind::UnclosedStringLiteral))
     }
 
     fn number(&mut self) -> Option<Token> {
@@ -208,9 +230,9 @@ impl<'a> Scanner<'a> {
         token(typ, lexeme, self.source.source)
     }
 
-    fn error(&mut self, lexeme: &'a str, rest: &'a str, message: impl Into<String>) -> RunError {
+    fn error(&mut self, lexeme: &'a str, rest: &'a str, kind: ScanErrorKind) -> ScanError {
         self.advance(rest);
-        error(lexeme, self.source.source, message)
+        error(lexeme, self.source.source, kind)
     }
 }
 
@@ -220,14 +242,11 @@ fn token<'a>(typ: TokenType, token: &'a str, source: &'a str) -> Token {
     Token::new(typ, offset, len)
 }
 
-fn error<'a>(input: &'a str, source: &'a str, message: impl Into<String>) -> RunError {
+fn error<'a>(input: &'a str, source: &'a str, kind: ScanErrorKind) -> ScanError {
     let offset = offset_from(input, source);
-    let offset = offset.min(source.len() - 1);
-    let source = &source[..=offset];
-    let line_offset = source.bytes().rposition(|b| b == b'\n').unwrap_or(0);
-    let line = source.lines().count();
-    let offset = offset - line_offset;
-    RunError::new(line, offset, message)
+    let len = input.len().min(1);
+    let span = offset..(offset + len);
+    ScanError { kind, span }
 }
 
 fn offset_from<'a>(input: &'a str, source: &'a str) -> usize {
@@ -237,104 +256,36 @@ fn offset_from<'a>(input: &'a str, source: &'a str) -> usize {
 #[cfg(feature = "chumsky")]
 mod chum {
     use super::*;
-    use ariadne::{Color, Fmt, Label, Report, ReportKind, Source as AriadneSource};
     use chumsky::{
+        error::SimpleReason,
         prelude::{filter, just, take_until, text, Parser, Simple},
         primitive::end,
         text::TextParser,
     };
 
     impl<'a> Source<'a> {
-        pub fn into_chumsky(self) -> Result<Vec<Token>> {
+        pub fn scan_chumsky(self) -> Result<Vec<Token>> {
             match lexer().parse(self.source) {
                 Ok(tokens) => Ok(tokens),
                 Err(errs) => {
-                    let msg = errs
+                    let errs = errs
                         .into_iter()
                         .map(|err| {
-                            let err = err.map(|c| c.to_string());
-
-                            let report = Report::build(ReportKind::Error, (), err.span().start);
-
-                            let report = match err.reason() {
-                                chumsky::error::SimpleReason::Unclosed { span, delimiter } => {
-                                    report
-                                        .with_message(format!(
-                                            "Unclosed delimiter {}",
-                                            delimiter.fg(Color::Yellow)
-                                        ))
-                                        .with_label(
-                                            Label::new(span.clone())
-                                                .with_message(format!(
-                                                    "Unclosed delimiter {}",
-                                                    delimiter.fg(Color::Yellow)
-                                                ))
-                                                .with_color(Color::Yellow),
-                                        )
-                                        .with_label(
-                                            Label::new(err.span())
-                                                .with_message(format!(
-                                                    "Must be closed before this {}",
-                                                    err.found()
-                                                        .unwrap_or(&"end of file".to_string())
-                                                        .fg(Color::Red)
-                                                ))
-                                                .with_color(Color::Red),
-                                        )
+                            let kind = match err.reason() {
+                                SimpleReason::Unexpected => {
+                                    ScanErrorKind::UnexpectedInput(err.found().copied())
                                 }
-                                chumsky::error::SimpleReason::Unexpected => report
-                                    .with_message(format!(
-                                        "{}, expected {}",
-                                        if err.found().is_some() {
-                                            "Unexpected token in input"
-                                        } else {
-                                            "Unexpected end of input"
-                                        },
-                                        if err.expected().len() == 0 {
-                                            "something else".to_string()
-                                        } else {
-                                            err.expected()
-                                                .map(|expected| match expected {
-                                                    Some(expected) => expected.to_string(),
-                                                    None => "end of input".to_string(),
-                                                })
-                                                .collect::<Vec<_>>()
-                                                .join(", ")
-                                        }
-                                    ))
-                                    .with_label(
-                                        Label::new(err.span())
-                                            .with_message(format!(
-                                                "Unexpected {}",
-                                                err.found()
-                                                    .map(|found| format!("token {}", found))
-                                                    .unwrap_or_else(|| String::from("end of file"))
-                                                    .fg(Color::Red)
-                                            ))
-                                            .with_color(Color::Red),
-                                    ),
-                                chumsky::error::SimpleReason::Custom(msg) => {
-                                    report.with_message(msg).with_label(
-                                        Label::new(err.span())
-                                            .with_message(format!("{}", msg.fg(Color::Red)))
-                                            .with_color(Color::Red),
-                                    )
-                                }
+                                SimpleReason::Unclosed { .. } => todo!(),
+                                SimpleReason::Custom(msg) => ScanErrorKind::Other(msg.clone()),
                             };
 
-                            report.finish()
+                            ScanError {
+                                span: err.span(),
+                                kind,
+                            }
                         })
-                        .fold(Vec::new(), |mut msg, report| {
-                            report
-                                .write(AriadneSource::from(self.source), &mut msg)
-                                .unwrap();
-                            msg.extend_from_slice(b"\n\n");
-                            msg
-                        });
-
-                    let msg = String::from_utf8(msg).expect("ariadne writes utf8, hopefully");
-
-                    Err(RunError::new(1, 0, msg))
+                        .collect();
+                    Err(CroxErrors::from((self.source, errs)))
                 }
             }
         }
@@ -367,13 +318,10 @@ mod chum {
             .then(just('.').ignore_then(text::digits(10)).or_not())
             .map_with_span(|_num, span| Token::from((TokenType::Number, span)));
 
-        let string = just('"')
-            .ignore_then(
-                filter(|c| *c != '"')
-                    .repeated()
-                    .map_with_span(|_string, span| Token::from((TokenType::String, span))),
-            )
-            .then_ignore(just('"'));
+        let string = filter(|c| *c != '"')
+            .repeated()
+            .map_with_span(|_string, span| Token::from((TokenType::String, span)))
+            .delimited_by(just('"'), just('"'));
 
         let ident = text::ident().map_with_span(|ident: String, span| {
             let typ = TokenType::from(ident.as_str());
@@ -410,31 +358,32 @@ mod no {
     type NRes<I, O, E = NErr<I>> = Result<(I, O), nom::Err<E>>;
 
     impl<'a> Source<'a> {
-        pub fn into_nom(self) -> Result<Vec<Token>> {
+        pub fn scan_nom(self) -> Result<Vec<Token>> {
             let mut lexer = self.lexer();
             let res = lexer(self.source).finish();
             match res {
                 Ok((_, tokens)) => Ok(tokens),
-                Err(e) => Err(self.convert_err(e)),
+                Err(e) => Err(CroxErrors::from((self.source, vec![self.convert_err(e)]))),
             }
         }
     }
 
     impl<'a> Source<'a> {
-        fn convert_err(&self, err: NErr<&'a str>) -> RunError {
+        fn convert_err(&self, err: NErr<&'a str>) -> ScanError {
             match err.code {
                 ErrorKind::Eof => error(
                     err.input,
                     self.source,
-                    format!(
-                        "Unexpected character: {}",
-                        err.input.chars().next().unwrap_or_default()
-                    ),
+                    ScanErrorKind::UnexpectedInput(err.input.chars().next()),
                 ),
                 ErrorKind::Char | ErrorKind::TakeUntil => {
-                    error(err.input, self.source, "Unterminated string")
+                    error(err.input, self.source, ScanErrorKind::UnclosedStringLiteral)
                 }
-                _ => error(err.input, self.source, err.to_string()),
+                _ => error(
+                    err.input,
+                    self.source,
+                    ScanErrorKind::Other(err.to_string()),
+                ),
             }
         }
 
@@ -529,5 +478,32 @@ mod no {
 
             all_consuming(token)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_unexpected_bracket() {
+        let input = Source::new("foo [ bar");
+        let err = input
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap_err();
+        assert_eq!(err.kind, ScanErrorKind::UnexpectedInput(Some('[')));
+        assert_eq!(err.span, 4..5);
+    }
+
+    #[test]
+    fn test_unclosed_string() {
+        let input = Source::new("foo \"bar");
+        let err = input
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap_err();
+        assert_eq!(err.kind, ScanErrorKind::UnclosedStringLiteral);
+        assert_eq!(err.span, 4..5);
     }
 }

@@ -5,18 +5,19 @@ fn run_test(content: &str, expected: Vec<Token>) -> Result {
     use pretty_assertions::assert_eq;
 
     let source = scan(content);
-    let actual = source.into_iter().collect::<Result<Vec<_>>>()?;
+    let actual = source.scan_all()?;
+
     assert_eq!(actual, expected);
 
     #[cfg(feature = "chumsky")]
     {
-        let actual = source.into_chumsky()?;
+        let actual = source.scan_chumsky()?;
         assert_eq!(actual, expected);
     }
 
     #[cfg(feature = "nom")]
     {
-        let actual = source.into_nom()?;
+        let actual = source.scan_nom()?;
         assert_eq!(actual, expected);
     }
 

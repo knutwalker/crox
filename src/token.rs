@@ -67,6 +67,8 @@ impl From<&str> for TokenType {
     }
 }
 
+pub type Span = std::ops::Range<usize>;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Token {
     pub typ: TokenType,
@@ -78,9 +80,11 @@ impl Token {
     pub fn new(typ: TokenType, offset: usize, len: usize) -> Self {
         Self { typ, offset, len }
     }
-}
 
-pub type Span = std::ops::Range<usize>;
+    pub fn span(&self) -> Span {
+        self.offset..(self.offset + self.len)
+    }
+}
 
 impl From<(TokenType, Span)> for Token {
     fn from((typ, span): (TokenType, Span)) -> Self {

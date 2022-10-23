@@ -2,14 +2,14 @@ mod error;
 mod scanner;
 mod token;
 
-pub use error::{Result, RunError};
+pub use error::{CroxErrors, Result, ScanError, ScanErrorKind};
 pub use token::{Token, TokenType};
 
 pub fn run(content: &str) -> Result<()> {
     let source = scan(content);
+    let tokens = source.scan_all()?;
 
-    for token in source {
-        let token = token?;
+    for token in tokens {
         println!("{:?}", token);
     }
 

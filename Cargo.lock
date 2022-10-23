@@ -47,15 +47,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ariadne"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1cb2a2046bea8ce5e875551f5772024882de0b540c7f93dfc5d6cf1ca8b030c"
-dependencies = [
- "yansi",
-]
-
-[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -128,7 +119,6 @@ dependencies = [
 name = "crox"
 version = "0.1.0"
 dependencies = [
- "ariadne",
  "chumsky",
  "miette",
  "nom",

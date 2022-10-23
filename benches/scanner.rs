@@ -14,7 +14,7 @@ use test::Bencher;
 fn crox_scanner(b: &mut Bencher) {
     let input = include_str!("../tests/classes.crox");
     b.bytes = input.len() as u64;
-    b.iter(|| crox::scan(input).into_iter().collect::<Vec<_>>());
+    b.iter(|| crox::scan(input).scan_all().unwrap());
 }
 
 #[cfg(all(benches, feature = "chumsky"))]
@@ -22,7 +22,7 @@ fn crox_scanner(b: &mut Bencher) {
 fn chumsky_scanner(b: &mut Bencher) {
     let input = include_str!("../tests/classes.crox");
     b.bytes = input.len() as u64;
-    b.iter(|| crox::scan(input).into_chumsky().unwrap());
+    b.iter(|| crox::scan(input).scan_chumsky().unwrap());
 }
 
 #[cfg(all(benches, feature = "nom"))]
@@ -30,5 +30,5 @@ fn chumsky_scanner(b: &mut Bencher) {
 fn nom_scanner(b: &mut Bencher) {
     let input = include_str!("../tests/classes.crox");
     b.bytes = input.len() as u64;
-    b.iter(|| crox::scan(input).into_nom().unwrap());
+    b.iter(|| crox::scan(input).scan_nom().unwrap());
 }

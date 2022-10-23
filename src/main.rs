@@ -4,6 +4,8 @@ use std::{
     path::Path,
 };
 
+use crox::CroxErrors;
+
 fn main() {
     if let Err(e) = run() {
         eprintln!("{}", e);
@@ -23,7 +25,7 @@ fn run() -> io::Result<()> {
         Some(file) => match run_file(file)? {
             Ok(_) => {}
             Err(e) => {
-                eprintln!("{}", e);
+                report_error(e);
                 std::process::exit(65)
             }
         },
@@ -60,10 +62,9 @@ fn repl() -> io::Result<()> {
     Ok(())
 }
 
-#[cfg(all(not(feature = "chumsky"), not(feature = "nom")))]
 fn handle(line: &str) {
     let source = crox::scan(line);
-    let tokens = source.into_iter().collect::<Result<Vec<_>, _>>();
+    let tokens = source.scan_all();
 
     match tokens {
         Ok(tokens) => {
@@ -71,36 +72,17 @@ fn handle(line: &str) {
                 println!("{:?}", token);
             }
         }
-        Err(e) => {
-            println!("~~{:#}", e);
-        }
+        Err(err) => report_error(err),
     }
 }
 
-#[cfg(all(feature = "nom", not(feature = "chumsky")))]
-fn handle(line: &str) {
-    match crox::scan(line).into_nom() {
-        Ok(tokens) => {
-            for token in tokens {
-                println!("{:?}", token);
-            }
-        }
-        Err(e) => {
-            println!("~~{:#}", e);
-        }
-    }
+#[cfg(feature = "fancy")]
+fn report_error(err: CroxErrors) {
+    let err = miette::Report::new(err);
+    eprintln!("{:?}", err);
 }
 
-#[cfg(feature = "chumsky")]
-fn handle(line: &str) {
-    match crox::scan(line).into_chumsky() {
-        Ok(tokens) => {
-            for token in tokens {
-                println!("{:?}", token);
-            }
-        }
-        Err(e) => {
-            println!("{}", e.message)
-        }
-    }
+#[cfg(not(feature = "fancy"))]
+fn report_error(err: CroxErrors) {
+    eprintln!("{:#}", err);
 }
