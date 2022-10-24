@@ -1,6 +1,5 @@
-use std::iter::Peekable;
-
 use crate::{BinaryOp, Expr, Node, Span, Token, TokenType, UnaryOp};
+use std::iter::Peekable;
 
 type Tok = (TokenType, Span);
 type Exp = Result<Expr, (String, Span)>;
@@ -17,94 +16,85 @@ type Exp = Result<Expr, (String, Span)>;
 ///    primary := NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" ;
 /// ```
 pub fn parser(tokens: impl Iterator<Item = Token>) -> Exp {
-    use TokenType::*;
+    use TokenType::{String as TString, *};
 
     /// expression := equality ;
     fn expression(tokens: &mut Peekable<impl Iterator<Item = Tok>>) -> Exp {
         equality(tokens)
     }
 
+    macro_rules! try_match {
+        ($tokens:ident, { $($pat:pat => $expr:expr),+ $(,)? }) => {{
+            let op = match $tokens.peek() {
+                $(Some(&$pat) => $expr),+,
+                _ => break,
+            };
+            let _ = $tokens.next();
+            op
+        }};
+    }
+
+    macro_rules! rule {
+        ($tokens:ident, $descent:ident, { $($pat:pat => $expr:expr),+ $(,)? }) => {{
+            let mut lhs = $descent($tokens)?;
+            loop {
+                let op = try_match!($tokens, { $($pat => $expr),+ });
+                let rhs = $descent($tokens)?;
+                let span = lhs.span.union(rhs.span);
+                lhs = Node::binary(lhs, op, rhs).into_expr(span);
+            }
+            Ok(lhs)
+        }};
+    }
+
     ///    equlity := comparison ( ( "==" | "!=" ) comparison )* ;
     fn equality(tokens: &mut Peekable<impl Iterator<Item = Tok>>) -> Exp {
-        let mut lhs = comparison(tokens)?;
-
-        loop {
-            let op = match tokens.peek() {
-                Some((EqualEqual, _)) => BinaryOp::Equals,
-                Some((BangEqual, _)) => BinaryOp::NotEquals,
-                _ => return Ok(lhs),
-            };
-            tokens.next();
-            let rhs = comparison(tokens)?;
-            let span = lhs.span.union(rhs.span);
-            lhs = Node::binary(lhs, op, rhs).into_expr(span);
-        }
+        rule!(tokens, comparison, {
+            (BangEqual, _) => BinaryOp::Equals,
+            (EqualEqual, _) => BinaryOp::NotEquals,
+        })
     }
 
     /// comparison := term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
     fn comparison(tokens: &mut Peekable<impl Iterator<Item = Tok>>) -> Exp {
-        let mut lhs = term(tokens)?;
-
-        loop {
-            let op = match tokens.peek() {
-                Some((Greater, _)) => BinaryOp::GreaterThan,
-                Some((GreaterEqual, _)) => BinaryOp::GreaterThanOrEqual,
-                Some((Less, _)) => BinaryOp::LessThan,
-                Some((LessEqual, _)) => BinaryOp::LessThanOrEqual,
-                _ => return Ok(lhs),
-            };
-            tokens.next();
-            let rhs = term(tokens)?;
-            let span = lhs.span.union(rhs.span);
-            lhs = Node::binary(lhs, op, rhs).into_expr(span);
-        }
+        rule!(tokens, term, {
+            (Greater, _) => BinaryOp::GreaterThan,
+            (GreaterEqual, _) => BinaryOp::GreaterThanOrEqual,
+            (Less, _) => BinaryOp::LessThan,
+            (LessEqual, _) => BinaryOp::LessThanOrEqual,
+        })
     }
 
     ///       term := factor ( ( "+" | "-" ) factor )* ;
     fn term(tokens: &mut Peekable<impl Iterator<Item = Tok>>) -> Exp {
-        let mut lhs = factor(tokens)?;
-
-        loop {
-            let op = match tokens.peek() {
-                Some((Plus, _)) => BinaryOp::Add,
-                Some((Minus, _)) => BinaryOp::Sub,
-                _ => return Ok(lhs),
-            };
-            tokens.next();
-            let rhs = factor(tokens)?;
-            let span = lhs.span.union(rhs.span);
-            lhs = Node::binary(lhs, op, rhs).into_expr(span);
-        }
+        rule!(tokens, factor, {
+            (Plus, _) => BinaryOp::Add,
+            (Minus, _) => BinaryOp::Sub,
+        })
     }
 
     ///     factor := unary ( ( "*" | "/" ) unary )* ;
     fn factor(tokens: &mut Peekable<impl Iterator<Item = Tok>>) -> Exp {
-        let mut lhs = unary(tokens)?;
-
-        loop {
-            let op = match tokens.peek() {
-                Some((Star, _)) => BinaryOp::Mul,
-                Some((Slash, _)) => BinaryOp::Div,
-                _ => return Ok(lhs),
-            };
-            tokens.next();
-            let rhs = unary(tokens)?;
-            let span = lhs.span.union(rhs.span);
-            lhs = Node::binary(lhs, op, rhs).into_expr(span);
-        }
+        rule!(tokens, unary, {
+            (Star, _) => BinaryOp::Mul,
+            (Slash, _) => BinaryOp::Div,
+        })
     }
 
     ///      unary := ( "!" | "-" ) unary | primary ;
     fn unary(tokens: &mut Peekable<impl Iterator<Item = Tok>>) -> Exp {
-        let (op, span) = match tokens.peek() {
-            Some((Bang, span)) => (UnaryOp::Not, *span),
-            Some((Minus, span)) => (UnaryOp::Neg, *span),
-            _ => return primary(tokens),
-        };
-        tokens.next();
-        let inner = unary(tokens)?;
-        let span = span.union(inner.span);
-        Ok(Node::unary(op, inner).into_expr(span))
+        loop {
+            let (op, span) = try_match!(tokens, {
+                (Bang, span) => (UnaryOp::Not, span),
+                (Minus, span) => (UnaryOp::Neg, span),
+            });
+
+            let inner = unary(tokens)?;
+            let span = span.union(inner.span);
+            return Ok(Node::unary(op, inner).into_expr(span));
+        }
+
+        primary(tokens)
     }
 
     ///    primary := NUMBER | STRING | "true" | "false" | "(" expression ")" ;
@@ -122,7 +112,7 @@ pub fn parser(tokens: impl Iterator<Item = Token>) -> Exp {
                     None => return Err(("Unclosed delimiter: (".into(), span)),
                 }
             }
-            Some((String, span)) => Node::string().into_expr(span),
+            Some((TString, span)) => Node::string().into_expr(span),
             Some((Number, span)) => Node::number().into_expr(span),
             Some((False, span)) => Node::fals().into_expr(span),
             Some((Nil, span)) => Node::nil().into_expr(span),
