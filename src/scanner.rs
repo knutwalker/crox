@@ -192,7 +192,7 @@ impl<'a> Scanner<'a> {
     fn identifier(&mut self) -> Option<Token> {
         let end = self
             .input
-            .find(|c: char| !c.is_ascii_alphanumeric())
+            .find(|c: char| !matches!(c, '0'..='9' | 'A'..='Z' | 'a'..='z' | '_'))
             .unwrap_or(self.input.len());
 
         if end == 0 {
@@ -345,8 +345,8 @@ mod no {
     use super::*;
     use nom::{
         branch::alt,
-        bytes::complete::{tag, take_until},
-        character::complete::{alpha1, alphanumeric0, char, digit1, multispace0},
+        bytes::complete::{tag, take_until, take_while, take_while1},
+        character::complete::{char, digit1, multispace0},
         combinator::{all_consuming, consumed, cut, map, opt, recognize, value},
         error::ErrorKind,
         multi::many0,
@@ -445,7 +445,9 @@ mod no {
         }
 
         fn ident(&self) -> impl FnMut(&'a str) -> NRes<&'a str, Token> {
-            let ident = recognize(pair(alpha1, alphanumeric0));
+            let first = take_while1(|c: char| matches!(c, 'A'..='Z' | 'a'..='z' | '_'));
+            let rest = take_while(|c: char| matches!(c, '0'..='9' | 'A'..='Z' | 'a'..='z' | '_'));
+            let ident = recognize(pair(first, rest));
             let ident = map(ident, TokenType::from);
             self.as_token(ident)
         }
