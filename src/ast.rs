@@ -1,19 +1,88 @@
 use crate::token::Span;
 use std::fmt::{Debug, Display};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Expr {
-    pub node: Box<Node>,
+    pub idx: Idx,
     pub span: Span,
 }
 
 impl Expr {
-    pub fn new(node: Box<Node>, span: Span) -> Self {
-        Self { node, span }
+    pub fn new(idx: Idx, span: Span) -> Self {
+        Self { idx, span }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoxedExpr {
+    pub node: Box<Node<BoxedExpr>>,
+    pub span: Span,
+}
+
+impl BoxedExpr {
+    pub fn new(node: Box<Node<Self>>, span: Span) -> Self {
+        Self { node, span }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct Idx(pub usize);
+
+impl Idx {
+    pub fn into_expr(self, range: impl Into<Span>) -> Expr {
+        Expr::new(self, range.into())
+    }
+}
+#[derive(Clone, Debug, Default)]
+pub struct AstBuilder {
+    nodes: Vec<Node>,
+}
+
+impl AstBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add(&mut self, node: Node) -> Idx {
+        let idx = self.nodes.len();
+        self.nodes.push(node);
+        Idx(idx)
+    }
+
+    pub fn build(self) -> Ast {
+        Ast { nodes: self.nodes }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Ast {
+    nodes: Vec<Node>,
+}
+
+pub trait Resolve<C> {
+    type Output;
+
+    fn resolve(&self, context: &C) -> Self::Output;
+}
+
+impl Resolve<Idx> for Ast {
+    type Output = Node;
+
+    fn resolve(&self, context: &Idx) -> Self::Output {
+        self.nodes[context.0]
+    }
+}
+
+impl Resolve<Idx> for AstBuilder {
+    type Output = Node;
+
+    fn resolve(&self, context: &Idx) -> Self::Output {
+        self.nodes[context.0]
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Node<T: Sized = Expr> {
     Literal(Literal),
     Unary(UnaryOp, T),
@@ -110,20 +179,22 @@ impl<T: Sized> Node<T> {
             Self::Group(expr) => Node::Group(f(expr)),
         }
     }
+}
 
-    pub fn try_map<U, E>(self, mut f: impl FnMut(T) -> Result<U, E>) -> Result<Node<U>, E> {
-        match self {
-            Self::Literal(lit) => Ok(Node::Literal(lit)),
-            Self::Unary(op, expr) => Ok(Node::Unary(op, f(expr)?)),
-            Self::Binary(lhs, op, rhs) => Ok(Node::Binary(f(lhs)?, op, f(rhs)?)),
-            Self::Group(expr) => Ok(Node::Group(f(expr)?)),
-        }
+impl Node<BoxedExpr> {
+    pub fn into_boxed_expr(self, range: impl Into<Span>) -> BoxedExpr {
+        BoxedExpr::new(Box::new(self), range.into())
     }
 }
 
-impl Node {
-    pub fn into_expr(self, range: impl Into<Span>) -> Expr {
-        Expr::new(Box::new(self), range.into())
+impl Expr {
+    pub fn resolve<R>(self, resolver: &R) -> BoxedExpr
+    where
+        R: Resolve<Idx, Output = Node>,
+    {
+        let node = resolver.resolve(&self.idx);
+        let node = node.map(|e| e.resolve(resolver));
+        node.into_boxed_expr(self.span)
     }
 }
 
@@ -214,9 +285,6 @@ impl Associate for UnaryOp {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct Ast(Node<Box<Self>>);
-
 impl Display for UnaryOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -244,10 +312,10 @@ impl Display for BinaryOp {
 }
 
 #[cfg(test)]
-fn print_expr(expr: Expr, source: &str) -> String {
+fn print_expr(expr: BoxedExpr, source: &str) -> String {
     use crate::Range;
 
-    fn inner(source: &str, expr: Expr, res: &mut String) {
+    fn inner(source: &str, expr: BoxedExpr, res: &mut String) {
         match *expr.node {
             Node::Literal(_) => res.push_str(&source[Range::from(expr.span)]),
             Node::Unary(op, expr) => parens(source, res, op, Some(expr)),
@@ -260,7 +328,7 @@ fn print_expr(expr: Expr, source: &str) -> String {
         source: &str,
         res: &mut String,
         name: impl Display,
-        exprs: impl IntoIterator<Item = Expr>,
+        exprs: impl IntoIterator<Item = BoxedExpr>,
     ) {
         use std::fmt::Write;
 
@@ -288,13 +356,13 @@ mod tests {
     fn test_print() {
         let input = "-123 * (45.67)";
 
-        let neg = Node::number().into_expr(1..4);
-        let neg = Node::neg(neg).into_expr(0..4);
+        let neg = Node::number().into_boxed_expr(1..4);
+        let neg = Node::neg(neg).into_boxed_expr(0..4);
 
-        let group = Node::number().into_expr(8..13);
-        let group = Node::group(group).into_expr(7..14);
+        let group = Node::number().into_boxed_expr(8..13);
+        let group = Node::group(group).into_boxed_expr(7..14);
 
-        let ast = Node::mul(neg, group).into_expr(0..14);
+        let ast = Node::mul(neg, group).into_boxed_expr(0..14);
 
         assert_eq!(print_expr(ast, input), "(* (- 123) (group 45.67))");
     }

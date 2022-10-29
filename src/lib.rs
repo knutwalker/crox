@@ -5,10 +5,11 @@ mod scanner;
 mod token;
 
 pub use ast::{
-    Associate, Associativity, BinaryOp, Expr, Literal, Node, OpGroup, Precedence, UnaryOp,
+    Associate, Associativity, Ast, AstBuilder, BinaryOp, BoxedExpr, Expr, Idx, Literal, Node,
+    OpGroup, Precedence, Resolve, UnaryOp,
 };
 pub use error::{CroxErrors, Result, ScanError, ScanErrorKind};
-pub use parser::parser;
+pub use parser::{parse, parser, Parser};
 pub use token::{Range, Span, Token, TokenType};
 
 pub fn run(content: &str) -> Result<()> {

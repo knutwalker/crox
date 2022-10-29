@@ -1,10 +1,11 @@
 use std::{
+    cell::Cell,
     fs,
     io::{self, Write},
     path::Path,
 };
 
-use crox::{CroxErrors, Node, ScanError};
+use crox::{CroxErrors, ScanError};
 
 fn main() {
     if let Err(e) = run() {
@@ -63,32 +64,48 @@ fn repl() -> io::Result<()> {
 }
 
 fn handle(line: &str) {
-    let mut errs = Vec::new();
+    let errs = Cell::new(Vec::new());
+
+    let report = |e: ScanError| {
+        let mut es = errs.take();
+        es.push(e);
+        errs.set(es);
+    };
 
     let source = crox::scan(line);
 
     let tokens = source.into_iter().filter_map(|t| match t {
         Ok(t) => Some(t),
         Err(e) => {
-            errs.push(e);
+            report(e);
             None
         }
     });
 
-    let expr = crox::parser(tokens);
-    let expr = match expr {
-        Ok(expr) => expr,
-        Err((msg, span)) => {
-            errs.push(ScanError {
-                kind: crox::ScanErrorKind::Other(msg),
-                span: span.into(),
-            });
-            Node::nil().into_expr(0..0)
-        }
-    };
+    let mut parser = crox::parser(tokens);
+
+    let exprs = parser
+        .by_ref()
+        .filter_map(|e| match e {
+            Ok(e) => Some(e),
+            Err((msg, span)) => {
+                report(ScanError {
+                    kind: crox::ScanErrorKind::Other(msg),
+                    span: span.into(),
+                });
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let ast = parser.into_ast();
+    let errs = errs.into_inner();
 
     if errs.is_empty() {
-        println!("{:#?}", expr);
+        for expr in exprs {
+            let expr = expr.resolve(&ast);
+            println!("{:#?}", expr);
+        }
     } else {
         report_error(CroxErrors::from((source.source, errs)))
     }
