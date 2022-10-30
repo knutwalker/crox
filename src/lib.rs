@@ -8,9 +8,10 @@ pub use ast::{
     Associate, Associativity, Ast, AstBuilder, BinaryOp, BoxedExpr, Expr, Idx, Literal, Node,
     OpGroup, Precedence, Resolve, UnaryOp,
 };
-pub use error::{CroxErrors, Result, ScanError, ScanErrorKind};
+pub use error::{CroxError, CroxErrorKind, CroxErrors, Result};
 pub use parser::{parse, parser, Parser};
-pub use token::{Range, Span, Token, TokenType};
+pub use scanner::{Scanner, Source};
+pub use token::{Range, Span, Token, TokenSet, TokenType};
 
 pub fn run(content: &str) -> Result<()> {
     let source = scan(content);
@@ -23,6 +24,6 @@ pub fn run(content: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn scan(content: &str) -> scanner::Source<'_> {
+pub fn scan(content: &str) -> Source<'_> {
     scanner::Source::new(content)
 }

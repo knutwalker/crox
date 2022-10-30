@@ -1,4 +1,4 @@
-use crate::token::Span;
+use crate::Span;
 use std::fmt::{Debug, Display};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -13,7 +13,7 @@ impl Expr {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq)]
 pub struct BoxedExpr {
     pub node: Box<Node<BoxedExpr>>,
     pub span: Span,
@@ -55,7 +55,7 @@ impl AstBuilder {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Ast {
     nodes: Vec<Node>,
 }
@@ -82,7 +82,7 @@ impl Resolve<Idx> for AstBuilder {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Node<T: Sized = Expr> {
     Literal(Literal),
     Unary(UnaryOp, T),
@@ -103,8 +103,8 @@ impl<T: Sized> Node<T> {
         Self::Literal(Literal::False)
     }
 
-    pub fn number() -> Self {
-        Self::Literal(Literal::Number)
+    pub fn number(num: f64) -> Self {
+        Self::Literal(Literal::Number(num))
     }
 
     pub fn string() -> Self {
@@ -198,12 +198,12 @@ impl Expr {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Literal {
     Nil,
     True,
     False,
-    Number,
+    Number(f64),
     String,
 }
 
@@ -364,10 +364,10 @@ mod tests {
     fn test_print() {
         let input = "-123 * (45.67)";
 
-        let neg = Node::number().into_boxed_expr(1..4);
+        let neg = Node::number(123.0).into_boxed_expr(1..4);
         let neg = Node::neg(neg).into_boxed_expr(0..4);
 
-        let group = Node::number().into_boxed_expr(8..13);
+        let group = Node::number(45.67).into_boxed_expr(8..13);
         let group = Node::group(group).into_boxed_expr(7..14);
 
         let ast = Node::mul(neg, group).into_boxed_expr(0..14);

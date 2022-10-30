@@ -1,10 +1,12 @@
-use crate::{Ast, AstBuilder, BinaryOp, Expr, Node, Resolve, Span, Token, TokenType, UnaryOp};
+use crate::{
+    Ast, AstBuilder, BinaryOp, CroxError, CroxErrorKind, Expr, Node, Range, Resolve, Result,
+    Source, Span, Token, TokenSet, TokenType, UnaryOp,
+};
 use std::iter::Peekable;
-use std::string::String;
-use TokenType::{String as TString, *};
+use TokenType::*;
 
 type Tok = (TokenType, Span);
-type Exp = Result<Expr, (String, Span)>;
+type Exp = Result<Expr, CroxError>;
 
 /// Book-flavored BNF-ish:
 ///
@@ -17,8 +19,11 @@ type Exp = Result<Expr, (String, Span)>;
 ///      unary := ( "!" | "-" ) unary | primary ;
 ///    primary := NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" ;
 /// ```
-pub fn parse(tokens: impl IntoIterator<Item = Token>) -> Result<(Vec<Expr>, Ast), (String, Span)> {
-    let mut parser = parser(tokens);
+pub fn parse(
+    source: Source<'_>,
+    tokens: impl IntoIterator<Item = Token>,
+) -> Result<(Vec<Expr>, Ast), CroxError> {
+    let mut parser = parser(source, tokens);
     let exprs = parser.by_ref().collect::<Result<Vec<_>, _>>()?;
     Ok((exprs, parser.into_ast()))
 }
@@ -34,7 +39,7 @@ pub fn parse(tokens: impl IntoIterator<Item = Token>) -> Result<(Vec<Expr>, Ast)
 ///      unary := ( "!" | "-" ) unary | primary ;
 ///    primary := NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" ;
 /// ```
-pub fn parser<I>(tokens: I) -> Parser<UnpackToken<I::IntoIter>>
+pub fn parser<I>(source: Source<'_>, tokens: I) -> Parser<UnpackToken<I::IntoIter>>
 where
     I: IntoIterator<Item = Token>,
 {
@@ -42,7 +47,7 @@ where
         inner: tokens.into_iter(),
     }
     .peekable();
-    Parser::new(tokens)
+    Parser::new(source, tokens)
 }
 
 /// Book-flavored BNF-ish:
@@ -56,7 +61,8 @@ where
 ///      unary := ( "!" | "-" ) unary | primary ;
 ///    primary := NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" ;
 /// ```
-pub struct Parser<T: Iterator<Item = Tok>> {
+pub struct Parser<'a, T: Iterator<Item = Tok>> {
+    source: Source<'a>,
     tokens: Peekable<T>,
     nodes: AstBuilder,
 }
@@ -78,9 +84,10 @@ macro_rules! rule {
     }};
 }
 
-impl<T: Iterator<Item = Tok>> Parser<T> {
-    fn new(tokens: Peekable<T>) -> Self {
+impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
+    fn new(source: Source<'a>, tokens: Peekable<T>) -> Self {
         Self {
+            source,
             tokens,
             nodes: AstBuilder::default(),
         }
@@ -91,7 +98,7 @@ impl<T: Iterator<Item = Tok>> Parser<T> {
     }
 }
 
-impl<T: Iterator<Item = Tok>> Resolve<Expr> for Parser<T> {
+impl<T: Iterator<Item = Tok>> Resolve<Expr> for Parser<'_, T> {
     type Output = Node;
 
     fn resolve(&self, context: &Expr) -> Self::Output {
@@ -99,7 +106,7 @@ impl<T: Iterator<Item = Tok>> Resolve<Expr> for Parser<T> {
     }
 }
 
-impl<T: Iterator<Item = Tok>> Parser<T> {
+impl<T: Iterator<Item = Tok>> Parser<'_, T> {
     /// expression := equality ;
     fn expression(&mut self) -> Exp {
         self.equality()
@@ -154,6 +161,10 @@ impl<T: Iterator<Item = Tok>> Parser<T> {
 
     ///    primary := NUMBER | STRING | "true" | "false" | "(" expression ")" ;
     fn primary(&mut self) -> Exp {
+        fn expected() -> TokenSet {
+            TokenSet::from_iter([LeftParen, String, Number, False, Nil, True])
+        }
+
         let (node, span) = match self.tokens.next() {
             Some((LeftParen, span)) => {
                 let inner = self.expression()?;
@@ -162,23 +173,44 @@ impl<T: Iterator<Item = Tok>> Parser<T> {
                         (Node::group(inner), Span::from(span.union(end_span)))
                     }
                     Some((typ, span)) => {
-                        return Err((format!("Unexpected token, expected ): {:?}", typ), span))
+                        let kind = CroxErrorKind::of((typ, RightParen));
+                        return Err(CroxError::new(kind, span));
                     }
-                    None => return Err(("Unclosed delimiter: (".into(), span)),
+                    None => {
+                        let kind = CroxErrorKind::UnclosedDelimiter {
+                            unclosed: LeftParen,
+                        };
+                        return Err(CroxError::new(kind, span));
+                    }
                 }
             }
-            Some((TString, span)) => (Node::string(), span),
-            Some((Number, span)) => (Node::number(), span),
+            Some((String, span)) => (Node::string(), span),
+            Some((Number, span)) => {
+                let range = Range::from(span);
+                let num = self.source.source.get(range).ok_or_else(|| {
+                    CroxError::new(CroxErrorKind::InvalidNumberLiteral { reason: None }, span)
+                })?;
+                let num = num.parse::<f64>().map_err(|err| {
+                    CroxError::new(
+                        CroxErrorKind::InvalidNumberLiteral { reason: Some(err) },
+                        span,
+                    )
+                })?;
+
+                (Node::number(num), span)
+            }
             Some((False, span)) => (Node::fals(), span),
             Some((Nil, span)) => (Node::nil(), span),
             Some((True, span)) => (Node::tru(), span),
             Some((typ, span)) => {
-                return Err((
-                    format!("Unexpected token, expected primary: {:?}", typ),
-                    span,
-                ))
+                let kind = CroxErrorKind::of((typ, expected()));
+                return Err(CroxError::new(kind, span));
             }
-            None => return Err(("Unexpected EOF".into(), Span::from(0..0))),
+            None => {
+                let kind = CroxErrorKind::of(expected());
+                let end = self.source.source.len();
+                return Err(CroxError::new(kind, end..end));
+            }
         };
 
         Ok(self.mk_expr(node, span))
@@ -190,15 +222,14 @@ impl<T: Iterator<Item = Tok>> Parser<T> {
     }
 }
 
-impl<T: Iterator<Item = Tok>> Iterator for Parser<T> {
+impl<T: Iterator<Item = Tok>> Iterator for Parser<'_, T> {
     type Item = Exp;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.expression() {
-            Ok(exp) => Some(Ok(exp)),
-            Err((reason, _span)) if reason == "Unexpected EOF" => None,
-            Err(e) => Some(Err(e)),
-        }
+        // check if we are at EOF since the previous iteration
+        // could have reported an 'unexpected EOI'
+        let _ = self.tokens.peek()?;
+        Some(self.expression())
     }
 }
 
@@ -222,7 +253,8 @@ mod tests {
     fn test_parse1() {
         use pretty_assertions::assert_eq;
 
-        // 6 / 3 - 1
+        let source = Source::new("6 / 3 - 1");
+
         let tokens = [
             Token::new(TokenType::Number, 0, 1),
             Token::new(TokenType::Slash, 2, 1),
@@ -231,16 +263,16 @@ mod tests {
             Token::new(TokenType::Number, 8, 1),
         ];
 
-        let (actual, ast) = parse(tokens).unwrap();
+        let (actual, ast) = parse(source, tokens).unwrap();
 
         let mut ast_builder = AstBuilder::default();
-        let lhs = ast_builder.add(Node::number()).into_expr(0..1);
-        let rhs = ast_builder.add(Node::number()).into_expr(4..5);
+        let lhs = ast_builder.add(Node::number(6.0)).into_expr(0..1);
+        let rhs = ast_builder.add(Node::number(3.0)).into_expr(4..5);
         let div = ast_builder
             .add(Node::binary(lhs, BinaryOp::Div, rhs))
             .into_expr(0..5);
 
-        let rhs = ast_builder.add(Node::number()).into_expr(8..9);
+        let rhs = ast_builder.add(Node::number(1.0)).into_expr(8..9);
         let sub = ast_builder
             .add(Node::binary(div, BinaryOp::Sub, rhs))
             .into_expr(0..9);
@@ -255,7 +287,8 @@ mod tests {
     fn test_parse2() {
         use pretty_assertions::assert_eq;
 
-        // 6 - 3 / 1
+        let source = Source::new("6 - 3 / 1");
+
         let tokens = [
             Token::new(TokenType::Number, 0, 1),
             Token::new(TokenType::Minus, 2, 1),
@@ -264,14 +297,14 @@ mod tests {
             Token::new(TokenType::Number, 8, 1),
         ];
 
-        let (actual, ast) = parse(tokens).unwrap();
+        let (actual, ast) = parse(source, tokens).unwrap();
 
         let mut ast_builder = AstBuilder::default();
 
-        let first = ast_builder.add(Node::number()).into_expr(0..1);
+        let first = ast_builder.add(Node::number(6.0)).into_expr(0..1);
 
-        let lhs = ast_builder.add(Node::number()).into_expr(4..5);
-        let rhs = ast_builder.add(Node::number()).into_expr(8..9);
+        let lhs = ast_builder.add(Node::number(3.0)).into_expr(4..5);
+        let rhs = ast_builder.add(Node::number(1.0)).into_expr(8..9);
         let div = ast_builder
             .add(Node::binary(lhs, BinaryOp::Div, rhs))
             .into_expr(4..9);

@@ -5,7 +5,7 @@ use std::{
     path::Path,
 };
 
-use crox::{CroxErrors, ScanError};
+use crox::{CroxError, CroxErrors};
 
 fn main() {
     if let Err(e) = run() {
@@ -66,7 +66,7 @@ fn repl() -> io::Result<()> {
 fn handle(line: &str) {
     let errs = Cell::new(Vec::new());
 
-    let report = |e: ScanError| {
+    let report = |e: CroxError| {
         let mut es = errs.take();
         es.push(e);
         errs.set(es);
@@ -82,17 +82,14 @@ fn handle(line: &str) {
         }
     });
 
-    let mut parser = crox::parser(tokens);
+    let mut parser = crox::parser(source, tokens);
 
     let exprs = parser
         .by_ref()
         .filter_map(|e| match e {
             Ok(e) => Some(e),
-            Err((msg, span)) => {
-                report(ScanError {
-                    kind: crox::ScanErrorKind::Other(msg),
-                    span: span.into(),
-                });
+            Err(e) => {
+                report(e);
                 None
             }
         })

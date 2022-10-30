@@ -1,6 +1,4 @@
-use crate::error::CroxErrors;
-
-use super::{Result, ScanError, ScanErrorKind, Token, TokenType};
+use super::{CroxError, CroxErrorKind, CroxErrors, Result, Token, TokenType};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Source<'a> {
@@ -33,7 +31,7 @@ impl<'a> Source<'a> {
 }
 
 impl<'a> IntoIterator for Source<'a> {
-    type Item = Result<Token, ScanError>;
+    type Item = Result<Token, CroxError>;
     type IntoIter = Scanner<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -59,7 +57,7 @@ impl<'a> From<Source<'a>> for Scanner<'a> {
 }
 
 impl<'a> Iterator for Scanner<'a> {
-    type Item = Result<Token, ScanError>;
+    type Item = Result<Token, CroxError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while !self.is_at_end() {
@@ -76,7 +74,7 @@ impl<'a> Scanner<'a> {
         self.input.is_empty()
     }
 
-    fn next_token(&mut self) -> Result<Option<Token>, ScanError> {
+    fn next_token(&mut self) -> Result<Option<Token>, CroxError> {
         let (token, rest) = self.next_lexeme();
 
         let typ = match token {
@@ -120,7 +118,8 @@ impl<'a> Scanner<'a> {
                 }
 
                 let input = token.chars().next();
-                return Err(self.error(token, rest, ScanErrorKind::UnexpectedInput(input)));
+                let kind = CroxErrorKind::of(input);
+                return Err(self.error(token, rest, kind));
             }
         };
 
@@ -151,7 +150,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn string(&mut self) -> Result<Token, ScanError> {
+    fn string(&mut self) -> Result<Token, CroxError> {
         let source = &self.input[1..];
         source
             .find('"')
@@ -161,7 +160,7 @@ impl<'a> Scanner<'a> {
                 self.advance(rest);
                 self.token(TokenType::String, string)
             })
-            .ok_or_else(|| self.error(self.input, "", ScanErrorKind::UnclosedStringLiteral))
+            .ok_or_else(|| self.error(self.input, "", CroxErrorKind::UnclosedStringLiteral))
     }
 
     fn number(&mut self) -> Option<Token> {
@@ -230,7 +229,7 @@ impl<'a> Scanner<'a> {
         token(typ, lexeme, self.source.source)
     }
 
-    fn error(&mut self, lexeme: &'a str, rest: &'a str, kind: ScanErrorKind) -> ScanError {
+    fn error(&mut self, lexeme: &'a str, rest: &'a str, kind: CroxErrorKind) -> CroxError {
         self.advance(rest);
         error(lexeme, self.source.source, kind)
     }
@@ -242,11 +241,11 @@ fn token<'a>(typ: TokenType, token: &'a str, source: &'a str) -> Token {
     Token::new(typ, offset, len)
 }
 
-fn error<'a>(input: &'a str, source: &'a str, kind: ScanErrorKind) -> ScanError {
+fn error<'a>(input: &'a str, source: &'a str, kind: CroxErrorKind) -> CroxError {
     let offset = offset_from(input, source);
     let len = input.len().min(1);
     let span = offset..(offset + len);
-    ScanError { kind, span }
+    CroxError { kind, span }
 }
 
 fn offset_from<'a>(input: &'a str, source: &'a str) -> usize {
@@ -272,14 +271,12 @@ mod chum {
                         .into_iter()
                         .map(|err| {
                             let kind = match err.reason() {
-                                SimpleReason::Unexpected => {
-                                    ScanErrorKind::UnexpectedInput(err.found().copied())
-                                }
+                                SimpleReason::Unexpected => CroxErrorKind::of(err.found().copied()),
                                 SimpleReason::Unclosed { .. } => todo!(),
-                                SimpleReason::Custom(msg) => ScanErrorKind::Other(msg.clone()),
+                                SimpleReason::Custom(msg) => CroxErrorKind::Other(msg.clone()),
                             };
 
-                            ScanError {
+                            CroxError {
                                 span: err.span(),
                                 kind,
                             }
@@ -369,20 +366,20 @@ mod no {
     }
 
     impl<'a> Source<'a> {
-        fn convert_err(&self, err: NErr<&'a str>) -> ScanError {
+        fn convert_err(&self, err: NErr<&'a str>) -> CroxError {
             match err.code {
                 ErrorKind::Eof => error(
                     err.input,
                     self.source,
-                    ScanErrorKind::UnexpectedInput(err.input.chars().next()),
+                    CroxErrorKind::of(err.input.chars().next()),
                 ),
                 ErrorKind::Char | ErrorKind::TakeUntil => {
-                    error(err.input, self.source, ScanErrorKind::UnclosedStringLiteral)
+                    error(err.input, self.source, CroxErrorKind::UnclosedStringLiteral)
                 }
                 _ => error(
                     err.input,
                     self.source,
-                    ScanErrorKind::Other(err.to_string()),
+                    CroxErrorKind::Other(err.to_string()),
                 ),
             }
         }
@@ -494,7 +491,7 @@ mod tests {
             .into_iter()
             .collect::<Result<Vec<_>, _>>()
             .unwrap_err();
-        assert_eq!(err.kind, ScanErrorKind::UnexpectedInput(Some('[')));
+        assert_eq!(err.kind, CroxErrorKind::UnexpectedInput { input: '[' });
         assert_eq!(err.span, 4..5);
     }
 
@@ -505,7 +502,7 @@ mod tests {
             .into_iter()
             .collect::<Result<Vec<_>, _>>()
             .unwrap_err();
-        assert_eq!(err.kind, ScanErrorKind::UnclosedStringLiteral);
+        assert_eq!(err.kind, CroxErrorKind::UnclosedStringLiteral);
         assert_eq!(err.span, 4..5);
     }
 }
