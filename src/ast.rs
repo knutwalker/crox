@@ -13,7 +13,7 @@ impl Expr {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct BoxedExpr {
     pub node: Box<Node<BoxedExpr>>,
     pub span: Span,
@@ -308,6 +308,14 @@ impl Display for BinaryOp {
             Self::Mul => f.write_str("*"),
             Self::Div => f.write_str("/"),
         }
+    }
+}
+
+impl Debug for BoxedExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(&self.node, f)?;
+        f.write_str(" @ ")?;
+        Debug::fmt(&self.span, f)
     }
 }
 
