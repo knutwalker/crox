@@ -222,6 +222,21 @@ impl<T: Iterator<Item = Tok>> Parser<'_, T> {
     }
 }
 
+impl<T: Iterator<Item = Tok>> Parser<'_, T> {
+    fn _synchronize(&mut self) {
+        while let Some((tok, _)) = self.tokens.peek() {
+            match *tok {
+                Semicolon => {
+                    let _ = self.tokens.next();
+                    break;
+                }
+                Class | Fun | For | If | Print | Return | Var | While => break,
+                _ => {}
+            }
+        }
+    }
+}
+
 impl<T: Iterator<Item = Tok>> Iterator for Parser<'_, T> {
     type Item = Exp;
 
