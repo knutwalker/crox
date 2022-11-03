@@ -12,7 +12,7 @@ pub use ast::{
     Associate, Associativity, Ast, AstBuilder, BinaryOp, BoxedExpr, Expr, Idx, Literal, Node,
     OpGroup, Precedence, Resolve, UnaryOp,
 };
-pub use error::{CroxError, CroxErrorKind, CroxErrors, Result};
+pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
 pub use eval::{eval, Type, TypeSet, Value, ValueExpr};
 pub use parser::{parse, parser, Parser};
 pub use scanner::{Scanner, Source};

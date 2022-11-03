@@ -28,6 +28,16 @@ impl From<(&str, Vec<CroxError>)> for CroxErrors {
     }
 }
 
+impl CroxErrors {
+    pub fn scope(&self) -> CroxErrorScope {
+        self.scan
+            .iter()
+            .map(|e| CroxErrorScope::from(&e.kind))
+            .max()
+            .unwrap_or(CroxErrorScope::Custom)
+    }
+}
+
 impl Display for CroxErrors {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if cfg!(feature = "fancy") {
@@ -204,6 +214,30 @@ impl Display for CroxErrorKind {
 }
 
 impl StdError for CroxErrorKind {}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CroxErrorScope {
+    Custom,
+    Scanner,
+    Parser,
+    Interpreter,
+}
+
+impl From<&CroxErrorKind> for CroxErrorScope {
+    fn from(kind: &CroxErrorKind) -> Self {
+        match kind {
+            CroxErrorKind::UnexpectedInput { .. }
+            | CroxErrorKind::UnexpectedEndOfInput { expected: None }
+            | CroxErrorKind::UnclosedStringLiteral => Self::Scanner,
+            CroxErrorKind::UnexpectedEndOfInput { expected: Some(_) }
+            | CroxErrorKind::UnexpectedToken { .. }
+            | CroxErrorKind::UnclosedDelimiter { .. }
+            | CroxErrorKind::InvalidNumberLiteral { .. } => Self::Parser,
+            CroxErrorKind::InvalidType { .. } => Self::Interpreter,
+            CroxErrorKind::Other(_) => Self::Custom,
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct SourceScanError<'a> {

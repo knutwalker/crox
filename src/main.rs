@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use crox::{Ast, CroxErrors, ValueExpr};
+use crox::{Ast, CroxErrorScope, CroxErrors, ValueExpr};
 
 fn main() {
     if let Err(e) = run() {
@@ -25,8 +25,13 @@ fn run() -> io::Result<()> {
         Some(file) => match run_file(file)? {
             Ok(_) => {}
             Err(e) => {
+                let scope = e.scope();
                 report_error(e);
-                std::process::exit(65)
+                let exit_code = match scope {
+                    CroxErrorScope::Custom | CroxErrorScope::Scanner | CroxErrorScope::Parser => 65,
+                    CroxErrorScope::Interpreter => 70,
+                };
+                std::process::exit(exit_code)
             }
         },
         None => repl()?,
