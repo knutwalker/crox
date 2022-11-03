@@ -53,8 +53,6 @@ fn repl() -> io::Result<()> {
         line.clear();
         io::stdin().read_line(&mut line)?;
 
-        let line = line.trim();
-
         if line.is_empty() {
             break;
         }
