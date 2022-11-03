@@ -3,6 +3,7 @@ mod error;
 mod parser;
 mod scanner;
 mod token;
+mod util;
 
 use std::cell::Cell;
 
@@ -14,6 +15,7 @@ pub use error::{CroxError, CroxErrorKind, CroxErrors, Result};
 pub use parser::{parse, parser, Parser};
 pub use scanner::{Scanner, Source};
 pub use token::{Range, Span, Token, TokenSet, TokenType};
+pub use util::{EnumSet, ValueEnum};
 
 pub fn run(content: &str) -> Result<(Vec<Expr>, Ast)> {
     let errs = Cell::new(Vec::new());
