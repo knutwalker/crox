@@ -39,35 +39,33 @@ pub fn run(content: &str) -> Result<(Vec<ValueExpr>, Ast)> {
     });
 
     let mut parser = parser(source, tokens);
+    let mut values = Vec::new();
 
-    let exprs = parser
-        .by_ref()
-        .filter_map(|e| match e {
-            Ok(e) => Some(e),
+    while let Some(expr) = parser.next() {
+        let expr = match expr {
+            Ok(e) => e,
             Err(e) => {
                 report(e);
-                None
+                continue;
             }
-        })
-        .collect::<Vec<_>>();
+        };
+        let val = eval(&parser, expr);
+        let val = match val {
+            Ok(val) => val,
+            Err(e) => {
+                report(e);
+                continue;
+            }
+        };
+
+        values.push(val);
+    }
 
     let ast = parser.into_ast();
-
-    let exprs = exprs
-        .into_iter()
-        .filter_map(|e| match eval(&ast, e) {
-            Ok(val) => Some(val),
-            Err(e) => {
-                report(e);
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
     let errs = errs.into_inner();
 
     if errs.is_empty() {
-        Ok((exprs, ast))
+        Ok((values, ast))
     } else {
         Err(CroxErrors::from((source.source, errs)))
     }
