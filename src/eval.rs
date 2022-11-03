@@ -15,12 +15,12 @@ pub fn eval<'a, R: Resolve<'a>>(resolver: &R, expr: Expr) -> Result<ValueExpr, C
             let lhs = eval(resolver, lhs_expr)?;
             let rhs = eval(resolver, rhs_expr)?;
             match op {
-                crate::BinaryOp::Equals => lhs.eq(&rhs),
-                crate::BinaryOp::NotEquals => lhs.not_eq(&rhs),
-                crate::BinaryOp::LessThan => lhs.lt(&rhs),
-                crate::BinaryOp::LessThanOrEqual => lhs.lte(&rhs),
-                crate::BinaryOp::GreaterThan => lhs.gt(&rhs),
-                crate::BinaryOp::GreaterThanOrEqual => lhs.gte(&rhs),
+                crate::BinaryOp::Equals => Ok(lhs.eq(&rhs)),
+                crate::BinaryOp::NotEquals => Ok(lhs.not_eq(&rhs)),
+                crate::BinaryOp::LessThan => Ok(lhs.lt(&rhs)),
+                crate::BinaryOp::LessThanOrEqual => Ok(lhs.lte(&rhs)),
+                crate::BinaryOp::GreaterThan => Ok(lhs.gt(&rhs)),
+                crate::BinaryOp::GreaterThanOrEqual => Ok(lhs.gte(&rhs)),
                 crate::BinaryOp::Add => lhs.add(&rhs),
                 crate::BinaryOp::Sub => lhs.sub(&rhs),
                 crate::BinaryOp::Mul => lhs.mul(&rhs),
@@ -88,19 +88,6 @@ impl ValueExpr {
         }
     }
 
-    fn as_bool(&self) -> Result<bool, CroxError> {
-        match &self.value {
-            Value::Bool(b) => Ok(*b),
-            otherwise => Err(CroxError::new(
-                CroxErrorKind::InvalidType {
-                    expected: TypeSet::from(Type::Bool),
-                    actual: otherwise.typ(),
-                },
-                self.expr.span,
-            )),
-        }
-    }
-
     fn coerce_bool(&self) -> bool {
         match &self.value {
             Value::Bool(b) => *b,
@@ -140,34 +127,34 @@ impl ValueExpr {
         Self::num_op(self, rhs, |lhs, rhs| lhs / rhs)
     }
 
-    fn eq(&self, other: &Self) -> Result<Value, CroxError> {
-        self.cmp(other)
-            .map(|ord| Value::Bool(ord.map_or(false, |ord| ord == Ordering::Equal)))
+    fn eq(&self, other: &Self) -> Value {
+        Value::Bool(self.cmp(other).map_or(false, |ord| ord == Ordering::Equal))
     }
 
-    fn not_eq(&self, other: &Self) -> Result<Value, CroxError> {
-        self.cmp(other)
-            .map(|ord| Value::Bool(ord.map_or(false, |ord| ord != Ordering::Equal)))
+    fn not_eq(&self, other: &Self) -> Value {
+        Value::Bool(self.cmp(other).map_or(false, |ord| ord != Ordering::Equal))
     }
 
-    fn lt(&self, other: &Self) -> Result<Value, CroxError> {
-        self.cmp(other)
-            .map(|ord| Value::Bool(ord.map_or(false, |ord| ord == Ordering::Less)))
+    fn lt(&self, other: &Self) -> Value {
+        Value::Bool(self.cmp(other).map_or(false, |ord| ord == Ordering::Less))
     }
 
-    fn gt(&self, other: &Self) -> Result<Value, CroxError> {
-        self.cmp(other)
-            .map(|ord| Value::Bool(ord.map_or(false, |ord| ord == Ordering::Greater)))
+    fn gt(&self, other: &Self) -> Value {
+        Value::Bool(
+            self.cmp(other)
+                .map_or(false, |ord| ord == Ordering::Greater),
+        )
     }
 
-    fn lte(&self, other: &Self) -> Result<Value, CroxError> {
-        self.cmp(other)
-            .map(|ord| Value::Bool(ord.map_or(false, |ord| ord != Ordering::Greater)))
+    fn lte(&self, other: &Self) -> Value {
+        Value::Bool(
+            self.cmp(other)
+                .map_or(false, |ord| ord != Ordering::Greater),
+        )
     }
 
-    fn gte(&self, other: &Self) -> Result<Value, CroxError> {
-        self.cmp(other)
-            .map(|ord| Value::Bool(ord.map_or(false, |ord| ord != Ordering::Less)))
+    fn gte(&self, other: &Self) -> Value {
+        Value::Bool(self.cmp(other).map_or(false, |ord| ord != Ordering::Less))
     }
 
     fn op(
@@ -205,20 +192,13 @@ impl ValueExpr {
         Ok(Value::Number(num_op(lhs, rhs)))
     }
 
-    fn cmp(&self, other: &Self) -> Result<Option<Ordering>, CroxError> {
+    fn cmp(&self, other: &Self) -> Option<Ordering> {
         match (&self.value, &other.value) {
-            (Value::Number(n), Value::Number(o)) => Ok(n.partial_cmp(o)),
-            (Value::Str(s), Value::Str(o)) => Ok(s.partial_cmp(o)),
-            (Value::Bool(b), Value::Bool(o)) => Ok(b.partial_cmp(o)),
-            (Value::Nil, Value::Nil) => Ok(Some(Ordering::Equal)),
-            _ => Ok(None),
-            // (lhs, rhs) => Err(CroxError::new(
-            //     CroxErrorKind::InvalidType {
-            //         expected: TypeSet::from(lhs.typ()),
-            //         actual: rhs.typ(),
-            //     },
-            //     self.expr.span,
-            // )),
+            (Value::Number(n), Value::Number(o)) => n.partial_cmp(o),
+            (Value::Str(s), Value::Str(o)) => s.partial_cmp(o),
+            (Value::Bool(b), Value::Bool(o)) => b.partial_cmp(o),
+            (Value::Nil, Value::Nil) => Some(Ordering::Equal),
+            _ => None,
         }
     }
 }
