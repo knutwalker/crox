@@ -1,3 +1,5 @@
+use crate::Range;
+
 use super::{CroxError, CroxErrorKind, CroxErrors, Result, Token, TokenType};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -8,6 +10,10 @@ pub struct Source<'a> {
 impl<'a> Source<'a> {
     pub fn new(source: &'a str) -> Self {
         Self { source }
+    }
+
+    pub fn slice(&self, range: impl Into<Range>) -> &'a str {
+        &self.source[range.into()]
     }
 }
 

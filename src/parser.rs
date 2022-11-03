@@ -1,5 +1,5 @@
 use crate::{
-    Ast, AstBuilder, BinaryOp, CroxError, CroxErrorKind, Expr, Node, Range, Resolve, Result,
+    Ast, AstBuilder, BinaryOp, CroxError, CroxErrorKind, Expr, Idx, Node, Range, Resolve, Result,
     Source, Span, Token, TokenSet, TokenType, UnaryOp,
 };
 use std::iter::Peekable;
@@ -64,7 +64,7 @@ where
 pub struct Parser<'a, T: Iterator<Item = Tok>> {
     source: Source<'a>,
     tokens: Peekable<T>,
-    nodes: AstBuilder,
+    nodes: AstBuilder<'a>,
 }
 
 macro_rules! rule {
@@ -93,20 +93,18 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
         }
     }
 
-    pub fn into_ast(self) -> Ast {
+    pub fn into_ast(self) -> Ast<'a> {
         self.nodes.build()
     }
 }
 
-impl<T: Iterator<Item = Tok>> Resolve<Expr> for Parser<'_, T> {
-    type Output = Node;
-
-    fn resolve(&self, context: &Expr) -> Self::Output {
-        self.nodes.resolve(&context.idx)
+impl<'a, T: Iterator<Item = Tok>> Resolve<'a> for Parser<'a, T> {
+    fn resolve(&self, context: &Idx) -> Node<'a> {
+        self.nodes.resolve(context)
     }
 }
 
-impl<T: Iterator<Item = Tok>> Parser<'_, T> {
+impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
     /// expression := equality ;
     fn expression(&mut self) -> Exp {
         self.equality()
@@ -184,7 +182,10 @@ impl<T: Iterator<Item = Tok>> Parser<'_, T> {
                     }
                 }
             }
-            Some((String, span)) => (Node::string(), span),
+            Some((String, span)) => {
+                let string = self.source.slice(span);
+                (Node::string(string), span)
+            }
             Some((Number, span)) => {
                 let range = Range::from(span);
                 let num = self.source.source.get(range).ok_or_else(|| {
@@ -216,7 +217,7 @@ impl<T: Iterator<Item = Tok>> Parser<'_, T> {
         Ok(self.mk_expr(node, span))
     }
 
-    fn mk_expr(&mut self, node: Node, span: impl Into<Span>) -> Expr {
+    fn mk_expr(&mut self, node: Node<'a>, span: impl Into<Span>) -> Expr {
         let idx = self.nodes.add(node);
         Expr::new(idx, span.into())
     }

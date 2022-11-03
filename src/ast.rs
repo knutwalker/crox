@@ -14,13 +14,13 @@ impl Expr {
 }
 
 #[derive(Clone, PartialEq)]
-pub struct BoxedExpr {
-    pub node: Box<Node<BoxedExpr>>,
+pub struct BoxedExpr<'a> {
+    pub node: Box<Node<'a, BoxedExpr<'a>>>,
     pub span: Span,
 }
 
-impl BoxedExpr {
-    pub fn new(node: Box<Node<Self>>, span: Span) -> Self {
+impl<'a> BoxedExpr<'a> {
+    pub fn new(node: Box<Node<'a, Self>>, span: Span) -> Self {
         Self { node, span }
     }
 }
@@ -35,62 +35,56 @@ impl Idx {
     }
 }
 #[derive(Clone, Debug, Default)]
-pub struct AstBuilder {
-    nodes: Vec<Node>,
+pub struct AstBuilder<'a> {
+    nodes: Vec<Node<'a>>,
 }
 
-impl AstBuilder {
+impl<'a> AstBuilder<'a> {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn add(&mut self, node: Node) -> Idx {
+    pub fn add(&mut self, node: Node<'a>) -> Idx {
         let idx = self.nodes.len();
         self.nodes.push(node);
         Idx(idx)
     }
 
-    pub fn build(self) -> Ast {
+    pub fn build(self) -> Ast<'a> {
         Ast { nodes: self.nodes }
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Ast {
-    nodes: Vec<Node>,
+pub struct Ast<'a> {
+    nodes: Vec<Node<'a>>,
 }
 
-pub trait Resolve<C> {
-    type Output;
-
-    fn resolve(&self, context: &C) -> Self::Output;
+pub trait Resolve<'a, C = Idx> {
+    fn resolve(&self, context: &C) -> Node<'a>;
 }
 
-impl Resolve<Idx> for Ast {
-    type Output = Node;
-
-    fn resolve(&self, context: &Idx) -> Self::Output {
+impl<'a> Resolve<'a> for Ast<'a> {
+    fn resolve(&self, context: &Idx) -> Node<'a> {
         self.nodes[context.0]
     }
 }
 
-impl Resolve<Idx> for AstBuilder {
-    type Output = Node;
-
-    fn resolve(&self, context: &Idx) -> Self::Output {
+impl<'a> Resolve<'a> for AstBuilder<'a> {
+    fn resolve(&self, context: &Idx) -> Node<'a> {
         self.nodes[context.0]
     }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Node<T: Sized = Expr> {
-    Literal(Literal),
+pub enum Node<'a, T: Sized = Expr> {
+    Literal(Literal<'a>),
     Unary(UnaryOp, T),
     Binary(T, BinaryOp, T),
     Group(T),
 }
 
-impl<T: Sized> Node<T> {
+impl<'a, T: Sized> Node<'a, T> {
     pub fn nil() -> Self {
         Self::Literal(Literal::Nil)
     }
@@ -107,8 +101,8 @@ impl<T: Sized> Node<T> {
         Self::Literal(Literal::Number(num))
     }
 
-    pub fn string() -> Self {
-        Self::Literal(Literal::String)
+    pub fn string(s: &'a str) -> Self {
+        Self::Literal(Literal::String(s))
     }
 
     pub fn neg(expr: T) -> Self {
@@ -171,7 +165,7 @@ impl<T: Sized> Node<T> {
         Self::Group(expr)
     }
 
-    pub fn map<U>(self, mut f: impl FnMut(T) -> U) -> Node<U> {
+    pub fn map<U>(self, mut f: impl FnMut(T) -> U) -> Node<'a, U> {
         match self {
             Self::Literal(lit) => Node::Literal(lit),
             Self::Unary(op, expr) => Node::Unary(op, f(expr)),
@@ -181,17 +175,14 @@ impl<T: Sized> Node<T> {
     }
 }
 
-impl Node<BoxedExpr> {
-    pub fn into_boxed_expr(self, range: impl Into<Span>) -> BoxedExpr {
+impl<'a> Node<'a, BoxedExpr<'a>> {
+    pub fn into_boxed_expr(self, range: impl Into<Span>) -> BoxedExpr<'a> {
         BoxedExpr::new(Box::new(self), range.into())
     }
 }
 
 impl Expr {
-    pub fn resolve<R>(self, resolver: &R) -> BoxedExpr
-    where
-        R: Resolve<Idx, Output = Node>,
-    {
+    pub fn resolve<'a, R: Resolve<'a>>(self, resolver: &'a R) -> BoxedExpr {
         let node = resolver.resolve(&self.idx);
         let node = node.map(|e| e.resolve(resolver));
         node.into_boxed_expr(self.span)
@@ -199,12 +190,12 @@ impl Expr {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Literal {
+pub enum Literal<'a> {
     Nil,
     True,
     False,
     Number(f64),
-    String,
+    String(&'a str),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -311,7 +302,7 @@ impl Display for BinaryOp {
     }
 }
 
-impl Debug for BoxedExpr {
+impl Debug for BoxedExpr<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(&self.node, f)?;
         f.write_str(" @ ")?;
@@ -332,11 +323,11 @@ fn print_expr(expr: BoxedExpr, source: &str) -> String {
         }
     }
 
-    fn parens(
-        source: &str,
+    fn parens<'a>(
+        source: &'a str,
         res: &mut String,
         name: impl Display,
-        exprs: impl IntoIterator<Item = BoxedExpr>,
+        exprs: impl IntoIterator<Item = BoxedExpr<'a>>,
     ) {
         use std::fmt::Write;
 
