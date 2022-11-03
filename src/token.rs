@@ -73,6 +73,8 @@ impl From<&str> for TokenType {
 
 pub type Range = std::ops::Range<usize>;
 
+pub type Spanned<T> = (T, Span);
+
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct Span {
     pub offset: usize,

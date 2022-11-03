@@ -1,5 +1,6 @@
 mod ast;
 mod error;
+mod eval;
 mod parser;
 mod scanner;
 mod token;
@@ -12,12 +13,13 @@ pub use ast::{
     OpGroup, Precedence, Resolve, UnaryOp,
 };
 pub use error::{CroxError, CroxErrorKind, CroxErrors, Result};
+pub use eval::{eval, Type, TypeSet, Value, ValueExpr};
 pub use parser::{parse, parser, Parser};
 pub use scanner::{Scanner, Source};
-pub use token::{Range, Span, Token, TokenSet, TokenType};
+pub use token::{Range, Span, Spanned, Token, TokenSet, TokenType};
 pub use util::{EnumSet, ValueEnum};
 
-pub fn run(content: &str) -> Result<(Vec<Expr>, Ast)> {
+pub fn run(content: &str) -> Result<(Vec<ValueExpr>, Ast)> {
     let errs = Cell::new(Vec::new());
 
     let report = |e: CroxError| {
@@ -50,6 +52,18 @@ pub fn run(content: &str) -> Result<(Vec<Expr>, Ast)> {
         .collect::<Vec<_>>();
 
     let ast = parser.into_ast();
+
+    let exprs = exprs
+        .into_iter()
+        .filter_map(|e| match eval(&ast, e) {
+            Ok(val) => Some(val),
+            Err(e) => {
+                report(e);
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
     let errs = errs.into_inner();
 
     if errs.is_empty() {

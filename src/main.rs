@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use crox::{Ast, CroxErrors, Expr};
+use crox::{Ast, CroxErrors, ValueExpr};
 
 fn main() {
     if let Err(e) = run() {

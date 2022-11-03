@@ -1,4 +1,4 @@
-use crate::{Range, TokenSet, TokenType};
+use crate::{Range, TokenSet, TokenType, Type, TypeSet};
 use std::{
     error::Error as StdError,
     fmt::{Debug, Display},
@@ -105,6 +105,9 @@ pub enum CroxErrorKind {
     },
 
     #[cfg_attr(feature = "fancy", diagnostic())]
+    InvalidType { expected: TypeSet, actual: Type },
+
+    #[cfg_attr(feature = "fancy", diagnostic())]
     Other(String),
 }
 
@@ -187,6 +190,13 @@ impl Display for CroxErrorKind {
                 reason: Some(reason),
             } => {
                 write!(f, "Invalid number literal: {}", reason)
+            }
+            Self::InvalidType { expected, actual } => {
+                write!(
+                    f,
+                    "Invalid type: expected one of {:?}, got {:?}",
+                    expected, actual
+                )
             }
             Self::Other(msg) => write!(f, "{}", msg),
         }
