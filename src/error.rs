@@ -75,10 +75,11 @@ impl CroxError {
 
 impl Display for CroxError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if cfg!(not(feature = "fancy")) {
-            write!(f, "[offset {:?}] Error: {}", self.span, self.kind)?;
+        if cfg!(feature = "fancy") {
+            f.write_str(self.kind.prefix().trim_end_matches(": "))
+        } else {
+            write!(f, "[offset {:?}] Error: {}", self.span, self.kind)
         }
-        Ok(())
     }
 }
 
@@ -168,48 +169,66 @@ impl From<(TokenType, TokenType)> for CroxErrorKind {
     }
 }
 
+impl CroxErrorKind {
+    fn prefix(&self) -> &'static str {
+        match self {
+            Self::UnexpectedInput { .. } => "Unexpected character: ",
+            Self::UnexpectedEndOfInput { expected: Some(_) } => "Unexpected end of input: ",
+            Self::UnexpectedEndOfInput { expected: None } => "Unexpected end of input",
+            Self::UnclosedStringLiteral => "Unterminated string",
+            Self::UnexpectedToken { .. } => "Unexpected token: ",
+            Self::UnclosedDelimiter { .. } => "Unclosed delimiter: ",
+            Self::InvalidNumberLiteral { reason: None } => "Invalid number literal",
+            Self::InvalidNumberLiteral { reason: Some(_) } => "Invalid number literal: ",
+            Self::InvalidType { .. } => "Invalid type: ",
+            Self::Other(_) => "Error: ",
+        }
+    }
+}
+
 impl Display for CroxErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if !cfg!(feature = "fancy") {
+            f.write_str(self.prefix())?;
+        }
+
         match self {
             Self::UnexpectedInput { input } => {
-                write!(f, "Unexpected character: {}", input)
+                write!(f, "{}", input)?;
             }
-            Self::UnexpectedEndOfInput { expected: None } => write!(f, "Unexpected end of input"),
-            Self::UnexpectedEndOfInput {
-                expected: Some(expected),
-            } => write!(
-                f,
-                "Unexpected end of input, expected one of: {:?}",
-                expected
-            ),
-            Self::UnclosedStringLiteral => write!(f, "Unterminated string"),
+            Self::UnexpectedEndOfInput { expected: Some(e) } if e.len() > 1 => {
+                write!(f, "expected one of: {:?}", e)?;
+            }
+            Self::UnexpectedEndOfInput { expected: Some(e) } => {
+                write!(f, "expected {:?}", e)?;
+            }
+            Self::UnexpectedEndOfInput { expected: None } => {}
+            Self::UnclosedStringLiteral => {}
+            Self::UnexpectedToken { expected, actual } if expected.len() > 1 => {
+                write!(f, "expected one of {:?}, got `{:?}`", expected, actual)?;
+            }
             Self::UnexpectedToken { expected, actual } => {
-                write!(
-                    f,
-                    "Unexpected token `{:?}`, expected one of: {:?}",
-                    actual, expected
-                )
+                write!(f, "expected {:?}, got `{:?}`", expected, actual)?;
             }
             Self::UnclosedDelimiter { unclosed } => {
-                write!(f, "Unclosed delimiter: {:?}", unclosed)
+                write!(f, "{:?}", unclosed)?;
             }
-            Self::InvalidNumberLiteral { reason: None } => {
-                write!(f, "Invalid number literal")
+            Self::InvalidNumberLiteral { reason: None } => {}
+            Self::InvalidNumberLiteral { reason: Some(r) } => {
+                write!(f, "{}", r)?;
             }
-            Self::InvalidNumberLiteral {
-                reason: Some(reason),
-            } => {
-                write!(f, "Invalid number literal: {}", reason)
+            Self::InvalidType { expected, actual } if expected.len() > 1 => {
+                write!(f, "expected one of {:?}, got {:?}", expected, actual)?;
             }
             Self::InvalidType { expected, actual } => {
-                write!(
-                    f,
-                    "Invalid type: expected one of {:?}, got {:?}",
-                    expected, actual
-                )
+                write!(f, "expected {:?}, got {:?}", expected, actual)?;
             }
-            Self::Other(msg) => write!(f, "{}", msg),
+            Self::Other(msg) => {
+                write!(f, "{}", msg)?;
+            }
         }
+
+        Ok(())
     }
 }
 
