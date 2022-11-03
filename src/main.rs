@@ -37,11 +37,13 @@ fn run() -> io::Result<()> {
 
 fn run_file(file: impl AsRef<Path>) -> io::Result<crox::Result> {
     let content = fs::read_to_string(file)?;
-    let res = crox::run(&content).map(report_ok);
+    let res = crox::run(&content).map(|exprs| report_ok(false, exprs));
     Ok(res)
 }
 
 fn repl() -> io::Result<()> {
+    let verbose = std::env::var_os("CROX_VERBOSE").is_some();
+
     let mut line = String::new();
 
     loop {
@@ -57,23 +59,27 @@ fn repl() -> io::Result<()> {
             break;
         }
 
-        handle(line);
+        handle(verbose, line.trim());
     }
 
     Ok(())
 }
 
-fn handle(line: &str) {
+fn handle(verbose: bool, line: &str) {
     match crox::run(line) {
-        Ok(res) => report_ok(res),
+        Ok(res) => report_ok(verbose, res),
         Err(e) => report_error(e),
     }
 }
 
-fn report_ok((exprs, ast): (Vec<Expr>, Ast)) {
-    for expr in exprs {
-        let expr = expr.resolve(&ast);
-        println!("{:#?}", expr);
+fn report_ok(verbose: bool, (exprs, ast): (Vec<ValueExpr>, Ast)) {
+    for value in exprs {
+        if verbose {
+            let expr = value.expr.resolve(&ast);
+            println!("{:#?}", expr);
+            println!("{:#?}", value);
+        }
+        println!("{}", value.value);
     }
 }
 
