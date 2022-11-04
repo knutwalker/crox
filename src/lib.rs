@@ -1,25 +1,31 @@
 mod ast;
 mod error;
 mod eval;
+mod expr;
 mod parser;
 mod scanner;
 mod token;
+mod typer;
 mod util;
 
 use std::cell::Cell;
 
 pub use ast::{
-    Associate, Associativity, Ast, AstBuilder, BinaryOp, BoxedExpr, Expr, Idx, Literal, Node,
-    OpGroup, Precedence, Resolve, UnaryOp,
+    Ast, TypedAst, TypedAstBuilder, UntypedAst, UntypedAstBuilder, ValuedAst, ValuedAstBuilder,
 };
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
-pub use eval::{eval, Type, TypeSet, Value, ValueExpr};
+pub use eval::{eval, eval_ast, eval_expr, Value, ValueExpr};
+pub use expr::{
+    Associate, Associativity, BinaryOp, BoxedExpr, Expr, Idx, Literal, Node, OpGroup, Precedence,
+    Resolve, UnaryOp,
+};
 pub use parser::{parse, parser, Parser};
 pub use scanner::{Scanner, Source};
 pub use token::{Range, Span, Spanned, Token, TokenSet, TokenType};
+pub use typer::{type_ast, type_ast_with, type_check, type_expr, Type, TypeSet};
 pub use util::{EnumSet, ValueEnum};
 
-pub fn run(content: &str) -> Result<(Vec<ValueExpr>, Ast)> {
+pub fn run(content: &str) -> Result<Ast, CroxErrors> {
     let errs = Cell::new(Vec::new());
 
     let report = |e: CroxError| {
@@ -28,44 +34,35 @@ pub fn run(content: &str) -> Result<(Vec<ValueExpr>, Ast)> {
         errs.set(es);
     };
 
-    let source = scan(content);
-
-    let tokens = source.into_iter().filter_map(|t| match t {
-        Ok(t) => Some(t),
-        Err(e) => {
-            report(e);
-            None
-        }
-    });
-
-    let mut parser = parser(source, tokens);
-    let mut values = Vec::new();
-
-    while let Some(expr) = parser.next() {
-        let expr = match expr {
-            Ok(e) => e,
-            Err(e) => {
-                report(e);
-                continue;
+    macro_rules! t {
+        ($e:expr) => {
+            match $e {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    report(e);
+                    None
+                }
             }
         };
-        let val = eval(&parser, expr);
-        let val = match val {
-            Ok(val) => val,
-            Err(e) => {
-                report(e);
-                continue;
-            }
-        };
-
-        values.push(val);
     }
 
-    let ast = parser.into_ast();
-    let errs = errs.into_inner();
+    let source = scan(content);
 
+    let tokens = source.into_iter().filter_map(|t| t!(t));
+
+    let mut parser = parser(source, tokens);
+
+    #[allow(clippy::needless_collect)]
+    let exprs = parser.by_ref().filter_map(|t| t!(t)).collect::<Vec<_>>();
+
+    let ast = parser.into_ast();
+    let ast = type_ast_with(ast, report);
+
+    let errs = errs.into_inner();
     if errs.is_empty() {
-        Ok((values, ast))
+        let ast = eval_ast(ast);
+        let ast = Ast::new(exprs, ast);
+        Ok(ast)
     } else {
         Err(CroxErrors::from((source.source, errs)))
     }

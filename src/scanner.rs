@@ -18,7 +18,7 @@ impl<'a> Source<'a> {
 }
 
 impl<'a> Source<'a> {
-    pub fn scan_all(self) -> Result<Vec<Token>> {
+    pub fn scan_all(self) -> Result<Vec<Token>, CroxErrors> {
         let source = self.source;
         let mut oks = Vec::new();
         let mut errs = Vec::new();
@@ -37,7 +37,7 @@ impl<'a> Source<'a> {
 }
 
 impl<'a> IntoIterator for Source<'a> {
-    type Item = Result<Token, CroxError>;
+    type Item = Result<Token>;
     type IntoIter = Scanner<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -63,7 +63,7 @@ impl<'a> From<Source<'a>> for Scanner<'a> {
 }
 
 impl<'a> Iterator for Scanner<'a> {
-    type Item = Result<Token, CroxError>;
+    type Item = Result<Token>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while !self.is_at_end() {
@@ -80,7 +80,7 @@ impl<'a> Scanner<'a> {
         self.input.is_empty()
     }
 
-    fn next_token(&mut self) -> Result<Option<Token>, CroxError> {
+    fn next_token(&mut self) -> Result<Option<Token>> {
         let (token, rest) = self.next_lexeme();
 
         let typ = match token {
@@ -156,7 +156,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn string(&mut self) -> Result<Token, CroxError> {
+    fn string(&mut self) -> Result<Token> {
         let source = &self.input[1..];
         source
             .find('"')
@@ -269,7 +269,7 @@ mod chum {
     };
 
     impl<'a> Source<'a> {
-        pub fn scan_chumsky(self) -> Result<Vec<Token>> {
+        pub fn scan_chumsky(self) -> Result<Vec<Token>, CroxErrors> {
             match lexer().parse(self.source) {
                 Ok(tokens) => Ok(tokens),
                 Err(errs) => {
@@ -361,7 +361,7 @@ mod no {
     type NRes<I, O, E = NErr<I>> = Result<(I, O), nom::Err<E>>;
 
     impl<'a> Source<'a> {
-        pub fn scan_nom(self) -> Result<Vec<Token>> {
+        pub fn scan_nom(self) -> Result<Vec<Token>, CroxErrors> {
             let mut lexer = self.lexer();
             let res = lexer(self.source).finish();
             match res {

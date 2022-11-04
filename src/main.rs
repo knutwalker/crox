@@ -1,10 +1,9 @@
+use crox::{Ast, CroxErrorScope, CroxErrors};
 use std::{
     fs,
     io::{self, Write},
     path::Path,
 };
-
-use crox::{Ast, CroxErrorScope, CroxErrors, ValueExpr};
 
 fn main() {
     if let Err(e) = run() {
@@ -40,7 +39,7 @@ fn run() -> io::Result<()> {
     Ok(())
 }
 
-fn run_file(file: impl AsRef<Path>) -> io::Result<crox::Result> {
+fn run_file(file: impl AsRef<Path>) -> io::Result<crox::Result<(), CroxErrors>> {
     let content = fs::read_to_string(file)?;
     let res = crox::run(&content).map(|exprs| report_ok(false, exprs));
     Ok(res)
@@ -75,14 +74,15 @@ fn handle(verbose: bool, line: &str) {
     }
 }
 
-fn report_ok(verbose: bool, (exprs, ast): (Vec<ValueExpr>, Ast)) {
-    for value in exprs {
+fn report_ok(verbose: bool, ast: Ast) {
+    for expr in ast.iter().copied() {
+        let value = ast.value(expr);
         if verbose {
-            let expr = value.expr.resolve(&ast);
+            let expr = expr.resolve(&ast);
             println!("{:#?}", expr);
             println!("{:#?}", value);
         }
-        println!("{}", value.value);
+        println!("{}", value);
     }
 }
 

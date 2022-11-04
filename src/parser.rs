@@ -1,12 +1,11 @@
 use crate::{
-    Ast, AstBuilder, BinaryOp, CroxError, CroxErrorKind, Expr, Idx, Node, Range, Resolve, Result,
-    Source, Span, Token, TokenSet, TokenType, UnaryOp,
+    BinaryOp, CroxError, CroxErrorKind, Expr, Idx, Node, Range, Resolve, Result, Source, Span,
+    Token, TokenSet, TokenType, UnaryOp, UntypedAst, UntypedAstBuilder,
 };
 use std::iter::Peekable;
 use TokenType::*;
 
 type Tok = (TokenType, Span);
-type Exp = Result<Expr, CroxError>;
 
 /// Book-flavored BNF-ish:
 ///
@@ -22,7 +21,7 @@ type Exp = Result<Expr, CroxError>;
 pub fn parse(
     source: Source<'_>,
     tokens: impl IntoIterator<Item = Token>,
-) -> Result<(Vec<Expr>, Ast), CroxError> {
+) -> Result<(Vec<Expr>, UntypedAst)> {
     let mut parser = parser(source, tokens);
     let exprs = parser.by_ref().collect::<Result<Vec<_>, _>>()?;
     Ok((exprs, parser.into_ast()))
@@ -64,7 +63,7 @@ where
 pub struct Parser<'a, T: Iterator<Item = Tok>> {
     source: Source<'a>,
     tokens: Peekable<T>,
-    nodes: AstBuilder<'a>,
+    nodes: UntypedAstBuilder<'a>,
 }
 
 macro_rules! rule {
@@ -89,29 +88,29 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
         Self {
             source,
             tokens,
-            nodes: AstBuilder::default(),
+            nodes: UntypedAstBuilder::default(),
         }
     }
 
-    pub fn into_ast(self) -> Ast<'a> {
+    pub fn into_ast(self) -> UntypedAst<'a> {
         self.nodes.build()
     }
 }
 
 impl<'a, T: Iterator<Item = Tok>> Resolve<'a> for Parser<'a, T> {
-    fn resolve(&self, context: &Idx) -> Node<'a> {
-        self.nodes.resolve(context)
+    fn resolve(&self, idx: Idx) -> Node<'a> {
+        self.nodes.resolve(idx)
     }
 }
 
 impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
     /// expression := equality ;
-    fn expression(&mut self) -> Exp {
+    fn expression(&mut self) -> Result<Expr> {
         self.equality()
     }
 
     ///    equlity := comparison ( ( "==" | "!=" ) comparison )* ;
-    fn equality(&mut self) -> Exp {
+    fn equality(&mut self) -> Result<Expr> {
         rule!(self, comparison, {
             (BangEqual, _) => BinaryOp::Equals,
             (EqualEqual, _) => BinaryOp::NotEquals,
@@ -119,7 +118,7 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
     }
 
     /// comparison := term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
-    fn comparison(&mut self) -> Exp {
+    fn comparison(&mut self) -> Result<Expr> {
         rule!(self, term, {
             (Greater, _) => BinaryOp::GreaterThan,
             (GreaterEqual, _) => BinaryOp::GreaterThanOrEqual,
@@ -129,7 +128,7 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
     }
 
     ///       term := factor ( ( "+" | "-" ) factor )* ;
-    fn term(&mut self) -> Exp {
+    fn term(&mut self) -> Result<Expr> {
         rule!(self, factor, {
             (Plus, _) => BinaryOp::Add,
             (Minus, _) => BinaryOp::Sub,
@@ -137,7 +136,7 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
     }
 
     ///     factor := unary ( ( "*" | "/" ) unary )* ;
-    fn factor(&mut self) -> Exp {
+    fn factor(&mut self) -> Result<Expr> {
         rule!(self, unary, {
             (Star, _) => BinaryOp::Mul,
             (Slash, _) => BinaryOp::Div,
@@ -145,7 +144,7 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
     }
 
     ///      unary := ( "!" | "-" ) unary | primary ;
-    fn unary(&mut self) -> Exp {
+    fn unary(&mut self) -> Result<Expr> {
         let (op, span) = match self.tokens.peek() {
             Some(&(Bang, span)) => (UnaryOp::Not, span),
             Some(&(Minus, span)) => (UnaryOp::Neg, span),
@@ -158,7 +157,7 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
     }
 
     ///    primary := NUMBER | STRING | "true" | "false" | "(" expression ")" ;
-    fn primary(&mut self) -> Exp {
+    fn primary(&mut self) -> Result<Expr> {
         fn expected() -> TokenSet {
             TokenSet::from_iter([LeftParen, String, Number, False, Nil, True])
         }
@@ -239,7 +238,7 @@ impl<T: Iterator<Item = Tok>> Parser<'_, T> {
 }
 
 impl<T: Iterator<Item = Tok>> Iterator for Parser<'_, T> {
-    type Item = Exp;
+    type Item = Result<Expr>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // check if we are at EOF since the previous iteration
@@ -281,7 +280,7 @@ mod tests {
 
         let (actual, ast) = parse(source, tokens).unwrap();
 
-        let mut ast_builder = AstBuilder::default();
+        let mut ast_builder = UntypedAstBuilder::default();
         let lhs = ast_builder.add(Node::number(6.0)).into_expr(0..1);
         let rhs = ast_builder.add(Node::number(3.0)).into_expr(4..5);
         let div = ast_builder
@@ -315,7 +314,7 @@ mod tests {
 
         let (actual, ast) = parse(source, tokens).unwrap();
 
-        let mut ast_builder = AstBuilder::default();
+        let mut ast_builder = UntypedAstBuilder::default();
 
         let first = ast_builder.add(Node::number(6.0)).into_expr(0..1);
 

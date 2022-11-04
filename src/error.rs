@@ -7,7 +7,7 @@ use std::{
 #[cfg(feature = "fancy")]
 use miette::Diagnostic;
 
-pub type Result<T = (), E = CroxErrors> = core::result::Result<T, E>;
+pub type Result<T = (), E = CroxError> = core::result::Result<T, E>;
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fancy", derive(Diagnostic))]

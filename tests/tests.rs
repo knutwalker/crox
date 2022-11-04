@@ -1,7 +1,7 @@
-use crox::{scan, Result, Token, TokenType};
+use crox::{scan, CroxErrors, Result, Token, TokenType};
 use TokenType::*;
 
-fn run_test(content: &str, expected: Vec<Token>) -> Result {
+fn run_test(content: &str, expected: Vec<Token>) -> Result<(), CroxErrors> {
     use pretty_assertions::assert_eq;
 
     let source = scan(content);
@@ -25,12 +25,12 @@ fn run_test(content: &str, expected: Vec<Token>) -> Result {
 }
 
 #[test]
-fn test_classes() -> Result {
+fn test_classes() -> Result<(), CroxErrors> {
     run_test(include_str!("classes.crox"), include!("classes.tokens"))
 }
 
 #[test]
-fn test_control_flow() -> Result {
+fn test_control_flow() -> Result<(), CroxErrors> {
     run_test(
         include_str!("control_flow.crox"),
         include!("control_flow.tokens"),
@@ -38,7 +38,7 @@ fn test_control_flow() -> Result {
 }
 
 #[test]
-fn test_expressions() -> Result {
+fn test_expressions() -> Result<(), CroxErrors> {
     run_test(
         include_str!("expressions.crox"),
         include!("expressions.tokens"),
@@ -46,12 +46,12 @@ fn test_expressions() -> Result {
 }
 
 #[test]
-fn test_functions() -> Result {
+fn test_functions() -> Result<(), CroxErrors> {
     run_test(include_str!("functions.crox"), include!("functions.tokens"))
 }
 
 #[test]
-fn test_hello_world() -> Result {
+fn test_hello_world() -> Result<(), CroxErrors> {
     run_test(
         include_str!("hello_world.crox"),
         include!("hello_world.tokens"),
@@ -59,7 +59,7 @@ fn test_hello_world() -> Result {
 }
 
 #[test]
-fn test_statements() -> Result {
+fn test_statements() -> Result<(), CroxErrors> {
     run_test(
         include_str!("statements.crox"),
         include!("statements.tokens"),
@@ -67,11 +67,11 @@ fn test_statements() -> Result {
 }
 
 #[test]
-fn test_types() -> Result {
+fn test_types() -> Result<(), CroxErrors> {
     run_test(include_str!("types.crox"), include!("types.tokens"))
 }
 
 #[test]
-fn test_variables() -> Result {
+fn test_variables() -> Result<(), CroxErrors> {
     run_test(include_str!("variables.crox"), include!("variables.tokens"))
 }
