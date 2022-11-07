@@ -85,7 +85,7 @@ impl Display for CroxError {
 
 impl StdError for CroxError {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        Some(&self.kind)
+        cfg!(not(feature = "fancy")).then_some(&self.kind)
     }
 }
 
