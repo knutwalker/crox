@@ -1,39 +1,5 @@
-use crate::Span;
+use crate::{Expr, Span};
 use std::fmt::{Debug, Display};
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Expr {
-    pub idx: Idx,
-    pub span: Span,
-}
-
-impl Expr {
-    pub fn new(idx: Idx, span: Span) -> Self {
-        Self { idx, span }
-    }
-}
-
-#[derive(Clone, PartialEq)]
-pub struct BoxedExpr<'a> {
-    pub node: Box<ExprNode<'a, BoxedExpr<'a>>>,
-    pub span: Span,
-}
-
-impl<'a> BoxedExpr<'a> {
-    pub fn new(node: Box<ExprNode<'a, Self>>, span: Span) -> Self {
-        Self { node, span }
-    }
-}
-
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct Idx(pub usize);
-
-impl Idx {
-    pub fn into_expr(self, range: impl Into<Span>) -> Expr {
-        Expr::new(self, range.into())
-    }
-}
 
 pub trait Resolve<'a, R = ExprNode<'a>> {
     fn resolve(&self, idx: Idx) -> R;
@@ -135,6 +101,18 @@ impl<'a, T: Sized> ExprNode<'a, T> {
             Self::Binary(lhs, op, rhs) => ExprNode::Binary(f(lhs), op, f(rhs)),
             Self::Group(expr) => ExprNode::Group(f(expr)),
         }
+    }
+}
+
+#[derive(Clone, PartialEq)]
+pub struct BoxedExpr<'a> {
+    pub node: Box<ExprNode<'a, BoxedExpr<'a>>>,
+    pub span: Span,
+}
+
+impl<'a> BoxedExpr<'a> {
+    pub fn new(node: Box<ExprNode<'a, Self>>, span: Span) -> Self {
+        Self { node, span }
     }
 }
 

@@ -11,13 +11,13 @@ mod util;
 use std::cell::Cell;
 
 pub use ast::{
-    Ast, TypedAst, TypedAstBuilder, UntypedAst, UntypedAstBuilder, ValuedAst, ValuedAstBuilder,
+    Ast, Expr, Idx, TypedAst, TypedAstBuilder, UntypedAst, UntypedAstBuilder, ValuedAst,
+    ValuedAstBuilder,
 };
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
 pub use eval::{eval, eval_ast, eval_expr, Value, ValueExpr};
 pub use expr::{
-    Associate, Associativity, BinaryOp, BoxedExpr, Expr, ExprNode, Idx, Literal, OpGroup,
-    Precedence, Resolve, UnaryOp,
+    Associate, Associativity, BinaryOp, BoxedExpr, ExprNode, Literal, OpGroup, Precedence, Resolve, UnaryOp,
 };
 pub use parser::{parse, parser, Parser};
 pub use scanner::{Scanner, Source};
@@ -52,7 +52,6 @@ pub fn run(content: &str) -> Result<Ast, CroxErrors> {
 
     let mut parser = parser(source, tokens);
 
-    #[allow(clippy::needless_collect)]
     let exprs = parser.by_ref().filter_map(|t| t!(t)).collect::<Vec<_>>();
 
     let ast = parser.into_ast();
