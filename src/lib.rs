@@ -16,8 +16,8 @@ pub use ast::{
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
 pub use eval::{eval, eval_ast, eval_expr, Value, ValueExpr};
 pub use expr::{
-    Associate, Associativity, BinaryOp, BoxedExpr, Expr, Idx, Literal, Node, OpGroup, Precedence,
-    Resolve, UnaryOp,
+    Associate, Associativity, BinaryOp, BoxedExpr, Expr, ExprNode, Idx, Literal, OpGroup,
+    Precedence, Resolve, UnaryOp,
 };
 pub use parser::{parse, parser, Parser};
 pub use scanner::{Scanner, Source};

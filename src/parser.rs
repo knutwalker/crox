@@ -1,5 +1,5 @@
 use crate::{
-    BinaryOp, CroxError, CroxErrorKind, Expr, Idx, Node, Range, Resolve, Result, Source, Span,
+    BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, Idx, Range, Resolve, Result, Source, Span,
     Token, TokenSet, TokenType, UnaryOp, UntypedAst, UntypedAstBuilder,
 };
 use std::iter::Peekable;
@@ -77,7 +77,7 @@ macro_rules! rule {
             let _ = $this.tokens.next();
             let rhs = $this.$descent()?;
             let span = lhs.span.union(rhs.span);
-            lhs = $this.mk_expr(Node::binary(lhs, op, rhs), span);
+            lhs = $this.mk_expr(ExprNode::binary(lhs, op, rhs), span);
         }
         Ok(lhs)
     }};
@@ -98,7 +98,7 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
 }
 
 impl<'a, T: Iterator<Item = Tok>> Resolve<'a> for Parser<'a, T> {
-    fn resolve(&self, idx: Idx) -> Node<'a> {
+    fn resolve(&self, idx: Idx) -> ExprNode<'a> {
         self.nodes.resolve(idx)
     }
 }
@@ -153,7 +153,7 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
         let _ = self.tokens.next();
         let inner = self.unary()?;
         let span = span.union(inner.span);
-        Ok(self.mk_expr(Node::unary(op, inner), span))
+        Ok(self.mk_expr(ExprNode::unary(op, inner), span))
     }
 
     ///    primary := NUMBER | STRING | "true" | "false" | "(" expression ")" ;
@@ -167,7 +167,7 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
                 let inner = self.expression()?;
                 match self.tokens.next() {
                     Some((RightParen, end_span)) => {
-                        (Node::group(inner), Span::from(span.union(end_span)))
+                        (ExprNode::group(inner), Span::from(span.union(end_span)))
                     }
                     Some((typ, span)) => {
                         let kind = CroxErrorKind::of((typ, RightParen));
@@ -183,7 +183,7 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
             }
             Some((String, span)) => {
                 let string = self.source.slice(span);
-                (Node::string(string), span)
+                (ExprNode::string(string), span)
             }
             Some((Number, span)) => {
                 let range = Range::from(span);
@@ -197,11 +197,11 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
                     )
                 })?;
 
-                (Node::number(num), span)
+                (ExprNode::number(num), span)
             }
-            Some((False, span)) => (Node::fals(), span),
-            Some((Nil, span)) => (Node::nil(), span),
-            Some((True, span)) => (Node::tru(), span),
+            Some((False, span)) => (ExprNode::fals(), span),
+            Some((Nil, span)) => (ExprNode::nil(), span),
+            Some((True, span)) => (ExprNode::tru(), span),
             Some((typ, span)) => {
                 let kind = CroxErrorKind::of((typ, expected()));
                 return Err(CroxError::new(kind, span));
@@ -216,7 +216,7 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
         Ok(self.mk_expr(node, span))
     }
 
-    fn mk_expr(&mut self, node: Node<'a>, span: impl Into<Span>) -> Expr {
+    fn mk_expr(&mut self, node: ExprNode<'a>, span: impl Into<Span>) -> Expr {
         let idx = self.nodes.add(node);
         Expr::new(idx, span.into())
     }
@@ -281,15 +281,15 @@ mod tests {
         let (actual, ast) = parse(source, tokens).unwrap();
 
         let mut ast_builder = UntypedAstBuilder::default();
-        let lhs = ast_builder.add(Node::number(6.0)).into_expr(0..1);
-        let rhs = ast_builder.add(Node::number(3.0)).into_expr(4..5);
+        let lhs = ast_builder.add(ExprNode::number(6.0)).into_expr(0..1);
+        let rhs = ast_builder.add(ExprNode::number(3.0)).into_expr(4..5);
         let div = ast_builder
-            .add(Node::binary(lhs, BinaryOp::Div, rhs))
+            .add(ExprNode::binary(lhs, BinaryOp::Div, rhs))
             .into_expr(0..5);
 
-        let rhs = ast_builder.add(Node::number(1.0)).into_expr(8..9);
+        let rhs = ast_builder.add(ExprNode::number(1.0)).into_expr(8..9);
         let sub = ast_builder
-            .add(Node::binary(div, BinaryOp::Sub, rhs))
+            .add(ExprNode::binary(div, BinaryOp::Sub, rhs))
             .into_expr(0..9);
 
         let expected = ast_builder.build();
@@ -316,16 +316,16 @@ mod tests {
 
         let mut ast_builder = UntypedAstBuilder::default();
 
-        let first = ast_builder.add(Node::number(6.0)).into_expr(0..1);
+        let first = ast_builder.add(ExprNode::number(6.0)).into_expr(0..1);
 
-        let lhs = ast_builder.add(Node::number(3.0)).into_expr(4..5);
-        let rhs = ast_builder.add(Node::number(1.0)).into_expr(8..9);
+        let lhs = ast_builder.add(ExprNode::number(3.0)).into_expr(4..5);
+        let rhs = ast_builder.add(ExprNode::number(1.0)).into_expr(8..9);
         let div = ast_builder
-            .add(Node::binary(lhs, BinaryOp::Div, rhs))
+            .add(ExprNode::binary(lhs, BinaryOp::Div, rhs))
             .into_expr(4..9);
 
         let sub = ast_builder
-            .add(Node::binary(first, BinaryOp::Sub, div))
+            .add(ExprNode::binary(first, BinaryOp::Sub, div))
             .into_expr(0..9);
 
         let expected = ast_builder.build();

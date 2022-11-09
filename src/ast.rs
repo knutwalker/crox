@@ -1,9 +1,9 @@
-use crate::{Expr, Idx, Node, Resolve, Result, Type, Value};
+use crate::{Expr, ExprNode, Idx, Resolve, Result, Type, Value};
 use std::ops::Deref;
 
 #[derive(Clone, Debug, Default)]
 pub struct UntypedAstBuilder<'a> {
-    nodes: Vec<Node<'a>>,
+    nodes: Vec<ExprNode<'a>>,
 }
 
 impl<'a> UntypedAstBuilder<'a> {
@@ -11,7 +11,7 @@ impl<'a> UntypedAstBuilder<'a> {
         Self::default()
     }
 
-    pub fn add(&mut self, node: Node<'a>) -> Idx {
+    pub fn add(&mut self, node: ExprNode<'a>) -> Idx {
         let idx = self.nodes.len();
         self.nodes.push(node);
         Idx(idx)
@@ -23,28 +23,28 @@ impl<'a> UntypedAstBuilder<'a> {
 }
 
 impl<'a> Resolve<'a> for UntypedAstBuilder<'a> {
-    fn resolve(&self, idx: Idx) -> Node<'a> {
+    fn resolve(&self, idx: Idx) -> ExprNode<'a> {
         self.nodes[idx.0]
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UntypedAst<'a> {
-    nodes: Vec<Node<'a>>,
+    nodes: Vec<ExprNode<'a>>,
 }
 
 impl<'a> UntypedAst<'a> {
-    pub fn nodes(&self) -> &[Node<'a>] {
+    pub fn nodes(&self) -> &[ExprNode<'a>] {
         &self.nodes
     }
 
-    pub fn into_inner(self) -> Vec<Node<'a>> {
+    pub fn into_inner(self) -> Vec<ExprNode<'a>> {
         self.nodes
     }
 }
 
 impl<'a> Deref for UntypedAst<'a> {
-    type Target = [Node<'a>];
+    type Target = [ExprNode<'a>];
 
     fn deref(&self) -> &Self::Target {
         &self.nodes
@@ -52,7 +52,7 @@ impl<'a> Deref for UntypedAst<'a> {
 }
 
 impl<'a> Resolve<'a> for UntypedAst<'a> {
-    fn resolve(&self, idx: Idx) -> Node<'a> {
+    fn resolve(&self, idx: Idx) -> ExprNode<'a> {
         self.nodes[idx.0]
     }
 }
@@ -83,7 +83,7 @@ impl<'a> TypedAstBuilder<'a> {
         Self { ast, types }
     }
 
-    pub fn split(&mut self) -> (&[Node<'a>], Adder<'_, Type>) {
+    pub fn split(&mut self) -> (&[ExprNode<'a>], Adder<'_, Type>) {
         (&self.ast, Adder(&mut self.types))
     }
 
@@ -103,12 +103,12 @@ impl<'a> TypedAstBuilder<'a> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TypedAst<'a> {
-    nodes: Vec<Node<'a>>,
+    nodes: Vec<ExprNode<'a>>,
     types: Vec<Type>,
 }
 
 impl<'a> TypedAst<'a> {
-    pub fn nodes(&self) -> &[Node<'a>] {
+    pub fn nodes(&self) -> &[ExprNode<'a>] {
         &self.nodes
     }
 
@@ -116,13 +116,13 @@ impl<'a> TypedAst<'a> {
         &self.types
     }
 
-    pub fn into_inner(self) -> (Vec<Node<'a>>, Vec<Type>) {
+    pub fn into_inner(self) -> (Vec<ExprNode<'a>>, Vec<Type>) {
         (self.nodes, self.types)
     }
 }
 
 impl<'a> Deref for TypedAst<'a> {
-    type Target = [Node<'a>];
+    type Target = [ExprNode<'a>];
 
     fn deref(&self) -> &Self::Target {
         &self.nodes
@@ -130,7 +130,7 @@ impl<'a> Deref for TypedAst<'a> {
 }
 
 impl<'a> Resolve<'a> for TypedAst<'a> {
-    fn resolve(&self, idx: Idx) -> Node<'a> {
+    fn resolve(&self, idx: Idx) -> ExprNode<'a> {
         self.nodes[idx.0]
     }
 }
@@ -153,7 +153,7 @@ impl<'a> ValuedAstBuilder<'a> {
         Self { ast, values }
     }
 
-    pub fn split(&mut self) -> (&[Node<'a>], Adder<'_, Value>) {
+    pub fn split(&mut self) -> (&[ExprNode<'a>], Adder<'_, Value>) {
         (&self.ast, Adder(&mut self.values))
     }
 
@@ -175,7 +175,7 @@ impl<'a> ValuedAstBuilder<'a> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ValuedAst<'a> {
-    nodes: Vec<Node<'a>>,
+    nodes: Vec<ExprNode<'a>>,
     types: Vec<Type>,
     values: Vec<Value>,
 }
@@ -187,7 +187,7 @@ impl<'a> ValuedAst<'a> {
 }
 
 impl<'a> ValuedAst<'a> {
-    pub fn nodes(&self) -> &[Node<'a>] {
+    pub fn nodes(&self) -> &[ExprNode<'a>] {
         &self.nodes
     }
 
@@ -199,13 +199,13 @@ impl<'a> ValuedAst<'a> {
         &self.values
     }
 
-    pub fn into_inner(self) -> (Vec<Node<'a>>, Vec<Type>, Vec<Value>) {
+    pub fn into_inner(self) -> (Vec<ExprNode<'a>>, Vec<Type>, Vec<Value>) {
         (self.nodes, self.types, self.values)
     }
 }
 
 impl<'a> Deref for ValuedAst<'a> {
-    type Target = [Node<'a>];
+    type Target = [ExprNode<'a>];
 
     fn deref(&self) -> &Self::Target {
         &self.nodes
@@ -213,7 +213,7 @@ impl<'a> Deref for ValuedAst<'a> {
 }
 
 impl<'a> Resolve<'a> for ValuedAst<'a> {
-    fn resolve(&self, idx: Idx) -> Node<'a> {
+    fn resolve(&self, idx: Idx) -> ExprNode<'a> {
         self.nodes[idx.0]
     }
 }
@@ -255,7 +255,7 @@ impl<'a> Deref for Ast<'a> {
 }
 
 impl<'a> Resolve<'a> for Ast<'a> {
-    fn resolve(&self, idx: Idx) -> Node<'a> {
+    fn resolve(&self, idx: Idx) -> ExprNode<'a> {
         self.ast.resolve(idx)
     }
 }

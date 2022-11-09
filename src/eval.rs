@@ -1,5 +1,5 @@
 use crate::{
-    Expr, Idx, Literal, Node, Resolve, Result, TypedAst, UnaryOp, ValuedAst, ValuedAstBuilder,
+    Expr, ExprNode, Idx, Literal, Resolve, Result, TypedAst, UnaryOp, ValuedAst, ValuedAstBuilder,
 };
 use std::{cmp::Ordering, fmt, rc::Rc};
 
@@ -75,18 +75,18 @@ pub fn eval_expr<'a, R: Resolve<'a> + ?Sized>(resolver: &R, expr: Expr) -> Resul
 
 pub fn eval<'a, R: Resolve<'a, Result<Value>> + ?Sized>(
     resolver: &R,
-    node: &Node<'a>,
+    node: &ExprNode<'a>,
 ) -> Result<Value> {
     Ok(match node {
-        Node::Literal(literal) => Value::from(literal),
-        Node::Unary(op, expr) => {
+        ExprNode::Literal(literal) => Value::from(literal),
+        ExprNode::Unary(op, expr) => {
             let value = resolver.resolve(expr.idx)?;
             match op {
                 UnaryOp::Neg => value.neg(),
                 UnaryOp::Not => value.not(),
             }
         }
-        Node::Binary(lhs_expr, op, rhs_expr) => {
+        ExprNode::Binary(lhs_expr, op, rhs_expr) => {
             let lhs = resolver.resolve(lhs_expr.idx)?;
             let rhs = resolver.resolve(rhs_expr.idx)?;
             match op {
@@ -102,7 +102,7 @@ pub fn eval<'a, R: Resolve<'a, Result<Value>> + ?Sized>(
                 crate::BinaryOp::Div => lhs.div(&rhs),
             }
         }
-        Node::Group(inner) => resolver.resolve(inner.idx)?,
+        ExprNode::Group(inner) => resolver.resolve(inner.idx)?,
     })
 }
 

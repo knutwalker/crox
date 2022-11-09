@@ -1,5 +1,5 @@
 use crate::{
-    BinaryOp, CroxError, CroxErrorKind, EnumSet, Expr, Idx, Literal, Node, Resolve, Result,
+    BinaryOp, CroxError, CroxErrorKind, EnumSet, Expr, ExprNode, Idx, Literal, Resolve, Result,
     TypedAst, TypedAstBuilder, UnaryOp, UntypedAst, Value, ValueEnum,
 };
 
@@ -86,11 +86,11 @@ pub fn type_expr<'a, R: Resolve<'a> + ?Sized>(resolver: &R, expr: Expr) -> Resul
 
 pub fn type_check<'a, R: Resolve<'a, Result<Type>> + ?Sized>(
     resolver: &R,
-    node: &Node<'a>,
+    node: &ExprNode<'a>,
 ) -> Result<Type> {
     let typ = match node {
-        Node::Literal(l) => l.typ(),
-        Node::Unary(op, expr) => match op {
+        ExprNode::Literal(l) => l.typ(),
+        ExprNode::Unary(op, expr) => match op {
             UnaryOp::Neg => {
                 let typ = resolver.resolve(expr.idx)?;
                 check_num(typ, expr)?;
@@ -98,7 +98,7 @@ pub fn type_check<'a, R: Resolve<'a, Result<Type>> + ?Sized>(
             }
             UnaryOp::Not => Type::Bool,
         },
-        Node::Binary(lhs, op, rhs) => match op {
+        ExprNode::Binary(lhs, op, rhs) => match op {
             BinaryOp::Equals
             | BinaryOp::NotEquals
             | BinaryOp::LessThan
@@ -117,7 +117,7 @@ pub fn type_check<'a, R: Resolve<'a, Result<Type>> + ?Sized>(
                 Type::Number
             }
         },
-        Node::Group(expr) => resolver.resolve(expr.idx)?,
+        ExprNode::Group(expr) => resolver.resolve(expr.idx)?,
     };
     Ok(typ)
 }
