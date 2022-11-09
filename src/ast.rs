@@ -1,9 +1,9 @@
-use crate::{Expr, ExprNode, Idx, Resolve, Result, Type, Value};
+use crate::{Expr, Idx, Node, Resolve, Result, Type, Value};
 use std::{fmt::Debug, ops::Deref};
 
 #[derive(Clone, Debug, Default)]
 pub struct UntypedAstBuilder<'a> {
-    nodes: Vec<ExprNode<'a>>,
+    exprs: Vec<Expr<'a>>,
 }
 
 impl<'a> UntypedAstBuilder<'a> {
@@ -11,49 +11,49 @@ impl<'a> UntypedAstBuilder<'a> {
         Self::default()
     }
 
-    pub fn add(&mut self, node: ExprNode<'a>) -> Idx {
-        let idx = self.nodes.len();
-        self.nodes.push(node);
+    pub fn add(&mut self, expr: Expr<'a>) -> Idx {
+        let idx = self.exprs.len();
+        self.exprs.push(expr);
         Idx(idx)
     }
 
     pub fn build(self) -> UntypedAst<'a> {
-        UntypedAst { nodes: self.nodes }
+        UntypedAst { exprs: self.exprs }
     }
 }
 
-impl<'a> Resolve<'a, ExprNode<'a>> for UntypedAstBuilder<'a> {
-    fn resolve(&self, idx: Idx) -> ExprNode<'a> {
-        self.nodes[idx.0]
+impl<'a> Resolve<'a, Expr<'a>> for UntypedAstBuilder<'a> {
+    fn resolve(&self, idx: Idx) -> Expr<'a> {
+        self.exprs[idx.0]
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UntypedAst<'a> {
-    nodes: Vec<ExprNode<'a>>,
+    exprs: Vec<Expr<'a>>,
 }
 
 impl<'a> UntypedAst<'a> {
-    pub fn nodes(&self) -> &[ExprNode<'a>] {
-        &self.nodes
+    pub fn exprs(&self) -> &[Expr<'a>] {
+        &self.exprs
     }
 
-    pub fn into_inner(self) -> Vec<ExprNode<'a>> {
-        self.nodes
+    pub fn into_inner(self) -> Vec<Expr<'a>> {
+        self.exprs
     }
 }
 
 impl<'a> Deref for UntypedAst<'a> {
-    type Target = [ExprNode<'a>];
+    type Target = [Expr<'a>];
 
     fn deref(&self) -> &Self::Target {
-        &self.nodes
+        &self.exprs
     }
 }
 
-impl<'a> Resolve<'a, ExprNode<'a>> for UntypedAst<'a> {
-    fn resolve(&self, idx: Idx) -> ExprNode<'a> {
-        self.nodes[idx.0]
+impl<'a> Resolve<'a, Expr<'a>> for UntypedAst<'a> {
+    fn resolve(&self, idx: Idx) -> Expr<'a> {
+        self.exprs[idx.0]
     }
 }
 
@@ -83,7 +83,7 @@ impl<'a> TypedAstBuilder<'a> {
         Self { ast, types }
     }
 
-    pub fn split(&mut self) -> (&[ExprNode<'a>], Adder<'_, Type>) {
+    pub fn split(&mut self) -> (&[Expr<'a>], Adder<'_, Type>) {
         (&self.ast, Adder(&mut self.types))
     }
 
@@ -95,7 +95,7 @@ impl<'a> TypedAstBuilder<'a> {
         assert_eq!(self.ast.len(), self.types.len());
 
         TypedAst {
-            nodes: self.ast.into_inner(),
+            exprs: self.ast.into_inner(),
             types: self.types,
         }
     }
@@ -103,35 +103,35 @@ impl<'a> TypedAstBuilder<'a> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TypedAst<'a> {
-    nodes: Vec<ExprNode<'a>>,
+    exprs: Vec<Expr<'a>>,
     types: Vec<Type>,
 }
 
 impl<'a> TypedAst<'a> {
-    pub fn nodes(&self) -> &[ExprNode<'a>] {
-        &self.nodes
+    pub fn exprs(&self) -> &[Expr<'a>] {
+        &self.exprs
     }
 
     pub fn types(&self) -> &[Type] {
         &self.types
     }
 
-    pub fn into_inner(self) -> (Vec<ExprNode<'a>>, Vec<Type>) {
-        (self.nodes, self.types)
+    pub fn into_inner(self) -> (Vec<Expr<'a>>, Vec<Type>) {
+        (self.exprs, self.types)
     }
 }
 
 impl<'a> Deref for TypedAst<'a> {
-    type Target = [ExprNode<'a>];
+    type Target = [Expr<'a>];
 
     fn deref(&self) -> &Self::Target {
-        &self.nodes
+        &self.exprs
     }
 }
 
-impl<'a> Resolve<'a, ExprNode<'a>> for TypedAst<'a> {
-    fn resolve(&self, idx: Idx) -> ExprNode<'a> {
-        self.nodes[idx.0]
+impl<'a> Resolve<'a, Expr<'a>> for TypedAst<'a> {
+    fn resolve(&self, idx: Idx) -> Expr<'a> {
+        self.exprs[idx.0]
     }
 }
 
@@ -153,7 +153,7 @@ impl<'a> ValuedAstBuilder<'a> {
         Self { ast, values }
     }
 
-    pub fn split(&mut self) -> (&[ExprNode<'a>], Adder<'_, Value>) {
+    pub fn split(&mut self) -> (&[Expr<'a>], Adder<'_, Value>) {
         (&self.ast, Adder(&mut self.values))
     }
 
@@ -164,9 +164,9 @@ impl<'a> ValuedAstBuilder<'a> {
     pub fn build(self) -> ValuedAst<'a> {
         assert_eq!(self.ast.len(), self.values.len());
 
-        let (nodes, types) = self.ast.into_inner();
+        let (exprs, types) = self.ast.into_inner();
         ValuedAst {
-            nodes,
+            exprs,
             types,
             values: self.values,
         }
@@ -175,7 +175,7 @@ impl<'a> ValuedAstBuilder<'a> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ValuedAst<'a> {
-    nodes: Vec<ExprNode<'a>>,
+    exprs: Vec<Expr<'a>>,
     types: Vec<Type>,
     values: Vec<Value>,
 }
@@ -187,8 +187,8 @@ impl<'a> ValuedAst<'a> {
 }
 
 impl<'a> ValuedAst<'a> {
-    pub fn nodes(&self) -> &[ExprNode<'a>] {
-        &self.nodes
+    pub fn exprs(&self) -> &[Expr<'a>] {
+        &self.exprs
     }
 
     pub fn types(&self) -> &[Type] {
@@ -199,22 +199,22 @@ impl<'a> ValuedAst<'a> {
         &self.values
     }
 
-    pub fn into_inner(self) -> (Vec<ExprNode<'a>>, Vec<Type>, Vec<Value>) {
-        (self.nodes, self.types, self.values)
+    pub fn into_inner(self) -> (Vec<Expr<'a>>, Vec<Type>, Vec<Value>) {
+        (self.exprs, self.types, self.values)
     }
 }
 
 impl<'a> Deref for ValuedAst<'a> {
-    type Target = [ExprNode<'a>];
+    type Target = [Expr<'a>];
 
     fn deref(&self) -> &Self::Target {
-        &self.nodes
+        &self.exprs
     }
 }
 
-impl<'a> Resolve<'a, ExprNode<'a>> for ValuedAst<'a> {
-    fn resolve(&self, idx: Idx) -> ExprNode<'a> {
-        self.nodes[idx.0]
+impl<'a> Resolve<'a, Expr<'a>> for ValuedAst<'a> {
+    fn resolve(&self, idx: Idx) -> Expr<'a> {
+        self.exprs[idx.0]
     }
 }
 
@@ -232,30 +232,30 @@ impl<'a> Resolve<'a, Value> for ValuedAst<'a> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ast<'a> {
-    exprs: Vec<Expr>,
+    nodes: Vec<Node>,
     ast: ValuedAst<'a>,
 }
 
 impl<'a> Ast<'a> {
-    pub fn new(exprs: Vec<Expr>, ast: ValuedAst<'a>) -> Self {
-        Self { exprs, ast }
+    pub fn new(nodes: Vec<Node>, ast: ValuedAst<'a>) -> Self {
+        Self { nodes, ast }
     }
 
-    pub fn value(&self, expr: Expr) -> &Value {
-        self.ast.value(expr.idx)
+    pub fn value(&self, node: Node) -> &Value {
+        self.ast.value(node.idx)
     }
 }
 
 impl<'a> Deref for Ast<'a> {
-    type Target = [Expr];
+    type Target = [Node];
 
     fn deref(&self) -> &Self::Target {
-        &self.exprs
+        &self.nodes
     }
 }
 
-impl<'a> Resolve<'a, ExprNode<'a>> for Ast<'a> {
-    fn resolve(&self, idx: Idx) -> ExprNode<'a> {
+impl<'a> Resolve<'a, Expr<'a>> for Ast<'a> {
+    fn resolve(&self, idx: Idx) -> Expr<'a> {
         self.ast.resolve(idx)
     }
 }

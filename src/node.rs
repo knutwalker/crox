@@ -2,12 +2,12 @@ use crate::Span;
 use std::fmt::Debug;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Expr {
+pub struct Node {
     pub idx: Idx,
     pub span: Span,
 }
 
-impl Expr {
+impl Node {
     pub fn new(idx: Idx, span: Span) -> Self {
         Self { idx, span }
     }
@@ -18,8 +18,8 @@ impl Expr {
 pub struct Idx(pub usize);
 
 impl Idx {
-    pub fn into_expr(self, range: impl Into<Span>) -> Expr {
-        Expr::new(self, range.into())
+    pub fn into_node(self, range: impl Into<Span>) -> Node {
+        Node::new(self, range.into())
     }
 }
 

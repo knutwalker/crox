@@ -1,5 +1,5 @@
 use crate::{
-    BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, Idx, Range, Resolve, Result, Source, Span,
+    BinaryOp, CroxError, CroxErrorKind, Expr, Idx, Node, Range, Resolve, Result, Source, Span,
     Token, TokenSet, TokenType, UnaryOp, UntypedAst, UntypedAstBuilder,
 };
 use std::iter::Peekable;
@@ -21,10 +21,10 @@ type Tok = (TokenType, Span);
 pub fn parse(
     source: Source<'_>,
     tokens: impl IntoIterator<Item = Token>,
-) -> Result<(Vec<Expr>, UntypedAst)> {
+) -> Result<(Vec<Node>, UntypedAst)> {
     let mut parser = parser(source, tokens);
-    let exprs = parser.by_ref().collect::<Result<Vec<_>, _>>()?;
-    Ok((exprs, parser.into_ast()))
+    let nodes = parser.by_ref().collect::<Result<Vec<_>, _>>()?;
+    Ok((nodes, parser.into_ast()))
 }
 
 /// Book-flavored BNF-ish:
@@ -63,7 +63,7 @@ where
 pub struct Parser<'a, T: Iterator<Item = Tok>> {
     source: Source<'a>,
     tokens: Peekable<T>,
-    nodes: UntypedAstBuilder<'a>,
+    builder: UntypedAstBuilder<'a>,
 }
 
 macro_rules! rule {
@@ -77,7 +77,7 @@ macro_rules! rule {
             let _ = $this.tokens.next();
             let rhs = $this.$descent()?;
             let span = lhs.span.union(rhs.span);
-            lhs = $this.mk_expr(ExprNode::binary(lhs, op, rhs), span);
+            lhs = $this.mk_node(Expr::binary(lhs, op, rhs), span);
         }
         Ok(lhs)
     }};
@@ -88,29 +88,29 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
         Self {
             source,
             tokens,
-            nodes: UntypedAstBuilder::default(),
+            builder: UntypedAstBuilder::default(),
         }
     }
 
     pub fn into_ast(self) -> UntypedAst<'a> {
-        self.nodes.build()
+        self.builder.build()
     }
 }
 
-impl<'a, T: Iterator<Item = Tok>> Resolve<'a, ExprNode<'a>> for Parser<'a, T> {
-    fn resolve(&self, idx: Idx) -> ExprNode<'a> {
-        self.nodes.resolve(idx)
+impl<'a, T: Iterator<Item = Tok>> Resolve<'a, Expr<'a>> for Parser<'a, T> {
+    fn resolve(&self, idx: Idx) -> Expr<'a> {
+        self.builder.resolve(idx)
     }
 }
 
 impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
     /// expression := equality ;
-    fn expression(&mut self) -> Result<Expr> {
+    fn expression(&mut self) -> Result<Node> {
         self.equality()
     }
 
     ///    equlity := comparison ( ( "==" | "!=" ) comparison )* ;
-    fn equality(&mut self) -> Result<Expr> {
+    fn equality(&mut self) -> Result<Node> {
         rule!(self, comparison, {
             (BangEqual, _) => BinaryOp::Equals,
             (EqualEqual, _) => BinaryOp::NotEquals,
@@ -118,7 +118,7 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
     }
 
     /// comparison := term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
-    fn comparison(&mut self) -> Result<Expr> {
+    fn comparison(&mut self) -> Result<Node> {
         rule!(self, term, {
             (Greater, _) => BinaryOp::GreaterThan,
             (GreaterEqual, _) => BinaryOp::GreaterThanOrEqual,
@@ -128,7 +128,7 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
     }
 
     ///       term := factor ( ( "+" | "-" ) factor )* ;
-    fn term(&mut self) -> Result<Expr> {
+    fn term(&mut self) -> Result<Node> {
         rule!(self, factor, {
             (Plus, _) => BinaryOp::Add,
             (Minus, _) => BinaryOp::Sub,
@@ -136,7 +136,7 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
     }
 
     ///     factor := unary ( ( "*" | "/" ) unary )* ;
-    fn factor(&mut self) -> Result<Expr> {
+    fn factor(&mut self) -> Result<Node> {
         rule!(self, unary, {
             (Star, _) => BinaryOp::Mul,
             (Slash, _) => BinaryOp::Div,
@@ -144,7 +144,7 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
     }
 
     ///      unary := ( "!" | "-" ) unary | primary ;
-    fn unary(&mut self) -> Result<Expr> {
+    fn unary(&mut self) -> Result<Node> {
         let (op, span) = match self.tokens.peek() {
             Some(&(Bang, span)) => (UnaryOp::Not, span),
             Some(&(Minus, span)) => (UnaryOp::Neg, span),
@@ -153,11 +153,11 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
         let _ = self.tokens.next();
         let inner = self.unary()?;
         let span = span.union(inner.span);
-        Ok(self.mk_expr(ExprNode::unary(op, inner), span))
+        Ok(self.mk_node(Expr::unary(op, inner), span))
     }
 
     ///    primary := NUMBER | STRING | "true" | "false" | "(" expression ")" ;
-    fn primary(&mut self) -> Result<Expr> {
+    fn primary(&mut self) -> Result<Node> {
         fn expected() -> TokenSet {
             TokenSet::from_iter([LeftParen, String, Number, False, Nil, True])
         }
@@ -167,7 +167,7 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
                 let inner = self.expression()?;
                 match self.tokens.next() {
                     Some((RightParen, end_span)) => {
-                        (ExprNode::group(inner), Span::from(span.union(end_span)))
+                        (Expr::group(inner), Span::from(span.union(end_span)))
                     }
                     Some((typ, span)) => {
                         let kind = CroxErrorKind::of((typ, RightParen));
@@ -183,7 +183,7 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
             }
             Some((String, span)) => {
                 let string = self.source.slice(span);
-                (ExprNode::string(string), span)
+                (Expr::string(string), span)
             }
             Some((Number, span)) => {
                 let range = Range::from(span);
@@ -197,11 +197,11 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
                     )
                 })?;
 
-                (ExprNode::number(num), span)
+                (Expr::number(num), span)
             }
-            Some((False, span)) => (ExprNode::fals(), span),
-            Some((Nil, span)) => (ExprNode::nil(), span),
-            Some((True, span)) => (ExprNode::tru(), span),
+            Some((False, span)) => (Expr::fals(), span),
+            Some((Nil, span)) => (Expr::nil(), span),
+            Some((True, span)) => (Expr::tru(), span),
             Some((typ, span)) => {
                 let kind = CroxErrorKind::of((typ, expected()));
                 return Err(CroxError::new(kind, span));
@@ -213,12 +213,12 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
             }
         };
 
-        Ok(self.mk_expr(node, span))
+        Ok(self.mk_node(node, span))
     }
 
-    fn mk_expr(&mut self, node: ExprNode<'a>, span: impl Into<Span>) -> Expr {
-        let idx = self.nodes.add(node);
-        Expr::new(idx, span.into())
+    fn mk_node(&mut self, node: Expr<'a>, span: impl Into<Span>) -> Node {
+        let idx = self.builder.add(node);
+        Node::new(idx, span.into())
     }
 }
 
@@ -238,7 +238,7 @@ impl<T: Iterator<Item = Tok>> Parser<'_, T> {
 }
 
 impl<T: Iterator<Item = Tok>> Iterator for Parser<'_, T> {
-    type Item = Result<Expr>;
+    type Item = Result<Node>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // check if we are at EOF since the previous iteration
@@ -281,16 +281,16 @@ mod tests {
         let (actual, ast) = parse(source, tokens).unwrap();
 
         let mut ast_builder = UntypedAstBuilder::default();
-        let lhs = ast_builder.add(ExprNode::number(6.0)).into_expr(0..1);
-        let rhs = ast_builder.add(ExprNode::number(3.0)).into_expr(4..5);
+        let lhs = ast_builder.add(Expr::number(6.0)).into_node(0..1);
+        let rhs = ast_builder.add(Expr::number(3.0)).into_node(4..5);
         let div = ast_builder
-            .add(ExprNode::binary(lhs, BinaryOp::Div, rhs))
-            .into_expr(0..5);
+            .add(Expr::binary(lhs, BinaryOp::Div, rhs))
+            .into_node(0..5);
 
-        let rhs = ast_builder.add(ExprNode::number(1.0)).into_expr(8..9);
+        let rhs = ast_builder.add(Expr::number(1.0)).into_node(8..9);
         let sub = ast_builder
-            .add(ExprNode::binary(div, BinaryOp::Sub, rhs))
-            .into_expr(0..9);
+            .add(Expr::binary(div, BinaryOp::Sub, rhs))
+            .into_node(0..9);
 
         let expected = ast_builder.build();
 
@@ -316,17 +316,17 @@ mod tests {
 
         let mut ast_builder = UntypedAstBuilder::default();
 
-        let first = ast_builder.add(ExprNode::number(6.0)).into_expr(0..1);
+        let first = ast_builder.add(Expr::number(6.0)).into_node(0..1);
 
-        let lhs = ast_builder.add(ExprNode::number(3.0)).into_expr(4..5);
-        let rhs = ast_builder.add(ExprNode::number(1.0)).into_expr(8..9);
+        let lhs = ast_builder.add(Expr::number(3.0)).into_node(4..5);
+        let rhs = ast_builder.add(Expr::number(1.0)).into_node(8..9);
         let div = ast_builder
-            .add(ExprNode::binary(lhs, BinaryOp::Div, rhs))
-            .into_expr(4..9);
+            .add(Expr::binary(lhs, BinaryOp::Div, rhs))
+            .into_node(4..9);
 
         let sub = ast_builder
-            .add(ExprNode::binary(first, BinaryOp::Sub, div))
-            .into_expr(0..9);
+            .add(Expr::binary(first, BinaryOp::Sub, div))
+            .into_node(0..9);
 
         let expected = ast_builder.build();
 

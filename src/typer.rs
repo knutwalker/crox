@@ -1,5 +1,5 @@
 use crate::{
-    BinaryOp, CroxError, CroxErrorKind, EnumSet, Expr, ExprNode, Idx, Literal, Resolve, Result,
+    BinaryOp, CroxError, CroxErrorKind, EnumSet, Expr, Idx, Literal, Node, Range, Resolve, Result,
     TypedAst, TypedAstBuilder, UnaryOp, UntypedAst, Value, ValueEnum,
 };
 
@@ -37,16 +37,16 @@ impl Value {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct TypedExpr {
-    pub expr: Expr,
+pub struct TypedNode {
+    pub node: Node,
     pub typ: Type,
 }
 
 pub fn type_ast(ast: UntypedAst<'_>) -> Result<TypedAst<'_>> {
     let mut builder = TypedAstBuilder::new(ast);
-    let (nodes, mut adder) = builder.split();
-    for node in nodes {
-        let typ = type_check(&adder, node)?;
+    let (exprs, mut adder) = builder.split();
+    for expr in exprs {
+        let typ = type_check(&adder, expr)?;
         adder.add(typ);
     }
     Ok(builder.build())
@@ -54,9 +54,9 @@ pub fn type_ast(ast: UntypedAst<'_>) -> Result<TypedAst<'_>> {
 
 pub fn type_ast_with(ast: UntypedAst<'_>, mut report: impl FnMut(CroxError)) -> TypedAst<'_> {
     let mut builder = TypedAstBuilder::new(ast);
-    let (nodes, mut adder) = builder.split();
-    for node in nodes {
-        let typ = match type_check(&adder, node) {
+    let (exprs, mut adder) = builder.split();
+    for expr in exprs {
+        let typ = match type_check(&adder, expr) {
             Ok(typ) => typ,
             Err(err) => {
                 report(err);
@@ -68,42 +68,40 @@ pub fn type_ast_with(ast: UntypedAst<'_>, mut report: impl FnMut(CroxError)) -> 
     builder.build()
 }
 
-pub fn type_expr<'a, R: Resolve<'a, ExprNode<'a>> + ?Sized>(
+pub fn type_node<'a, R: Resolve<'a, Expr<'a>> + ?Sized>(
     resolver: &R,
-    expr: Expr,
-) -> Result<TypedExpr> {
+    node: Node,
+) -> Result<TypedNode> {
     struct ExprResolver<'x, R: ?Sized>(&'x R);
 
-    impl<'a, 'x, R: Resolve<'a, ExprNode<'a>> + ?Sized> Resolve<'a, Result<Type>>
-        for ExprResolver<'x, R>
-    {
+    impl<'a, 'x, R: Resolve<'a, Expr<'a>> + ?Sized> Resolve<'a, Result<Type>> for ExprResolver<'x, R> {
         fn resolve(&self, idx: Idx) -> Result<Type> {
             let node = self.0.resolve(idx);
             type_check(self, &node)
         }
     }
 
-    let node = resolver.resolve(expr.idx);
-    let typ = type_check(&ExprResolver(resolver), &node)?;
+    let expr = resolver.resolve(node.idx);
+    let typ = type_check(&ExprResolver(resolver), &expr)?;
 
-    Ok(TypedExpr { expr, typ })
+    Ok(TypedNode { node, typ })
 }
 
 pub fn type_check<'a, R: Resolve<'a, Result<Type>> + ?Sized>(
     resolver: &R,
-    node: &ExprNode<'a>,
+    expr: &Expr<'a>,
 ) -> Result<Type> {
-    let typ = match node {
-        ExprNode::Literal(l) => l.typ(),
-        ExprNode::Unary(op, expr) => match op {
+    let typ = match expr {
+        Expr::Literal(l) => l.typ(),
+        Expr::Unary(op, node) => match op {
             UnaryOp::Neg => {
-                let typ = resolver.resolve(expr.idx)?;
-                check_num(typ, expr)?;
+                let typ = resolver.resolve(node.idx)?;
+                check_num(typ, node.span)?;
                 Type::Number
             }
             UnaryOp::Not => Type::Bool,
         },
-        ExprNode::Binary(lhs, op, rhs) => match op {
+        Expr::Binary(lhs, op, rhs) => match op {
             BinaryOp::Equals
             | BinaryOp::NotEquals
             | BinaryOp::LessThan
@@ -112,27 +110,31 @@ pub fn type_check<'a, R: Resolve<'a, Result<Type>> + ?Sized>(
             | BinaryOp::GreaterThanOrEqual => Type::Bool,
             BinaryOp::Add => {
                 let typ = resolver.resolve(lhs.idx)?;
-                let typ = check(typ, TypeSet::from_iter([Type::Number, Type::String]), lhs)?;
-                check(resolver.resolve(rhs.idx)?, TypeSet::from(typ), rhs)?;
+                let typ = check(
+                    typ,
+                    TypeSet::from_iter([Type::Number, Type::String]),
+                    lhs.span,
+                )?;
+                check(resolver.resolve(rhs.idx)?, TypeSet::from(typ), rhs.span)?;
                 typ
             }
             BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div => {
-                check_num(resolver.resolve(lhs.idx)?, lhs)?;
-                check_num(resolver.resolve(rhs.idx)?, rhs)?;
+                check_num(resolver.resolve(lhs.idx)?, lhs.span)?;
+                check_num(resolver.resolve(rhs.idx)?, rhs.span)?;
                 Type::Number
             }
         },
-        ExprNode::Group(expr) => resolver.resolve(expr.idx)?,
+        Expr::Group(expr) => resolver.resolve(expr.idx)?,
     };
     Ok(typ)
 }
 
-fn check_num(typ: Type, expr: &Expr) -> Result {
-    check(typ, TypeSet::from(Type::Number), expr)?;
+fn check_num(typ: Type, span: impl Into<Range>) -> Result {
+    check(typ, TypeSet::from(Type::Number), span)?;
     Ok(())
 }
 
-fn check(typ: Type, expected: TypeSet, expr: &Expr) -> Result<Type> {
+fn check(typ: Type, expected: TypeSet, span: impl Into<Range>) -> Result<Type> {
     if expected.contains(typ) {
         Ok(typ)
     } else {
@@ -141,7 +143,7 @@ fn check(typ: Type, expected: TypeSet, expr: &Expr) -> Result<Type> {
                 expected,
                 actual: typ,
             },
-            expr.span,
+            span,
         ))
     }
 }

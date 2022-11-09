@@ -1,5 +1,5 @@
 use crate::{
-    Expr, ExprNode, Idx, Literal, Resolve, Result, TypedAst, UnaryOp, ValuedAst, ValuedAstBuilder,
+    Expr, Idx, Literal, Node, Resolve, Result, TypedAst, UnaryOp, ValuedAst, ValuedAstBuilder,
 };
 use std::{cmp::Ordering, fmt, rc::Rc};
 
@@ -49,51 +49,49 @@ impl fmt::Display for Value {
 
 pub fn eval_ast(ast: TypedAst<'_>) -> ValuedAst<'_> {
     let mut builder = ValuedAstBuilder::new(ast);
-    let (nodes, mut adder) = builder.split();
-    for node in nodes {
-        let value = eval(&adder, node).unwrap();
+    let (exprs, mut adder) = builder.split();
+    for expr in exprs {
+        let value = eval(&adder, expr).unwrap();
         adder.add(value);
     }
     builder.build()
 }
 
-pub fn eval_expr<'a, R: Resolve<'a, ExprNode<'a>> + ?Sized>(
+pub fn eval_node<'a, R: Resolve<'a, Expr<'a>> + ?Sized>(
     resolver: &R,
-    expr: Expr,
-) -> Result<ValueExpr> {
+    node: Node,
+) -> Result<ValueNode> {
     struct ExprResolver<'x, R: ?Sized>(&'x R);
 
-    impl<'a, 'x, R: Resolve<'a, ExprNode<'a>> + ?Sized> Resolve<'a, Result<Value>>
-        for ExprResolver<'x, R>
-    {
+    impl<'a, 'x, R: Resolve<'a, Expr<'a>> + ?Sized> Resolve<'a, Result<Value>> for ExprResolver<'x, R> {
         fn resolve(&self, idx: Idx) -> Result<Value> {
-            let node = self.0.resolve(idx);
-            eval(self, &node)
+            let expr = self.0.resolve(idx);
+            eval(self, &expr)
         }
     }
 
-    let node = resolver.resolve(expr.idx);
-    let value = eval(&ExprResolver(resolver), &node)?;
+    let expr = resolver.resolve(node.idx);
+    let value = eval(&ExprResolver(resolver), &expr)?;
 
-    Ok(ValueExpr { expr, value })
+    Ok(ValueNode { node, value })
 }
 
 pub fn eval<'a, R: Resolve<'a, Result<Value>> + ?Sized>(
     resolver: &R,
-    node: &ExprNode<'a>,
+    expr: &Expr<'a>,
 ) -> Result<Value> {
-    Ok(match node {
-        ExprNode::Literal(literal) => Value::from(literal),
-        ExprNode::Unary(op, expr) => {
-            let value = resolver.resolve(expr.idx)?;
+    Ok(match expr {
+        Expr::Literal(literal) => Value::from(literal),
+        Expr::Unary(op, node) => {
+            let value = resolver.resolve(node.idx)?;
             match op {
                 UnaryOp::Neg => value.neg(),
                 UnaryOp::Not => value.not(),
             }
         }
-        ExprNode::Binary(lhs_expr, op, rhs_expr) => {
-            let lhs = resolver.resolve(lhs_expr.idx)?;
-            let rhs = resolver.resolve(rhs_expr.idx)?;
+        Expr::Binary(lhs_node, op, rhs_node) => {
+            let lhs = resolver.resolve(lhs_node.idx)?;
+            let rhs = resolver.resolve(rhs_node.idx)?;
             match op {
                 crate::BinaryOp::Equals => lhs.eq(&rhs),
                 crate::BinaryOp::NotEquals => lhs.not_eq(&rhs),
@@ -107,13 +105,13 @@ pub fn eval<'a, R: Resolve<'a, Result<Value>> + ?Sized>(
                 crate::BinaryOp::Div => lhs.div(&rhs),
             }
         }
-        ExprNode::Group(inner) => resolver.resolve(inner.idx)?,
+        Expr::Group(inner) => resolver.resolve(inner.idx)?,
     })
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct ValueExpr {
-    pub expr: Expr,
+pub struct ValueNode {
+    pub node: Node,
     pub value: Value,
 }
 
