@@ -11,13 +11,13 @@ mod util;
 use std::cell::Cell;
 
 pub use ast::{
-    Ast, Expr, Idx, TypedAst, TypedAstBuilder, UntypedAst, UntypedAstBuilder, ValuedAst,
+    Ast, Expr, Idx, Resolve, TypedAst, TypedAstBuilder, UntypedAst, UntypedAstBuilder, ValuedAst,
     ValuedAstBuilder,
 };
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
 pub use eval::{eval, eval_ast, eval_expr, Value, ValueExpr};
 pub use expr::{
-    Associate, Associativity, BinaryOp, BoxedExpr, ExprNode, Literal, OpGroup, Precedence, Resolve, UnaryOp,
+    Associate, Associativity, BinaryOp, BoxedExpr, ExprNode, Literal, OpGroup, Precedence, UnaryOp,
 };
 pub use parser::{parse, parser, Parser};
 pub use scanner::{Scanner, Source};

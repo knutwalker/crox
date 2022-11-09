@@ -1,9 +1,5 @@
-use crate::{Expr, Span};
+use crate::{Expr, Resolve, Span};
 use std::fmt::{Debug, Display};
-
-pub trait Resolve<'a, R = ExprNode<'a>> {
-    fn resolve(&self, idx: Idx) -> R;
-}
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ExprNode<'a, T: Sized = Expr> {
@@ -123,14 +119,21 @@ impl<'a> ExprNode<'a, BoxedExpr<'a>> {
 }
 
 impl<'a> ExprNode<'a> {
-    pub fn to_boxed_expr<R: Resolve<'a> + ?Sized>(self, span: Span, resolver: &R) -> BoxedExpr<'a> {
+    pub fn to_boxed_expr<R: Resolve<'a, ExprNode<'a>> + ?Sized>(
+        self,
+        span: Span,
+        resolver: &R,
+    ) -> BoxedExpr<'a> {
         let node = self.map(|e| e.resolve(resolver));
         node.into_boxed_expr(span)
     }
 }
 
 impl Expr {
-    pub fn resolve<'a, R: Resolve<'a> + ?Sized>(&self, resolver: &R) -> BoxedExpr<'a> {
+    pub fn resolve<'a, R: Resolve<'a, ExprNode<'a>> + ?Sized>(
+        &self,
+        resolver: &R,
+    ) -> BoxedExpr<'a> {
         let node = resolver.resolve(self.idx);
         let node = node.map(|e| e.resolve(resolver));
         node.into_boxed_expr(self.span)

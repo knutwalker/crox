@@ -68,10 +68,15 @@ pub fn type_ast_with(ast: UntypedAst<'_>, mut report: impl FnMut(CroxError)) -> 
     builder.build()
 }
 
-pub fn type_expr<'a, R: Resolve<'a> + ?Sized>(resolver: &R, expr: Expr) -> Result<TypedExpr> {
+pub fn type_expr<'a, R: Resolve<'a, ExprNode<'a>> + ?Sized>(
+    resolver: &R,
+    expr: Expr,
+) -> Result<TypedExpr> {
     struct ExprResolver<'x, R: ?Sized>(&'x R);
 
-    impl<'a, 'x, R: Resolve<'a> + ?Sized> Resolve<'a, Result<Type>> for ExprResolver<'x, R> {
+    impl<'a, 'x, R: Resolve<'a, ExprNode<'a>> + ?Sized> Resolve<'a, Result<Type>>
+        for ExprResolver<'x, R>
+    {
         fn resolve(&self, idx: Idx) -> Result<Type> {
             let node = self.0.resolve(idx);
             type_check(self, &node)

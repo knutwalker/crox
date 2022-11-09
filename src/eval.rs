@@ -57,10 +57,15 @@ pub fn eval_ast(ast: TypedAst<'_>) -> ValuedAst<'_> {
     builder.build()
 }
 
-pub fn eval_expr<'a, R: Resolve<'a> + ?Sized>(resolver: &R, expr: Expr) -> Result<ValueExpr> {
+pub fn eval_expr<'a, R: Resolve<'a, ExprNode<'a>> + ?Sized>(
+    resolver: &R,
+    expr: Expr,
+) -> Result<ValueExpr> {
     struct ExprResolver<'x, R: ?Sized>(&'x R);
 
-    impl<'a, 'x, R: Resolve<'a> + ?Sized> Resolve<'a, Result<Value>> for ExprResolver<'x, R> {
+    impl<'a, 'x, R: Resolve<'a, ExprNode<'a>> + ?Sized> Resolve<'a, Result<Value>>
+        for ExprResolver<'x, R>
+    {
         fn resolve(&self, idx: Idx) -> Result<Value> {
             let node = self.0.resolve(idx);
             eval(self, &node)

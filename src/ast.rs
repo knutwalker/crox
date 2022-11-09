@@ -23,6 +23,10 @@ impl Idx {
     }
 }
 
+pub trait Resolve<'a, R> {
+    fn resolve(&self, idx: Idx) -> R;
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct UntypedAstBuilder<'a> {
     nodes: Vec<ExprNode<'a>>,
@@ -44,7 +48,7 @@ impl<'a> UntypedAstBuilder<'a> {
     }
 }
 
-impl<'a> Resolve<'a> for UntypedAstBuilder<'a> {
+impl<'a> Resolve<'a, ExprNode<'a>> for UntypedAstBuilder<'a> {
     fn resolve(&self, idx: Idx) -> ExprNode<'a> {
         self.nodes[idx.0]
     }
@@ -73,7 +77,7 @@ impl<'a> Deref for UntypedAst<'a> {
     }
 }
 
-impl<'a> Resolve<'a> for UntypedAst<'a> {
+impl<'a> Resolve<'a, ExprNode<'a>> for UntypedAst<'a> {
     fn resolve(&self, idx: Idx) -> ExprNode<'a> {
         self.nodes[idx.0]
     }
@@ -151,7 +155,7 @@ impl<'a> Deref for TypedAst<'a> {
     }
 }
 
-impl<'a> Resolve<'a> for TypedAst<'a> {
+impl<'a> Resolve<'a, ExprNode<'a>> for TypedAst<'a> {
     fn resolve(&self, idx: Idx) -> ExprNode<'a> {
         self.nodes[idx.0]
     }
@@ -234,7 +238,7 @@ impl<'a> Deref for ValuedAst<'a> {
     }
 }
 
-impl<'a> Resolve<'a> for ValuedAst<'a> {
+impl<'a> Resolve<'a, ExprNode<'a>> for ValuedAst<'a> {
     fn resolve(&self, idx: Idx) -> ExprNode<'a> {
         self.nodes[idx.0]
     }
@@ -276,7 +280,7 @@ impl<'a> Deref for Ast<'a> {
     }
 }
 
-impl<'a> Resolve<'a> for Ast<'a> {
+impl<'a> Resolve<'a, ExprNode<'a>> for Ast<'a> {
     fn resolve(&self, idx: Idx) -> ExprNode<'a> {
         self.ast.resolve(idx)
     }

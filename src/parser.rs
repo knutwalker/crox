@@ -97,7 +97,7 @@ impl<'a, T: Iterator<Item = Tok>> Parser<'a, T> {
     }
 }
 
-impl<'a, T: Iterator<Item = Tok>> Resolve<'a> for Parser<'a, T> {
+impl<'a, T: Iterator<Item = Tok>> Resolve<'a, ExprNode<'a>> for Parser<'a, T> {
     fn resolve(&self, idx: Idx) -> ExprNode<'a> {
         self.nodes.resolve(idx)
     }
