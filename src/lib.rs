@@ -2,6 +2,7 @@ mod ast;
 mod error;
 mod eval;
 mod expr;
+mod node;
 mod parser;
 mod scanner;
 mod token;
@@ -11,14 +12,14 @@ mod util;
 use std::cell::Cell;
 
 pub use ast::{
-    Ast, Expr, Idx, Resolve, TypedAst, TypedAstBuilder, UntypedAst, UntypedAstBuilder, ValuedAst,
-    ValuedAstBuilder,
+    Ast, TypedAst, TypedAstBuilder, UntypedAst, UntypedAstBuilder, ValuedAst, ValuedAstBuilder,
 };
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
 pub use eval::{eval, eval_ast, eval_expr, Value, ValueExpr};
 pub use expr::{
     Associate, Associativity, BinaryOp, BoxedExpr, ExprNode, Literal, OpGroup, Precedence, UnaryOp,
 };
+pub use node::{Expr, Idx, Resolve};
 pub use parser::{parse, parser, Parser};
 pub use scanner::{Scanner, Source};
 pub use token::{Range, Span, Spanned, Token, TokenSet, TokenType};
