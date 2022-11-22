@@ -1,28 +1,25 @@
 use crate::Span;
 use std::fmt::Debug;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Node {
-    pub idx: Idx,
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub struct Node<T> {
+    pub item: T,
     pub span: Span,
 }
 
-impl Node {
-    pub fn new(idx: Idx, span: Span) -> Self {
-        Self { idx, span }
+impl<T> Node<T> {
+    pub fn new(item: T, span: impl Into<Span>) -> Self {
+        Self {
+            item,
+            span: span.into(),
+        }
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct Idx(pub usize);
-
-impl Idx {
-    pub fn into_node(self, range: impl Into<Span>) -> Node {
-        Node::new(self, range.into())
+impl<T: Debug> Debug for Node<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(&self.item, f)?;
+        f.write_str(" @ ")?;
+        Debug::fmt(&self.span, f)
     }
-}
-
-pub trait Resolve<'a, R> {
-    fn resolve(&self, idx: Idx) -> R;
 }

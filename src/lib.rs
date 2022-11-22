@@ -11,19 +11,17 @@ mod util;
 
 use std::cell::Cell;
 
-pub use ast::{
-    Ast, TypedAst, TypedAstBuilder, UntypedAst, UntypedAstBuilder, ValuedAst, ValuedAstBuilder,
-};
+pub use ast::Ast;
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
-pub use eval::{eval, eval_ast, eval_node, Value, ValueNode};
+pub use eval::{eval, eval_node, Value, ValueExpr};
 pub use expr::{
-    Associate, Associativity, BinaryOp, BoxedExpr, Expr, Literal, OpGroup, Precedence, UnaryOp,
+    Associate, Associativity, BinaryOp, Expr, ExprNode, Literal, OpGroup, Precedence, UnaryOp,
 };
-pub use node::{Idx, Node, Resolve};
+pub use node::Node;
 pub use parser::{parse, parser, Parser};
 pub use scanner::{Scanner, Source};
 pub use token::{Range, Span, Spanned, Token, TokenSet, TokenType};
-pub use typer::{type_ast, type_ast_with, type_check, type_node, Type, TypeSet};
+pub use typer::{type_check, type_node, typer, Type, TypeSet, TypedExpr};
 pub use util::{EnumSet, ValueEnum};
 
 pub fn run(content: &str) -> Result<Ast, CroxErrors> {
@@ -35,7 +33,7 @@ pub fn run(content: &str) -> Result<Ast, CroxErrors> {
         errs.set(es);
     };
 
-    macro_rules! t {
+    macro_rules! ok {
         ($e:expr) => {
             match $e {
                 Ok(v) => Some(v),
@@ -48,20 +46,13 @@ pub fn run(content: &str) -> Result<Ast, CroxErrors> {
     }
 
     let source = scan(content);
-
-    let tokens = source.into_iter().filter_map(|t| t!(t));
-
-    let mut parser = parser(source, tokens);
-
-    let nodes = parser.by_ref().filter_map(|n| t!(n)).collect::<Vec<_>>();
-
-    let ast = parser.into_ast();
-    let ast = type_ast_with(ast, report);
+    let tokens = source.into_iter().filter_map(|t| ok!(t));
+    let expressions = parser(source, tokens).filter_map(|e| ok!(e));
+    let typed = typer(expressions).filter_map(|e| ok!(e));
+    let ast = typed.collect();
 
     let errs = errs.into_inner();
     if errs.is_empty() {
-        let ast = eval_ast(ast);
-        let ast = Ast::new(nodes, ast);
         Ok(ast)
     } else {
         Err(CroxErrors::from((source.source, errs)))

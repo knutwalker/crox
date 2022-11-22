@@ -1,6 +1,6 @@
 use crate::{
-    BinaryOp, CroxError, CroxErrorKind, EnumSet, Expr, Idx, Literal, Node, Range, Resolve, Result,
-    TypedAst, TypedAstBuilder, UnaryOp, UntypedAst, Value, ValueEnum,
+    BinaryOp, CroxError, CroxErrorKind, EnumSet, Expr, ExprNode, Literal, Node, Range, Result,
+    UnaryOp, Value, ValueEnum,
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -36,66 +36,36 @@ impl Value {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct TypedNode {
-    pub node: Node,
+#[derive(Clone, Debug, PartialEq)]
+pub struct TypedExpr<'a> {
+    pub expr: Expr<'a>,
     pub typ: Type,
 }
 
-pub fn type_ast(ast: UntypedAst<'_>) -> Result<TypedAst<'_>> {
-    let mut builder = TypedAstBuilder::new(ast);
-    let (exprs, mut adder) = builder.split();
-    for expr in exprs {
-        let typ = type_check(&adder, expr)?;
-        adder.add(typ);
-    }
-    Ok(builder.build())
+pub fn typer<'a, I>(tokens: I) -> impl Iterator<Item = Result<Node<TypedExpr<'a>>>>
+where
+    I: IntoIterator<Item = ExprNode<'a>>,
+{
+    tokens.into_iter().map(type_node)
 }
 
-pub fn type_ast_with(ast: UntypedAst<'_>, mut report: impl FnMut(CroxError)) -> TypedAst<'_> {
-    let mut builder = TypedAstBuilder::new(ast);
-    let (exprs, mut adder) = builder.split();
-    for expr in exprs {
-        let typ = match type_check(&adder, expr) {
-            Ok(typ) => typ,
-            Err(err) => {
-                report(err);
-                Type::Nil
-            }
-        };
-        adder.add(typ);
-    }
-    builder.build()
+pub fn type_node(node: ExprNode<'_>) -> Result<Node<TypedExpr<'_>>> {
+    let typ = type_check(&node.item)?;
+    Ok(Node::new(
+        TypedExpr {
+            expr: *node.item,
+            typ,
+        },
+        node.span,
+    ))
 }
 
-pub fn type_node<'a, R: Resolve<'a, Expr<'a>> + ?Sized>(
-    resolver: &R,
-    node: Node,
-) -> Result<TypedNode> {
-    struct ExprResolver<'x, R: ?Sized>(&'x R);
-
-    impl<'a, 'x, R: Resolve<'a, Expr<'a>> + ?Sized> Resolve<'a, Result<Type>> for ExprResolver<'x, R> {
-        fn resolve(&self, idx: Idx) -> Result<Type> {
-            let node = self.0.resolve(idx);
-            type_check(self, &node)
-        }
-    }
-
-    let expr = resolver.resolve(node.idx);
-    let typ = type_check(&ExprResolver(resolver), &expr)?;
-
-    Ok(TypedNode { node, typ })
-}
-
-pub fn type_check<'a, R: Resolve<'a, Result<Type>> + ?Sized>(
-    resolver: &R,
-    expr: &Expr<'a>,
-) -> Result<Type> {
+pub fn type_check(expr: &Expr<'_>) -> Result<Type> {
     let typ = match expr {
         Expr::Literal(l) => l.typ(),
         Expr::Unary(op, node) => match op {
             UnaryOp::Neg => {
-                let typ = resolver.resolve(node.idx)?;
+                let typ = type_check(&node.item)?;
                 check_num(typ, node.span)?;
                 Type::Number
             }
@@ -109,22 +79,23 @@ pub fn type_check<'a, R: Resolve<'a, Result<Type>> + ?Sized>(
             | BinaryOp::GreaterThan
             | BinaryOp::GreaterThanOrEqual => Type::Bool,
             BinaryOp::Add => {
-                let typ = resolver.resolve(lhs.idx)?;
+                let typ = type_check(&lhs.item)?;
                 let typ = check(
                     typ,
                     TypeSet::from_iter([Type::Number, Type::String]),
                     lhs.span,
                 )?;
-                check(resolver.resolve(rhs.idx)?, TypeSet::from(typ), rhs.span)?;
+
+                check(type_check(&rhs.item)?, TypeSet::from(typ), rhs.span)?;
                 typ
             }
             BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div => {
-                check_num(resolver.resolve(lhs.idx)?, lhs.span)?;
-                check_num(resolver.resolve(rhs.idx)?, rhs.span)?;
+                check_num(type_check(&lhs.item)?, lhs.span)?;
+                check_num(type_check(&rhs.item)?, rhs.span)?;
                 Type::Number
             }
         },
-        Expr::Group(expr) => resolver.resolve(expr.idx)?,
+        Expr::Group(expr) => type_check(&expr.item)?,
     };
     Ok(typ)
 }

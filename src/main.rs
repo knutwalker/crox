@@ -1,4 +1,4 @@
-use crox::{Ast, BoxedExpr, CroxErrorScope, CroxErrors};
+use crox::{Ast, CroxErrorScope, CroxErrors, Node};
 use std::{
     fs,
     io::{self, Write},
@@ -75,10 +75,10 @@ fn handle(verbose: bool, line: &str) {
 }
 
 fn report_ok(verbose: bool, ast: Ast) {
-    for node in ast.iter().copied() {
-        let value = ast.value(node);
+    for node in ast.iter() {
+        let value = &node.item.value;
         if verbose {
-            let expr = BoxedExpr::from(node, &ast);
+            let expr = Node::new(&node.item.expr, node.span);
             println!("{:#?}", expr);
             println!("{:#?}", value);
         }
