@@ -1,4 +1,4 @@
-use crate::{eval::ValueExpr, eval_node, Node, TypedExpr};
+use crate::{eval::ValueExpr, Node};
 use std::{fmt::Debug, ops::Deref};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -17,14 +17,6 @@ impl<'a> Deref for Ast<'a> {
 
     fn deref(&self) -> &Self::Target {
         &self.nodes
-    }
-}
-
-impl<'a> FromIterator<Node<TypedExpr<'a>>> for Ast<'a> {
-    fn from_iter<T: IntoIterator<Item = Node<TypedExpr<'a>>>>(iter: T) -> Self {
-        Self {
-            nodes: iter.into_iter().map(eval_node).collect(),
-        }
     }
 }
 

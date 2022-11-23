@@ -1,4 +1,6 @@
-use crate::{typer::TypedExpr, Expr, Literal, Node, Type, UnaryOp};
+use crate::{
+    BinaryOp, CroxErrorKind, Expr, ExprNode, Literal, Node, Result, Type, TypeSet, UnaryOp,
+};
 use std::{cmp::Ordering, fmt, rc::Rc};
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -8,6 +10,191 @@ pub enum Value {
     Bool(bool),
     Number(f64),
     Str(Rc<str>),
+}
+
+pub fn evaluator<'a, I>(tokens: I) -> impl Iterator<Item = Result<Node<ValueExpr<'a>>>>
+where
+    I: IntoIterator<Item = ExprNode<'a>>,
+{
+    tokens.into_iter().map(eval_node)
+}
+
+pub fn eval_node(node: ExprNode<'_>) -> Result<Node<ValueExpr<'_>>> {
+    let value = eval(&node.item)?;
+    Ok(Node::new(
+        ValueExpr {
+            expr: *node.item,
+            value,
+        },
+        node.span,
+    ))
+}
+
+pub fn eval(expr: &Expr<'_>) -> Result<Value> {
+    match expr {
+        Expr::Literal(literal) => Ok(Value::from(literal)),
+        Expr::Unary(op, node) => {
+            let value = eval(&node.item)?;
+            match op {
+                UnaryOp::Neg => value.neg().map_err(|e| e.at(node.span)),
+                UnaryOp::Not => Ok(value.not()),
+            }
+        }
+        Expr::Binary(lhs_node, op, rhs_node) => {
+            let lhs = eval(&lhs_node.item)?;
+            let rhs = eval(&rhs_node.item)?;
+            let to_error = |e: Result<CroxErrorKind, CroxErrorKind>| match e {
+                Ok(e) => e.at(lhs_node.span),
+                Err(e) => e.at(rhs_node.span),
+            };
+            match op {
+                BinaryOp::Equals => Ok(lhs.eq(&rhs)),
+                BinaryOp::NotEquals => Ok(lhs.not_eq(&rhs)),
+                BinaryOp::LessThan => Ok(lhs.lt(&rhs)),
+                BinaryOp::LessThanOrEqual => Ok(lhs.lte(&rhs)),
+                BinaryOp::GreaterThan => Ok(lhs.gt(&rhs)),
+                BinaryOp::GreaterThanOrEqual => Ok(lhs.gte(&rhs)),
+                BinaryOp::Add => lhs.add(&rhs).map_err(to_error),
+                BinaryOp::Sub => lhs.sub(&rhs).map_err(to_error),
+                BinaryOp::Mul => lhs.mul(&rhs).map_err(to_error),
+                BinaryOp::Div => lhs.div(&rhs).map_err(to_error),
+            }
+        }
+        Expr::Group(inner) => eval(&inner.item),
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ValueExpr<'a> {
+    pub expr: Expr<'a>,
+    pub value: Value,
+}
+
+impl Value {
+    fn as_num(&self) -> Result<f64, CroxErrorKind> {
+        match self {
+            Self::Number(n) => Ok(*n),
+            otherwise => Err(CroxErrorKind::InvalidType {
+                expected: TypeSet::from(Type::Number),
+                actual: otherwise.typ(),
+            }),
+        }
+    }
+
+    fn as_str(&self) -> Result<&str, CroxErrorKind> {
+        match self {
+            Self::Str(s) => Ok(s),
+            otherwise => Err(CroxErrorKind::InvalidType {
+                expected: TypeSet::from(Type::String),
+                actual: otherwise.typ(),
+            }),
+        }
+    }
+
+    fn as_bool(&self) -> bool {
+        match self {
+            Self::Bool(b) => *b,
+            Self::Nil => false,
+            _ => true,
+        }
+    }
+
+    fn neg(&self) -> Result<Self, CroxErrorKind> {
+        let num = self.as_num()?;
+        Ok((-num).into())
+    }
+
+    fn not(&self) -> Self {
+        let b = self.as_bool();
+        (!b).into()
+    }
+
+    fn add(&self, rhs: &Self) -> Result<Self, Result<CroxErrorKind, CroxErrorKind>> {
+        match self {
+            Self::Number(lhs) => {
+                let rhs = rhs.as_num().map_err(Err)?;
+                Ok((*lhs + rhs).into())
+            }
+            Self::Str(lhs) => {
+                let rhs = rhs.as_str().map_err(Err)?;
+                Ok(format!("{}{}", lhs, rhs).into())
+            }
+            otherwise => Err(Ok(CroxErrorKind::InvalidType {
+                expected: TypeSet::from_iter([Type::Number, Type::String]),
+                actual: otherwise.typ(),
+            })),
+        }
+    }
+
+    fn sub(&self, rhs: &Self) -> Result<Self, Result<CroxErrorKind, CroxErrorKind>> {
+        Self::num_op(self, rhs, |lhs, rhs| lhs - rhs)
+    }
+
+    fn mul(&self, rhs: &Self) -> Result<Self, Result<CroxErrorKind, CroxErrorKind>> {
+        Self::num_op(self, rhs, |lhs, rhs| lhs * rhs)
+    }
+
+    fn div(&self, rhs: &Self) -> Result<Self, Result<CroxErrorKind, CroxErrorKind>> {
+        Self::num_op(self, rhs, |lhs, rhs| lhs / rhs)
+    }
+
+    fn eq(&self, other: &Self) -> Self {
+        self.partial_cmp(other)
+            .map_or(false, |ord| ord == Ordering::Equal)
+            .into()
+    }
+
+    fn not_eq(&self, other: &Self) -> Self {
+        self.partial_cmp(other)
+            .map_or(false, |ord| ord != Ordering::Equal)
+            .into()
+    }
+
+    fn lt(&self, other: &Self) -> Self {
+        self.partial_cmp(other)
+            .map_or(false, |ord| ord == Ordering::Less)
+            .into()
+    }
+
+    fn gt(&self, other: &Self) -> Self {
+        self.partial_cmp(other)
+            .map_or(false, |ord| ord == Ordering::Greater)
+            .into()
+    }
+
+    fn lte(&self, other: &Self) -> Self {
+        self.partial_cmp(other)
+            .map_or(false, |ord| ord != Ordering::Greater)
+            .into()
+    }
+
+    fn gte(&self, other: &Self) -> Self {
+        self.partial_cmp(other)
+            .map_or(false, |ord| ord != Ordering::Less)
+            .into()
+    }
+
+    fn num_op(
+        lhs: &Self,
+        rhs: &Self,
+        num_op: impl FnOnce(f64, f64) -> f64,
+    ) -> Result<Self, Result<CroxErrorKind, CroxErrorKind>> {
+        let lhs = lhs.as_num().map_err(Ok)?;
+        let rhs = rhs.as_num().map_err(Err)?;
+        Ok(num_op(lhs, rhs).into())
+    }
+}
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match (&self, &other) {
+            (Self::Number(n), Self::Number(o)) => n.partial_cmp(o),
+            (Self::Str(s), Self::Str(o)) => s.partial_cmp(o),
+            (Self::Bool(b), Self::Bool(o)) => b.partial_cmp(o),
+            (Self::Nil, Self::Nil) => Some(Ordering::Equal),
+            _ => None,
+        }
+    }
 }
 
 impl From<Literal<'_>> for Value {
@@ -34,6 +221,30 @@ impl From<&Literal<'_>> for Value {
     }
 }
 
+impl From<f64> for Value {
+    fn from(num: f64) -> Self {
+        Self::Number(num)
+    }
+}
+
+impl From<bool> for Value {
+    fn from(b: bool) -> Self {
+        Self::Bool(b)
+    }
+}
+
+impl From<&str> for Value {
+    fn from(s: &str) -> Self {
+        Self::Str(s.into())
+    }
+}
+
+impl From<String> for Value {
+    fn from(s: String) -> Self {
+        Self::Str(s.into())
+    }
+}
+
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -41,161 +252,6 @@ impl fmt::Display for Value {
             Value::Bool(b) => b.fmt(f),
             Value::Number(n) => n.fmt(f),
             Value::Str(s) => s.fmt(f),
-        }
-    }
-}
-
-pub fn eval_node(node: Node<TypedExpr<'_>>) -> Node<ValueExpr<'_>> {
-    let value = eval(&node.item.expr);
-    Node::new(
-        ValueExpr {
-            expr: node.item.expr,
-            typ: node.item.typ,
-            value,
-        },
-        node.span,
-    )
-}
-
-pub fn eval(expr: &Expr<'_>) -> Value {
-    match expr {
-        Expr::Literal(literal) => Value::from(literal),
-        Expr::Unary(op, node) => {
-            let value = eval(&node.item);
-            match op {
-                UnaryOp::Neg => value.neg(),
-                UnaryOp::Not => value.not(),
-            }
-        }
-        Expr::Binary(lhs_node, op, rhs_node) => {
-            let lhs = eval(&lhs_node.item);
-            let rhs = eval(&rhs_node.item);
-            match op {
-                crate::BinaryOp::Equals => lhs.eq(&rhs),
-                crate::BinaryOp::NotEquals => lhs.not_eq(&rhs),
-                crate::BinaryOp::LessThan => lhs.lt(&rhs),
-                crate::BinaryOp::LessThanOrEqual => lhs.lte(&rhs),
-                crate::BinaryOp::GreaterThan => lhs.gt(&rhs),
-                crate::BinaryOp::GreaterThanOrEqual => lhs.gte(&rhs),
-                crate::BinaryOp::Add => lhs.add(&rhs),
-                crate::BinaryOp::Sub => lhs.sub(&rhs),
-                crate::BinaryOp::Mul => lhs.mul(&rhs),
-                crate::BinaryOp::Div => lhs.div(&rhs),
-            }
-        }
-        Expr::Group(inner) => eval(&inner.item),
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct ValueExpr<'a> {
-    pub expr: Expr<'a>,
-    pub typ: Type,
-    pub value: Value,
-}
-
-impl Value {
-    fn as_num(&self) -> f64 {
-        let Value::Number(num) = self else {
-            panic!("expected number, got {:?}", self);
-        };
-        *num
-    }
-
-    fn as_str(&self) -> Rc<str> {
-        let Value::Str(s) = self else {
-            panic!("expected string, got {:?}", self);
-        };
-        Rc::clone(s)
-    }
-
-    fn as_bool(&self) -> bool {
-        match self {
-            Value::Bool(b) => *b,
-            Value::Nil => false,
-            _ => true,
-        }
-    }
-
-    fn neg(&self) -> Value {
-        let num = self.as_num();
-        Value::Number(-num)
-    }
-
-    fn not(&self) -> Value {
-        let b = self.as_bool();
-        Value::Bool(!b)
-    }
-
-    fn add(&self, rhs: &Self) -> Value {
-        match self {
-            Value::Number(lhs) => {
-                let rhs = rhs.as_num();
-                Value::Number(*lhs + rhs)
-            }
-            Value::Str(lhs) => {
-                let rhs = rhs.as_str();
-                Value::Str(Rc::from(format!("{}{}", lhs, rhs)))
-            }
-            _ => panic!("Unexpected types: lhs={:?}, rhs={:?}", self, rhs),
-        }
-    }
-
-    fn sub(&self, rhs: &Self) -> Value {
-        Self::num_op(self, rhs, |lhs, rhs| lhs - rhs)
-    }
-
-    fn mul(&self, rhs: &Self) -> Value {
-        Self::num_op(self, rhs, |lhs, rhs| lhs * rhs)
-    }
-
-    fn div(&self, rhs: &Self) -> Value {
-        Self::num_op(self, rhs, |lhs, rhs| lhs / rhs)
-    }
-
-    fn eq(&self, other: &Self) -> Value {
-        Value::Bool(self.cmp(other).map_or(false, |ord| ord == Ordering::Equal))
-    }
-
-    fn not_eq(&self, other: &Self) -> Value {
-        Value::Bool(self.cmp(other).map_or(false, |ord| ord != Ordering::Equal))
-    }
-
-    fn lt(&self, other: &Self) -> Value {
-        Value::Bool(self.cmp(other).map_or(false, |ord| ord == Ordering::Less))
-    }
-
-    fn gt(&self, other: &Self) -> Value {
-        Value::Bool(
-            self.cmp(other)
-                .map_or(false, |ord| ord == Ordering::Greater),
-        )
-    }
-
-    fn lte(&self, other: &Self) -> Value {
-        Value::Bool(
-            self.cmp(other)
-                .map_or(false, |ord| ord != Ordering::Greater),
-        )
-    }
-
-    fn gte(&self, other: &Self) -> Value {
-        Value::Bool(self.cmp(other).map_or(false, |ord| ord != Ordering::Less))
-    }
-
-    fn num_op(lhs: &Self, rhs: &Self, num_op: impl FnOnce(f64, f64) -> f64) -> Value {
-        let lhs = lhs.as_num();
-        let rhs = rhs.as_num();
-        Value::Number(num_op(lhs, rhs))
-    }
-
-    fn cmp(&self, other: &Self) -> Option<Ordering> {
-        match (&self, &other) {
-            (Value::Number(n), Value::Number(o)) => n.partial_cmp(o),
-            (Value::Str(s), Value::Str(o)) => s.partial_cmp(o),
-            (Value::Bool(b), Value::Bool(o)) => b.partial_cmp(o),
-            (Value::Nil, Value::Nil) => Some(Ordering::Equal),
-            _ => None,
         }
     }
 }

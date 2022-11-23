@@ -126,6 +126,10 @@ impl CroxErrorKind {
     pub fn of(input: impl Into<CroxErrorKind>) -> Self {
         input.into()
     }
+
+    pub fn at(self, span: impl Into<Range>) -> CroxError {
+        CroxError::new(self, span)
+    }
 }
 
 impl From<char> for CroxErrorKind {
