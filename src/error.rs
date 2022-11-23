@@ -169,7 +169,7 @@ impl From<(TokenType, TokenSet)> for CroxErrorKind {
 
 impl From<(TokenType, TokenType)> for CroxErrorKind {
     fn from((actual, expected): (TokenType, TokenType)) -> Self {
-        (actual, TokenSet::empty().with(expected)).into()
+        (actual, TokenSet::from(expected)).into()
     }
 }
 

@@ -1,4 +1,4 @@
-use crox::{Ast, CroxErrorScope, CroxErrors, Node};
+use crox::{Ast, CroxErrorScope, CroxErrors, Node, Stmt};
 use std::{
     fs,
     io::{self, Write},
@@ -74,15 +74,14 @@ fn handle(verbose: bool, line: &str) {
     }
 }
 
-fn report_ok(verbose: bool, ast: Ast) {
+fn report_ok(verbose: bool, ast: Ast<Stmt>) {
     for node in ast.iter() {
         let value = &node.item.value;
         if verbose {
-            let expr = Node::new(&node.item.expr, node.span);
+            let expr = Node::new(&node.item.item, node.span);
             println!("{:#?}", expr);
             println!("{:#?}", value);
         }
-        println!("{}", value);
     }
 }
 

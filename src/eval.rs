@@ -1,5 +1,6 @@
 use crate::{
-    BinaryOp, CroxErrorKind, Expr, ExprNode, Literal, Node, Result, Type, TypeSet, UnaryOp,
+    BinaryOp, CroxErrorKind, Expr, ExprNode, Literal, Node, Result, Stmt, StmtNode, Type, TypeSet,
+    UnaryOp,
 };
 use std::{cmp::Ordering, fmt, rc::Rc};
 
@@ -12,21 +13,50 @@ pub enum Value {
     Str(Rc<str>),
 }
 
-pub fn evaluator<'a, I>(tokens: I) -> impl Iterator<Item = Result<Node<ValueExpr<'a>>>>
-where
-    I: IntoIterator<Item = ExprNode<'a>>,
-{
-    tokens.into_iter().map(eval_node)
+#[derive(Clone, Debug, PartialEq)]
+pub struct Valued<T> {
+    pub item: T,
+    pub value: Value,
 }
 
-pub fn eval_node(node: ExprNode<'_>) -> Result<Node<ValueExpr<'_>>> {
-    let value = eval(&node.item)?;
+pub type ValueExpr<'a> = Valued<Expr<'a>>;
+pub type ValueStmt<'a> = Valued<Stmt<'a>>;
+
+pub fn evaluator<'a, I>(tokens: I) -> impl Iterator<Item = Result<Node<ValueStmt<'a>>>>
+where
+    I: IntoIterator<Item = StmtNode<'a>>,
+{
+    tokens.into_iter().map(eval_stmt)
+}
+
+pub fn eval_stmt(stmt: StmtNode<'_>) -> Result<Node<ValueStmt<'_>>> {
+    match &stmt.item {
+        Stmt::Expression(expr) => {
+            let _ = eval(&expr.item)?;
+        }
+        Stmt::Print(expr) => {
+            let val = eval(&expr.item)?;
+            println!("{}", val);
+        }
+    }
+
+    Ok(Node::new(
+        ValueStmt {
+            item: stmt.item,
+            value: Value::Nil,
+        },
+        stmt.span,
+    ))
+}
+
+pub fn eval_expr(expr: ExprNode<'_>) -> Result<Node<ValueExpr<'_>>> {
+    let value = eval(&expr.item)?;
     Ok(Node::new(
         ValueExpr {
-            expr: *node.item,
+            item: *expr.item,
             value,
         },
-        node.span,
+        expr.span,
     ))
 }
 
@@ -62,12 +92,6 @@ pub fn eval(expr: &Expr<'_>) -> Result<Value> {
         }
         Expr::Group(inner) => eval(&inner.item),
     }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct ValueExpr<'a> {
-    pub expr: Expr<'a>,
-    pub value: Value,
 }
 
 impl Value {

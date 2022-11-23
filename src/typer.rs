@@ -33,9 +33,9 @@ impl Value {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct TypedExpr<'a> {
-    pub expr: Expr<'a>,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Typed<T> {
+    pub item: T,
     pub typ: Type,
 }
 
