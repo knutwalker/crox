@@ -1,19 +1,21 @@
 //! Book-flavored BNF-ish:
 //!
 //! ```bnf
-//!    program := statement* EOF ;
-//!  statement := exprStmt | printStmt ;
+//!     program := declaration* EOF ;
+//! declaration := varDecl | statement ;
+//!   statement := exprStmt | printStmt ;
 //!
-//!   exprStmt := expression ";" ;
-//!  printStmt := "print" expression ";" ;
+//!     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
+//!    exprStmt := expression ";" ;
+//!   printStmt := "print" expression ";" ;
 //!
-//! expression := equality ;
-//!    equlity := comparison ( ( "==" | "!=" ) comparison )* ;
-//! comparison := term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
-//!       term := factor ( ( "+" | "-" ) factor )* ;
-//!     factor := unary ( ( "*" | "/" ) unary )* ;
-//!      unary := ( "!" | "-" ) unary | primary ;
-//!    primary := NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" ;
+//!  expression := equality ;
+//!     equlity := comparison ( ( "==" | "!=" ) comparison )* ;
+//!  comparison := term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
+//!        term := factor ( ( "+" | "-" ) factor )* ;
+//!      factor := unary ( ( "*" | "/" ) unary )* ;
+//!       unary := ( "!" | "-" ) unary | primary ;
+//!     primary := NUMBER | STRING | IDENTIFIER | "true" | "false" | "nil" | "(" expression ")" ;
 //!```
 use crate::{
     BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, Range, Result, Source, Span, Stmt,
@@ -104,6 +106,45 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 }
 
 impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
+    /// declaration := varDecl | statement ;
+    fn declaration(&mut self) -> Result<StmtNode<'a>> {
+        let stmt = peek!(self, {
+         (Var, span) => self.var_decl(span),
+        })
+        .transpose()?;
+
+        match stmt {
+            Some(stmt) => Ok(stmt),
+            None => match self.statement() {
+                Ok(stmt) => Ok(stmt),
+                Err(e) => {
+                    // are we really gonna ignore all errors?
+                    self.synchronize();
+                    Err(e)
+                }
+            },
+        }
+    }
+
+    ///     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
+    fn var_decl(&mut self, span: Span) -> Result<StmtNode<'a>> {
+        let name = self.expect(Identifier, EndOfInput::Expected(Identifier, span))?;
+        let name = self.source.slice(name);
+
+        let init = match self.tokens.peek() {
+            Some((Equal, _)) => {
+                let _ = self.tokens.next();
+                let init = self.expression()?;
+                Some(init)
+            }
+            _ => None,
+        };
+
+        let end_span = self.expect(Semicolon, EndOfInput::Unclosed(Identifier, span))?;
+
+        Ok(Stmt::var(name, init).node(span.union(end_span)))
+    }
+
     ///  statement := exprStmt | printStmt ;
     fn statement(&mut self) -> Result<StmtNode<'a>> {
         let stmt = peek!(self, {
@@ -118,21 +159,14 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
     fn print_statement(&mut self, print_span: Span) -> Result<StmtNode<'a>> {
         let expr = self.expression()?;
-        let end_span = self.expect(Semicolon, || {
-            CroxError::new(
-                CroxErrorKind::UnclosedDelimiter { unclosed: Print },
-                print_span,
-            )
-        })?;
+        let end_span = self.expect(Semicolon, EndOfInput::Unclosed(Print, print_span))?;
         let stmt = Stmt::print(expr);
         Ok(Self::mk_stmt(stmt, print_span.union(end_span)))
     }
 
     fn expr_statement(&mut self) -> Result<StmtNode<'a>> {
         let expr = self.expression()?;
-        let end_span = self.expect(Semicolon, || {
-            CroxError::new(CroxErrorKind::from(TokenSet::from(Semicolon)), expr.span)
-        })?;
+        let end_span = self.expect(Semicolon, EndOfInput::Expected(Semicolon, expr.span))?;
         let span = expr.span.union(end_span);
         let stmt = Stmt::expression(expr);
         Ok(Self::mk_stmt(stmt, span))
@@ -199,14 +233,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let (node, span) = match self.tokens.next() {
             Some((LeftParen, span)) => {
                 let inner = self.expression()?;
-                let end_span = self.expect(RightParen, || {
-                    CroxError::new(
-                        CroxErrorKind::UnclosedDelimiter {
-                            unclosed: LeftParen,
-                        },
-                        span,
-                    )
-                })?;
+                let end_span = self.expect(RightParen, EndOfInput::Unclosed(LeftParen, span))?;
                 (Expr::group(inner), Span::from(span.union(end_span)))
             }
             Some((String, span)) => {
@@ -227,6 +254,10 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
                 (Expr::number(num), span)
             }
+            Some((Identifier, span)) => {
+                let ident = self.source.slice(span);
+                (Expr::var(ident), span)
+            }
             Some((False, span)) => (Expr::fals(), span),
             Some((Nil, span)) => (Expr::nil(), span),
             Some((True, span)) => (Expr::tru(), span),
@@ -244,16 +275,19 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         Ok(Self::mk_node(node, span))
     }
 
-    fn expect(
-        &mut self,
-        expected: impl Into<TokenSet>,
-        on_eoi: impl FnOnce() -> CroxError,
-    ) -> Result<Span> {
+    fn expect(&mut self, expected: impl Into<TokenSet>, on_eoi: EndOfInput) -> Result<Span> {
         let expected = expected.into();
         match self.tokens.next() {
             Some((typ, span)) if expected.contains(typ) => Ok(span),
             Some((typ, span)) => Err(CroxError::new(CroxErrorKind::of((typ, expected)), span)),
-            None => Err(on_eoi()),
+            None => Err(match on_eoi {
+                EndOfInput::Unclosed(unclosed, span) => {
+                    CroxError::new(CroxErrorKind::UnclosedDelimiter { unclosed }, span)
+                }
+                EndOfInput::Expected(typ, span) => {
+                    CroxError::new(CroxErrorKind::from(TokenSet::from(typ)), span)
+                }
+            }),
         }
     }
 
@@ -267,7 +301,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 }
 
 impl<R, T: Iterator<Item = Tok>> Parser<'_, R, T> {
-    fn _synchronize(&mut self) {
+    fn synchronize(&mut self) {
         while let Some((tok, _)) = self.tokens.peek() {
             match *tok {
                 Semicolon => {
@@ -299,7 +333,7 @@ impl<'a, T: Iterator<Item = Tok>> Iterator for Parser<'a, StatementRule, T> {
         // check if we are at EOF since the previous iteration
         // could have reported an 'unexpected EOI'
         let _ = self.tokens.peek()?;
-        Some(self.statement())
+        Some(self.declaration())
     }
 }
 
@@ -313,6 +347,11 @@ impl<T: Iterator<Item = Token>> Iterator for UnpackToken<T> {
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next().map(|tok| (tok.typ, tok.span))
     }
+}
+
+enum EndOfInput {
+    Unclosed(TokenType, Span),
+    Expected(TokenType, Span),
 }
 
 #[cfg(test)]

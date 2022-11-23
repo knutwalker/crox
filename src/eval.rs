@@ -1,6 +1,6 @@
 use crate::{
-    BinaryOp, CroxErrorKind, Expr, ExprNode, Literal, Node, Result, Stmt, StmtNode, Type, TypeSet,
-    UnaryOp,
+    BinaryOp, CroxErrorKind, Environment, Expr, Literal, Node, Result, Span, Stmt, StmtNode, Type,
+    TypeSet, UnaryOp,
 };
 use std::{cmp::Ordering, fmt, rc::Rc};
 
@@ -22,76 +22,103 @@ pub struct Valued<T> {
 pub type ValueExpr<'a> = Valued<Expr<'a>>;
 pub type ValueStmt<'a> = Valued<Stmt<'a>>;
 
+#[derive(Clone, Debug, Default)]
+pub struct Evaluator<'a, I> {
+    env: Environment<'a>,
+    statements: I,
+}
+
+impl<'a, I> Evaluator<'a, I> {
+    pub fn new(tokens: I) -> Self {
+        Self {
+            env: Environment::default(),
+            statements: tokens,
+        }
+    }
+}
+
+impl<'a, I> Evaluator<'a, I>
+where
+    I: Iterator<Item = StmtNode<'a>>,
+{
+    pub fn eval_stmt(&mut self, stmt: StmtNode<'a>) -> Result<Node<ValueStmt<'a>>> {
+        match &stmt.item {
+            Stmt::Expression(expr) => {
+                let _ = self.eval(&expr.item, expr.span)?;
+            }
+            Stmt::Print(expr) => {
+                let val = self.eval(&expr.item, expr.span)?;
+                println!("{}", val);
+            }
+            Stmt::Var(name, expr) => {
+                let value = expr
+                    .as_ref()
+                    .map(|e| self.eval(&e.item, e.span))
+                    .transpose()?
+                    .unwrap_or_default();
+                self.env.define(name, value);
+            }
+        }
+
+        Ok(Node::new(
+            ValueStmt {
+                item: stmt.item,
+                value: Value::Nil,
+            },
+            stmt.span,
+        ))
+    }
+
+    pub fn eval(&self, expr: &Expr<'_>, span: Span) -> Result<Value> {
+        match expr {
+            Expr::Literal(literal) => Ok(Value::from(literal)),
+            Expr::Var(name) => self
+                .env
+                .get(name)
+                .ok_or_else(|| {
+                    CroxErrorKind::UndefinedVariable {
+                        name: (*name).to_owned(),
+                    }
+                    .at(span)
+                })
+                .cloned(),
+            Expr::Unary(op, node) => {
+                let value = self.eval(&node.item, node.span)?;
+                match op {
+                    UnaryOp::Neg => value.neg().map_err(|e| e.at(node.span)),
+                    UnaryOp::Not => Ok(value.not()),
+                }
+            }
+            Expr::Binary(lhs_node, op, rhs_node) => {
+                let lhs = self.eval(&lhs_node.item, lhs_node.span)?;
+                let rhs = self.eval(&rhs_node.item, rhs_node.span)?;
+                let to_error = |e: Result<CroxErrorKind, CroxErrorKind>| match e {
+                    Ok(e) => e.at(lhs_node.span),
+                    Err(e) => e.at(rhs_node.span),
+                };
+                match op {
+                    BinaryOp::Equals => Ok(lhs.eq(&rhs)),
+                    BinaryOp::NotEquals => Ok(lhs.not_eq(&rhs)),
+                    BinaryOp::LessThan => Ok(lhs.lt(&rhs)),
+                    BinaryOp::LessThanOrEqual => Ok(lhs.lte(&rhs)),
+                    BinaryOp::GreaterThan => Ok(lhs.gt(&rhs)),
+                    BinaryOp::GreaterThanOrEqual => Ok(lhs.gte(&rhs)),
+                    BinaryOp::Add => lhs.add(&rhs).map_err(to_error),
+                    BinaryOp::Sub => lhs.sub(&rhs).map_err(to_error),
+                    BinaryOp::Mul => lhs.mul(&rhs).map_err(to_error),
+                    BinaryOp::Div => lhs.div(&rhs).map_err(to_error),
+                }
+            }
+            Expr::Group(inner) => self.eval(&inner.item, inner.span),
+        }
+    }
+}
+
 pub fn evaluator<'a, I>(tokens: I) -> impl Iterator<Item = Result<Node<ValueStmt<'a>>>>
 where
     I: IntoIterator<Item = StmtNode<'a>>,
 {
-    tokens.into_iter().map(eval_stmt)
-}
-
-pub fn eval_stmt(stmt: StmtNode<'_>) -> Result<Node<ValueStmt<'_>>> {
-    match &stmt.item {
-        Stmt::Expression(expr) => {
-            let _ = eval(&expr.item)?;
-        }
-        Stmt::Print(expr) => {
-            let val = eval(&expr.item)?;
-            println!("{}", val);
-        }
-    }
-
-    Ok(Node::new(
-        ValueStmt {
-            item: stmt.item,
-            value: Value::Nil,
-        },
-        stmt.span,
-    ))
-}
-
-pub fn eval_expr(expr: ExprNode<'_>) -> Result<Node<ValueExpr<'_>>> {
-    let value = eval(&expr.item)?;
-    Ok(Node::new(
-        ValueExpr {
-            item: *expr.item,
-            value,
-        },
-        expr.span,
-    ))
-}
-
-pub fn eval(expr: &Expr<'_>) -> Result<Value> {
-    match expr {
-        Expr::Literal(literal) => Ok(Value::from(literal)),
-        Expr::Unary(op, node) => {
-            let value = eval(&node.item)?;
-            match op {
-                UnaryOp::Neg => value.neg().map_err(|e| e.at(node.span)),
-                UnaryOp::Not => Ok(value.not()),
-            }
-        }
-        Expr::Binary(lhs_node, op, rhs_node) => {
-            let lhs = eval(&lhs_node.item)?;
-            let rhs = eval(&rhs_node.item)?;
-            let to_error = |e: Result<CroxErrorKind, CroxErrorKind>| match e {
-                Ok(e) => e.at(lhs_node.span),
-                Err(e) => e.at(rhs_node.span),
-            };
-            match op {
-                BinaryOp::Equals => Ok(lhs.eq(&rhs)),
-                BinaryOp::NotEquals => Ok(lhs.not_eq(&rhs)),
-                BinaryOp::LessThan => Ok(lhs.lt(&rhs)),
-                BinaryOp::LessThanOrEqual => Ok(lhs.lte(&rhs)),
-                BinaryOp::GreaterThan => Ok(lhs.gt(&rhs)),
-                BinaryOp::GreaterThanOrEqual => Ok(lhs.gte(&rhs)),
-                BinaryOp::Add => lhs.add(&rhs).map_err(to_error),
-                BinaryOp::Sub => lhs.sub(&rhs).map_err(to_error),
-                BinaryOp::Mul => lhs.mul(&rhs).map_err(to_error),
-                BinaryOp::Div => lhs.div(&rhs).map_err(to_error),
-            }
-        }
-        Expr::Group(inner) => eval(&inner.item),
-    }
+    Evaluator::new(tokens.into_iter())
 }
 
 impl Value {
@@ -277,5 +304,17 @@ impl fmt::Display for Value {
             Value::Number(n) => n.fmt(f),
             Value::Str(s) => s.fmt(f),
         }
+    }
+}
+
+impl<'a, I> Iterator for Evaluator<'a, I>
+where
+    I: Iterator<Item = StmtNode<'a>>,
+{
+    type Item = Result<Node<ValueStmt<'a>>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let stmt = self.statements.next()?;
+        Some(self.eval_stmt(stmt))
     }
 }

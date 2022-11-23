@@ -1,4 +1,5 @@
 mod ast;
+mod env;
 mod error;
 mod eval;
 mod expr;
@@ -13,8 +14,9 @@ mod util;
 use std::cell::Cell;
 
 pub use ast::Ast;
+pub use env::Environment;
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
-pub use eval::{eval, eval_expr, evaluator, Value, ValueExpr, ValueStmt, Valued};
+pub use eval::{evaluator, Value, ValueExpr, ValueStmt, Valued};
 pub use expr::{
     Associate, Associativity, BinaryOp, Expr, ExprNode, Literal, OpGroup, Precedence, UnaryOp,
 };

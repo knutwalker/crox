@@ -6,6 +6,7 @@ pub type ExprNode<'a> = Node<Box<Expr<'a>>>;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr<'a> {
     Literal(Literal<'a>),
+    Var(&'a str),
     Unary(UnaryOp, ExprNode<'a>),
     Binary(ExprNode<'a>, BinaryOp, ExprNode<'a>),
     Group(ExprNode<'a>),
@@ -30,6 +31,10 @@ impl<'a> Expr<'a> {
 
     pub fn string(s: &'a str) -> Self {
         Self::Literal(Literal::String(s))
+    }
+
+    pub fn var(s: &'a str) -> Self {
+        Self::Var(s)
     }
 
     pub fn neg(expr: ExprNode<'a>) -> Self {
@@ -217,6 +222,7 @@ fn print_expr(node: ExprNode, source: &str) -> String {
     fn inner(source: &str, node: ExprNode, res: &mut String) {
         match *node.item {
             Expr::Literal(_) => res.push_str(&source[Range::from(node.span)]),
+            Expr::Var(ident) => res.push_str(ident),
             Expr::Unary(op, expr) => parens(source, res, op, Some(expr)),
             Expr::Binary(lhs, op, rhs) => parens(source, res, op, [lhs, rhs]),
             Expr::Group(expr) => parens(source, res, "group", Some(expr)),

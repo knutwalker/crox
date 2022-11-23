@@ -1,4 +1,4 @@
-use crate::{EnumSet, Expr, Literal, Value, ValueEnum};
+use crate::{EnumSet, Literal, Value, ValueEnum};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u8)]

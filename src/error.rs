@@ -119,6 +119,9 @@ pub enum CroxErrorKind {
     InvalidType { expected: TypeSet, actual: Type },
 
     #[cfg_attr(feature = "fancy", diagnostic())]
+    UndefinedVariable { name: String },
+
+    #[cfg_attr(feature = "fancy", diagnostic())]
     Other(String),
 }
 
@@ -185,6 +188,7 @@ impl CroxErrorKind {
             Self::InvalidNumberLiteral { reason: None } => "Invalid number literal",
             Self::InvalidNumberLiteral { reason: Some(_) } => "Invalid number literal: ",
             Self::InvalidType { .. } => "Invalid type: ",
+            Self::UndefinedVariable { .. } => "Undefined variable: ",
             Self::Other(_) => "Error: ",
         }
     }
@@ -227,6 +231,9 @@ impl Display for CroxErrorKind {
             Self::InvalidType { expected, actual } => {
                 write!(f, "expected {:?}, got {:?}", expected, actual)?;
             }
+            Self::UndefinedVariable { name } => {
+                f.write_str(name)?;
+            }
             Self::Other(msg) => {
                 write!(f, "{}", msg)?;
             }
@@ -256,7 +263,9 @@ impl From<&CroxErrorKind> for CroxErrorScope {
             | CroxErrorKind::UnexpectedToken { .. }
             | CroxErrorKind::UnclosedDelimiter { .. }
             | CroxErrorKind::InvalidNumberLiteral { .. } => Self::Parser,
-            CroxErrorKind::InvalidType { .. } => Self::Interpreter,
+            CroxErrorKind::InvalidType { .. } | CroxErrorKind::UndefinedVariable { .. } => {
+                Self::Interpreter
+            }
             CroxErrorKind::Other(_) => Self::Custom,
         }
     }
