@@ -9,8 +9,9 @@
 //!    exprStmt := expression ";" ;
 //!   printStmt := "print" expression ";" ;
 //!
-//!  expression := equality ;
-//!     equlity := comparison ( ( "==" | "!=" ) comparison )* ;
+//!  expression := assignment ;
+//!  assignment := IDENTIFIER "=" assignment | eqaulity ;
+//!    eqaulity := comparison ( ( "==" | "!=" ) comparison )* ;
 //!  comparison := term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 //!        term := factor ( ( "+" | "-" ) factor )* ;
 //!      factor := unary ( ( "*" | "/" ) unary )* ;
@@ -157,6 +158,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         }
     }
 
+    ///   printStmt := "print" expression ";" ;
     fn print_statement(&mut self, print_span: Span) -> Result<StmtNode<'a>> {
         let expr = self.expression()?;
         let end_span = self.expect(Semicolon, EndOfInput::Unclosed(Print, print_span))?;
@@ -164,6 +166,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         Ok(Self::mk_stmt(stmt, print_span.union(end_span)))
     }
 
+    ///    exprStmt := expression ";" ;
     fn expr_statement(&mut self) -> Result<StmtNode<'a>> {
         let expr = self.expression()?;
         let end_span = self.expect(Semicolon, EndOfInput::Expected(Semicolon, expr.span))?;
@@ -174,10 +177,29 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
     /// expression := equality ;
     fn expression(&mut self) -> Result<ExprNode<'a>> {
-        self.equality()
+        self.assignment()
     }
 
-    ///    equlity := comparison ( ( "==" | "!=" ) comparison )* ;
+    ///  assignment := IDENTIFIER "=" assignment | eqaulity ;
+    fn assignment(&mut self) -> Result<ExprNode<'a>> {
+        let expr = self.equality()?;
+
+        if let Some((Equal, _)) = self.tokens.peek() {
+            let _ = self.tokens.next();
+
+            let value = self.assignment()?;
+            let Expr::Var(name) = &*expr.item else {
+                return Err(CroxErrorKind::InvalidAssignmentTarget.at(expr.span));
+};
+
+            let span = expr.span.union(value.span);
+            return Ok(Self::mk_node(Expr::assign(name, value), span));
+        }
+
+        Ok(expr)
+    }
+
+    ///   eqaulity := comparison ( ( "==" | "!=" ) comparison )* ;
     fn equality(&mut self) -> Result<ExprNode<'a>> {
         bin_op!(self, comparison, {
             (BangEqual, _) => BinaryOp::Equals,

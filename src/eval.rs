@@ -69,7 +69,7 @@ where
         ))
     }
 
-    pub fn eval(&self, expr: &Expr<'_>, span: Span) -> Result<Value> {
+    pub fn eval(&mut self, expr: &Expr<'a>, span: Span) -> Result<Value> {
         match expr {
             Expr::Literal(literal) => Ok(Value::from(literal)),
             Expr::Var(name) => self
@@ -82,6 +82,17 @@ where
                     .at(span)
                 })
                 .cloned(),
+            Expr::Assignment(name, value) => {
+                let span = value.span;
+                let value = self.eval(&value.item, span)?;
+                let _prev = self.env.assign(name, value.clone()).ok_or_else(|| {
+                    CroxErrorKind::UndefinedVariable {
+                        name: (*name).to_owned(),
+                    }
+                    .at(span)
+                })?;
+                Ok(value)
+            }
             Expr::Unary(op, node) => {
                 let value = self.eval(&node.item, node.span)?;
                 match op {

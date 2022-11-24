@@ -116,6 +116,9 @@ pub enum CroxErrorKind {
     },
 
     #[cfg_attr(feature = "fancy", diagnostic())]
+    InvalidAssignmentTarget,
+
+    #[cfg_attr(feature = "fancy", diagnostic())]
     InvalidType { expected: TypeSet, actual: Type },
 
     #[cfg_attr(feature = "fancy", diagnostic())]
@@ -187,6 +190,7 @@ impl CroxErrorKind {
             Self::UnclosedDelimiter { .. } => "Unclosed delimiter: ",
             Self::InvalidNumberLiteral { reason: None } => "Invalid number literal",
             Self::InvalidNumberLiteral { reason: Some(_) } => "Invalid number literal: ",
+            Self::InvalidAssignmentTarget => "Invalid assignment target: ",
             Self::InvalidType { .. } => "Invalid type: ",
             Self::UndefinedVariable { .. } => "Undefined variable: ",
             Self::Other(_) => "Error: ",
@@ -225,6 +229,9 @@ impl Display for CroxErrorKind {
             Self::InvalidNumberLiteral { reason: Some(r) } => {
                 write!(f, "{}", r)?;
             }
+            Self::InvalidAssignmentTarget => {
+                write!(f, "expected an identifier")?;
+            }
             Self::InvalidType { expected, actual } if expected.len() > 1 => {
                 write!(f, "expected one of {:?}, got {:?}", expected, actual)?;
             }
@@ -262,7 +269,8 @@ impl From<&CroxErrorKind> for CroxErrorScope {
             CroxErrorKind::UnexpectedEndOfInput { expected: Some(_) }
             | CroxErrorKind::UnexpectedToken { .. }
             | CroxErrorKind::UnclosedDelimiter { .. }
-            | CroxErrorKind::InvalidNumberLiteral { .. } => Self::Parser,
+            | CroxErrorKind::InvalidNumberLiteral { .. }
+            | CroxErrorKind::InvalidAssignmentTarget => Self::Parser,
             CroxErrorKind::InvalidType { .. } | CroxErrorKind::UndefinedVariable { .. } => {
                 Self::Interpreter
             }
