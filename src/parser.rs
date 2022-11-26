@@ -20,8 +20,8 @@
 //!     primary := NUMBER | STRING | IDENTIFIER | "true" | "false" | "nil" | "(" expression ")" ;
 //!```
 use crate::{
-    BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, Node, Range, Result, Source, Span, Stmt,
-    StmtNode, Token, TokenSet, TokenType, UnaryOp,
+    BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule, Node, Range, Result,
+    Source, Span, StatementRule, Stmt, StmtNode, Token, TokenSet, TokenType, UnaryOp,
 };
 use std::{iter::Peekable, marker::PhantomData};
 use TokenType::*;
@@ -62,12 +62,8 @@ where
 pub struct Parser<'a, R, T: Iterator<Item = Tok>> {
     source: Source<'a>,
     tokens: Peekable<T>,
-    rule: PhantomData<R>,
+    _rule: PhantomData<R>,
 }
-
-pub enum ExpressionRule {}
-
-pub enum StatementRule {}
 
 macro_rules! peek {
     ($this:ident, { $($pat:pat => $expr:expr),+ $(,)? }) => {
@@ -102,7 +98,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         Self {
             source,
             tokens,
-            rule: PhantomData,
+            _rule: PhantomData,
         }
     }
 }

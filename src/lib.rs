@@ -1,65 +1,62 @@
-mod ast;
 mod env;
 mod error;
 mod expr;
 mod interp;
 mod node;
 mod parser;
+mod rule;
 mod scanner;
 mod stmt;
 mod token;
 mod typer;
 mod util;
+mod value;
 
-use std::cell::Cell;
-
-pub use ast::Ast;
 pub use env::Environment;
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
 pub use expr::{
     Associate, Associativity, BinaryOp, Expr, ExprNode, Literal, OpGroup, Precedence, UnaryOp,
 };
-pub use interp::{interpreter, Value, ValueExpr, ValueStmt, Valued};
+pub use interp::{expr_interpreter, stmt_interpreter};
 pub use node::Node;
 pub use parser::{expr_parser, stmt_parser, Parser};
+pub use rule::{ExpressionRule, StatementRule};
 pub use scanner::{Scanner, Source};
 pub use stmt::{Stmt, StmtNode};
 pub use token::{Range, Span, Spanned, Token, TokenSet, TokenType};
 pub use typer::{Type, TypeSet};
 pub use util::{EnumSet, ValueEnum};
+pub use value::{Ast, Value, Valued};
 
-pub fn run(content: &str) -> Result<Ast<Stmt<'_>>, CroxErrors> {
-    let errs = Cell::new(Vec::new());
+use crate::error::CroxErrorsBuilder;
 
-    let report = |e: CroxError| {
-        let mut es = errs.take();
-        es.push(e);
-        errs.set(es);
-    };
-
-    macro_rules! ok {
-        ($e:expr) => {
-            match $e {
-                Ok(v) => Some(v),
-                Err(e) => {
-                    report(e);
-                    None
-                }
-            }
-        };
-    }
+pub fn run(content: &str) -> Result<Ast<StmtNode<'_>>, CroxErrors> {
+    let errs = CroxErrorsBuilder::new();
 
     let source = scan(content);
-    let tokens = source.into_iter().filter_map(|t| ok!(t));
-    let statements = stmt_parser(source, tokens).filter_map(|e| ok!(e));
-    let values = interpreter(statements).filter_map(|e| ok!(e));
+    let tokens = source.into_iter().filter_map(|t| errs.ok(t));
+    let statements = stmt_parser(source, tokens).filter_map(|e| errs.ok(e));
+    let values = stmt_interpreter(statements).filter_map(|e| errs.ok(e));
     let ast = values.collect();
 
-    let errs = errs.into_inner();
-    if errs.is_empty() {
-        Ok(ast)
-    } else {
-        Err(CroxErrors::from((source.source, errs)))
+    match errs.finish(source.source) {
+        Some(errs) => Err(errs),
+        None => Ok(ast),
+    }
+}
+
+pub fn eval(content: &str) -> Result<Ast<ExprNode<'_>>, CroxErrors> {
+    let errs = CroxErrorsBuilder::new();
+
+    let source = scan(content);
+    let tokens = source.into_iter().filter_map(|t| errs.ok(t));
+    let statements = expr_parser(source, tokens).filter_map(|e| errs.ok(e));
+    let values = expr_interpreter(statements).filter_map(|e| errs.ok(e));
+    let ast = values.collect();
+
+    match errs.finish(source.source) {
+        Some(errs) => Err(errs),
+        None => Ok(ast),
     }
 }
 

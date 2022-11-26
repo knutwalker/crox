@@ -1,5 +1,6 @@
-use crox::{Ast, CroxErrorScope, CroxErrors, Node, Stmt};
+use crox::{Ast, CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Node, TokenType, Value};
 use std::{
+    fmt::Debug,
     fs,
     io::{self, Write},
     path::Path,
@@ -68,19 +69,42 @@ fn repl() -> io::Result<()> {
 }
 
 fn handle(verbose: bool, line: &str) {
+    fn is_semicolon_instead_of_eof(error: &CroxError, line: &str) -> bool {
+        if error.span == (0..line.len()) {
+            if let CroxErrorKind::UnexpectedEndOfInput {
+                expected: Some(expected),
+            } = &error.kind
+            {
+                if expected.len() == 1 && expected.contains(TokenType::Semicolon) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
     match crox::run(line) {
         Ok(res) => report_ok(verbose, res),
-        Err(e) => report_error(e),
+        Err(e) => match e.errors() {
+            [e] if is_semicolon_instead_of_eof(e, line) => match crox::eval(line) {
+                Ok(res) => report_ok(verbose, res),
+                Err(e) => report_error(e),
+            },
+            _ => report_error(e),
+        },
     }
 }
 
-fn report_ok(verbose: bool, ast: Ast<Stmt>) {
+fn report_ok<T: Debug>(verbose: bool, ast: Ast<Node<T>>) {
     for node in ast.iter() {
-        let value = &node.item.value;
+        let value = &node.value;
         if verbose {
-            let expr = Node::new(&node.item.item, node.span);
-            println!("{:#?}", expr);
+            println!("{:#?}", node.item);
             println!("{:#?}", value);
+        }
+        if value != &Value::Nil {
+            println!("{}", value);
         }
     }
 }

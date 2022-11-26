@@ -1,60 +1,42 @@
 use crate::{
-    BinaryOp, CroxErrorKind, Environment, Expr, Literal, Node, Result, Span, Stmt, StmtNode, Type,
-    TypeSet, UnaryOp,
+    BinaryOp, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule, Result, StatementRule,
+    Stmt, StmtNode, Type, TypeSet, UnaryOp, Value, Valued,
 };
-use std::{cmp::Ordering, fmt, rc::Rc};
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub enum Value {
-    #[default]
-    Nil,
-    Bool(bool),
-    Number(f64),
-    Str(Rc<str>),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Valued<T> {
-    pub item: T,
-    pub value: Value,
-}
-
-pub type ValueExpr<'a> = Valued<Expr<'a>>;
-pub type ValueStmt<'a> = Valued<Stmt<'a>>;
+use std::{cmp::Ordering, marker::PhantomData};
 
 #[derive(Clone, Debug, Default)]
-pub struct Interpreter<'a, I> {
+pub struct Interpreter<'a, R, I> {
     env: Environment<'a>,
-    statements: I,
+    input: I,
+    _rule: PhantomData<R>,
 }
 
-impl<'a, I> Interpreter<'a, I> {
+impl<'a, R, I> Interpreter<'a, R, I> {
     pub fn new(tokens: I) -> Self {
         Self {
             env: Environment::default(),
-            statements: tokens,
+            input: tokens,
+            _rule: PhantomData,
         }
     }
 }
 
-impl<'a, I> Interpreter<'a, I>
-where
-    I: Iterator<Item = StmtNode<'a>>,
-{
-    pub fn eval_stmt(&self, stmt: &StmtNode<'a>) -> Result<Node<ValueStmt<'a>>> {
+impl<'a, R, I> Interpreter<'a, R, I> {
+    pub fn eval_stmt(&self, stmt: &StmtNode<'a>) -> Result<Valued<StmtNode<'a>>> {
         match &stmt.item {
             Stmt::Expression(expr) => {
-                let _ = self.eval(&expr.item, expr.span)?;
+                let _ = self.eval_expr(expr)?;
             }
             Stmt::Print(expr) => {
-                let val = self.eval(&expr.item, expr.span)?;
+                let val = self.eval_expr(expr)?.value;
                 println!("{}", val);
             }
             Stmt::Var(name, expr) => {
                 let value = expr
                     .as_ref()
-                    .map(|e| self.eval(&e.item, e.span))
+                    .map(|e| self.eval_expr(e))
                     .transpose()?
+                    .map(|v| v.value)
                     .unwrap_or_default();
                 self.env.define(name, value);
             }
@@ -66,18 +48,16 @@ where
             }
         }
 
-        Ok(Node::new(
-            ValueStmt {
-                item: stmt.item.clone(),
-                value: Value::Nil,
-            },
-            stmt.span,
-        ))
+        Ok(Valued {
+            item: stmt.clone(),
+            value: Value::Nil,
+        })
     }
 
-    pub fn eval(&self, expr: &Expr<'a>, span: Span) -> Result<Value> {
-        match expr {
-            Expr::Literal(literal) => Ok(Value::from(literal)),
+    pub fn eval_expr(&self, expr: &ExprNode<'a>) -> Result<Valued<ExprNode<'a>>> {
+        let span = expr.span;
+        let value = match &*expr.item {
+            Expr::Literal(literal) => Value::from(literal),
             Expr::Var(name) => self
                 .env
                 .get(name)
@@ -87,55 +67,67 @@ where
                     }
                     .at(span)
                 })
-                .map(|v| v.clone()),
+                .map(|v| v.clone())?,
             Expr::Assignment(name, value) => {
                 let span = value.span;
-                let value = self.eval(&value.item, span)?;
+                let value = self.eval_expr(value)?.value;
                 let _prev = self.env.assign(name, value.clone()).ok_or_else(|| {
                     CroxErrorKind::UndefinedVariable {
                         name: (*name).to_owned(),
                     }
                     .at(span)
                 })?;
-                Ok(value)
+                value
             }
             Expr::Unary(op, node) => {
-                let value = self.eval(&node.item, node.span)?;
+                let value = self.eval_expr(node)?.value;
                 match op {
-                    UnaryOp::Neg => value.neg().map_err(|e| e.at(node.span)),
-                    UnaryOp::Not => Ok(value.not()),
+                    UnaryOp::Neg => value.neg().map_err(|e| e.at(node.span))?,
+                    UnaryOp::Not => value.not(),
                 }
             }
             Expr::Binary(lhs_node, op, rhs_node) => {
-                let lhs = self.eval(&lhs_node.item, lhs_node.span)?;
-                let rhs = self.eval(&rhs_node.item, rhs_node.span)?;
+                let lhs = self.eval_expr(lhs_node)?.value;
+                let rhs = self.eval_expr(rhs_node)?.value;
                 let to_error = |e: Result<CroxErrorKind, CroxErrorKind>| match e {
                     Ok(e) => e.at(lhs_node.span),
                     Err(e) => e.at(rhs_node.span),
                 };
                 match op {
-                    BinaryOp::Equals => Ok(lhs.eq(&rhs)),
-                    BinaryOp::NotEquals => Ok(lhs.not_eq(&rhs)),
-                    BinaryOp::LessThan => Ok(lhs.lt(&rhs)),
-                    BinaryOp::LessThanOrEqual => Ok(lhs.lte(&rhs)),
-                    BinaryOp::GreaterThan => Ok(lhs.gt(&rhs)),
-                    BinaryOp::GreaterThanOrEqual => Ok(lhs.gte(&rhs)),
-                    BinaryOp::Add => lhs.add(&rhs).map_err(to_error),
-                    BinaryOp::Sub => lhs.sub(&rhs).map_err(to_error),
-                    BinaryOp::Mul => lhs.mul(&rhs).map_err(to_error),
-                    BinaryOp::Div => lhs.div(&rhs).map_err(to_error),
+                    BinaryOp::Equals => lhs.eq(&rhs),
+                    BinaryOp::NotEquals => lhs.not_eq(&rhs),
+                    BinaryOp::LessThan => lhs.lt(&rhs),
+                    BinaryOp::LessThanOrEqual => lhs.lte(&rhs),
+                    BinaryOp::GreaterThan => lhs.gt(&rhs),
+                    BinaryOp::GreaterThanOrEqual => lhs.gte(&rhs),
+                    BinaryOp::Add => lhs.add(&rhs).map_err(to_error)?,
+                    BinaryOp::Sub => lhs.sub(&rhs).map_err(to_error)?,
+                    BinaryOp::Mul => lhs.mul(&rhs).map_err(to_error)?,
+                    BinaryOp::Div => lhs.div(&rhs).map_err(to_error)?,
                 }
             }
-            Expr::Group(inner) => self.eval(&inner.item, inner.span),
-        }
+            Expr::Group(inner) => self.eval_expr(inner)?.value,
+        };
+
+        Ok(Valued {
+            item: expr.clone(),
+            value,
+        })
     }
 }
 
-pub fn interpreter<'a, I>(tokens: I) -> impl Iterator<Item = Result<Node<ValueStmt<'a>>>>
+pub fn stmt_interpreter<'a, I>(tokens: I) -> impl Iterator<Item = Result<Valued<StmtNode<'a>>>>
 where
     I: IntoIterator<Item = StmtNode<'a>>,
 {
-    Interpreter::new(tokens.into_iter())
+    Interpreter::<StatementRule, _>::new(tokens.into_iter())
+}
+
+pub fn expr_interpreter<'a, I>(tokens: I) -> impl Iterator<Item = Result<Valued<ExprNode<'a>>>>
+where
+    I: IntoIterator<Item = ExprNode<'a>>,
+{
+    Interpreter::<ExpressionRule, _>::new(tokens.into_iter())
 }
 
 impl Value {
@@ -253,85 +245,57 @@ impl Value {
     }
 }
 
-impl PartialOrd for Value {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        match (&self, &other) {
-            (Self::Number(n), Self::Number(o)) => n.partial_cmp(o),
-            (Self::Str(s), Self::Str(o)) => s.partial_cmp(o),
-            (Self::Bool(b), Self::Bool(o)) => b.partial_cmp(o),
-            (Self::Nil, Self::Nil) => Some(Ordering::Equal),
-            _ => None,
-        }
-    }
-}
-
-impl From<Literal<'_>> for Value {
-    fn from(literal: Literal) -> Self {
-        match literal {
-            Literal::Nil => Value::Nil,
-            Literal::True => Value::Bool(true),
-            Literal::False => Value::Bool(false),
-            Literal::Number(num) => Value::Number(num),
-            Literal::String(s) => Value::Str(s.into()),
-        }
-    }
-}
-
-impl From<&Literal<'_>> for Value {
-    fn from(literal: &Literal) -> Self {
-        match literal {
-            Literal::Nil => Value::Nil,
-            Literal::True => Value::Bool(true),
-            Literal::False => Value::Bool(false),
-            Literal::Number(num) => Value::Number(*num),
-            Literal::String(s) => Value::Str((*s).into()),
-        }
-    }
-}
-
-impl From<f64> for Value {
-    fn from(num: f64) -> Self {
-        Self::Number(num)
-    }
-}
-
-impl From<bool> for Value {
-    fn from(b: bool) -> Self {
-        Self::Bool(b)
-    }
-}
-
-impl From<&str> for Value {
-    fn from(s: &str) -> Self {
-        Self::Str(s.into())
-    }
-}
-
-impl From<String> for Value {
-    fn from(s: String) -> Self {
-        Self::Str(s.into())
-    }
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Value::Nil => f.write_str("nil"),
-            Value::Bool(b) => b.fmt(f),
-            Value::Number(n) => n.fmt(f),
-            Value::Str(s) => s.fmt(f),
-        }
-    }
-}
-
-impl<'a, I> Iterator for Interpreter<'a, I>
+impl<'a, R, I> Iterator for Interpreter<'a, R, I>
 where
-    I: Iterator<Item = StmtNode<'a>>,
+    R: InterpreterRule,
+    I: Iterator<Item = R::Input<'a>>,
 {
-    type Item = Result<Node<ValueStmt<'a>>>;
+    type Item = Result<R::Interpreted<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let stmt = self.statements.next()?;
-        Some(self.eval_stmt(&stmt))
+        let input = self.input.next()?;
+        Some(R::interpret(self, input))
+    }
+}
+
+pub trait InterpreterRule: Sized {
+    type Input<'a>;
+    type Interpreted<'a>;
+
+    fn interpret<'a, T>(
+        interpreter: &mut Interpreter<'a, Self, T>,
+        input: Self::Input<'a>,
+    ) -> Result<Self::Interpreted<'a>>
+    where
+        T: Iterator<Item = Self::Input<'a>>;
+}
+
+impl InterpreterRule for ExpressionRule {
+    type Input<'a> = ExprNode<'a>;
+    type Interpreted<'a> = Valued<ExprNode<'a>>;
+
+    fn interpret<'a, T>(
+        interpreter: &mut Interpreter<'a, Self, T>,
+        input: Self::Input<'a>,
+    ) -> Result<Self::Interpreted<'a>>
+    where
+        T: Iterator<Item = Self::Input<'a>>,
+    {
+        interpreter.eval_expr(&input)
+    }
+}
+
+impl InterpreterRule for StatementRule {
+    type Input<'a> = StmtNode<'a>;
+    type Interpreted<'a> = Valued<StmtNode<'a>>;
+
+    fn interpret<'a, T>(
+        interpreter: &mut Interpreter<'a, Self, T>,
+        input: Self::Input<'a>,
+    ) -> Result<Self::Interpreted<'a>>
+    where
+        T: Iterator<Item = Self::Input<'a>>,
+    {
+        interpreter.eval_stmt(&input)
     }
 }

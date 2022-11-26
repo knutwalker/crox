@@ -1,5 +1,6 @@
 use crate::{Range, TokenSet, TokenType, Type, TypeSet};
 use std::{
+    cell::Cell,
     error::Error as StdError,
     fmt::{Debug, Display},
 };
@@ -16,25 +17,29 @@ pub struct CroxErrors {
     #[cfg_attr(feature = "fancy", source_code)]
     src: String,
     #[cfg_attr(feature = "fancy", related)]
-    scan: Vec<CroxError>,
+    errors: Vec<CroxError>,
 }
 
 impl From<(&str, Vec<CroxError>)> for CroxErrors {
-    fn from((source, scan): (&str, Vec<CroxError>)) -> Self {
+    fn from((source, errors): (&str, Vec<CroxError>)) -> Self {
         Self {
             src: String::from(source),
-            scan,
+            errors,
         }
     }
 }
 
 impl CroxErrors {
     pub fn scope(&self) -> CroxErrorScope {
-        self.scan
+        self.errors
             .iter()
             .map(|e| CroxErrorScope::from(&e.kind))
             .max()
             .unwrap_or(CroxErrorScope::Custom)
+    }
+
+    pub fn errors(&self) -> &[CroxError] {
+        &self.errors
     }
 }
 
@@ -43,7 +48,7 @@ impl Display for CroxErrors {
         if cfg!(feature = "fancy") {
             writeln!(f, "Errors while running in crox")?;
         } else {
-            for err in &self.scan {
+            for err in &self.errors {
                 let err = SourceScanError::new(&self.src, err.span.clone(), &err.kind);
                 Display::fmt(&err, f)?;
             }
@@ -54,6 +59,43 @@ impl Display for CroxErrors {
 }
 
 impl StdError for CroxErrors {}
+
+pub struct CroxErrorsBuilder {
+    errors: Cell<Vec<CroxError>>,
+}
+
+impl CroxErrorsBuilder {
+    pub fn new() -> Self {
+        Self {
+            errors: Cell::new(Vec::new()),
+        }
+    }
+
+    pub fn report(&self, err: CroxError) {
+        let mut es = self.errors.take();
+        es.push(err);
+        self.errors.set(es);
+    }
+
+    pub fn ok<T>(&self, res: Result<T>) -> Option<T> {
+        match res {
+            Ok(v) => Some(v),
+            Err(e) => {
+                self.report(e);
+                None
+            }
+        }
+    }
+
+    pub fn finish(self, src: &str) -> Option<CroxErrors> {
+        let errs = self.errors.into_inner();
+        if errs.is_empty() {
+            None
+        } else {
+            Some(CroxErrors::from((src, errs)))
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "fancy", derive(Diagnostic))]
