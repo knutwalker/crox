@@ -3,10 +3,11 @@
 //! ```bnf
 //!     program := declaration* EOF ;
 //! declaration := varDecl | statement ;
-//!   statement := exprStmt | ifStmt | printStmt | whileStmt | block;
+//!   statement := exprStmt | forStmt | ifStmt | printStmt | whileStmt | block;
 //!
 //!     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
 //!    exprStmt := expression ";" ;
+//!     forStmt := "for" "(" ( varDecl | exprStmt | ";" ) expression? ";" expression? ")" statement ;
 //!      ifStmt := "if" "(" expression ")" statement ( "else" statement )? ;
 //!   printStmt := "print" expression ";" ;
 //!   whileStmt := "while" "(" expression ")" statement ;
@@ -130,7 +131,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
     ///     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
     fn var_decl(&mut self, span: Span) -> Result<StmtNode<'a>> {
-        let name = self.expect(Identifier, EndOfInput::Expected(Identifier, span))?;
+        let name = self.expect(Identifier, EndOfInput::expected(Identifier, span))?;
         let name = self.source.slice(name);
 
         let init = match self.tokens.peek() {
@@ -142,14 +143,15 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             _ => None,
         };
 
-        let end_span = self.expect(Semicolon, EndOfInput::Unclosed(Identifier, span))?;
+        let end_span = self.expect(Semicolon, EndOfInput::unclosed(Identifier, span))?;
 
         Ok(Stmt::var(name, init).at(span.union(end_span)))
     }
 
-    ///   statement := exprStmt | ifStmt | printStmt | whileStmt | block;
+    ///   statement := exprStmt | forStmt | ifStmt | printStmt | whileStmt | block;
     fn statement(&mut self) -> Result<StmtNode<'a>> {
         let stmt = peek!(self, {
+            (For, span) => self.for_statement(span),
             (If, span) => self.if_statement(span),
             (Print, span) => self.print_statement(span),
             (While, span) => self.while_statement(span),
@@ -165,17 +167,88 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     ///    exprStmt := expression ";" ;
     fn expr_statement(&mut self) -> Result<StmtNode<'a>> {
         let expr = self.expression()?;
-        let end_span = self.expect(Semicolon, EndOfInput::Expected(Semicolon, expr.span))?;
+        let end_span = self.expect(Semicolon, EndOfInput::expected(Semicolon, expr.span))?;
         let span = expr.span.union(end_span);
         let stmt = Stmt::expression(expr);
         Ok(stmt.at(span))
     }
 
+    ///     forStmt := "for" "(" ( varDecl | exprStmt | ";" ) expression? ";" expression? ")" statement ;
+    fn for_statement(&mut self, for_span: Span) -> Result<StmtNode<'a>> {
+        let paren = self.expect(LeftParen, EndOfInput::expected(LeftParen, for_span))?;
+
+        let (init_span, initializer) = match self.tokens.peek() {
+            Some(&(Var, span)) => {
+                let _ = self.tokens.next();
+                let decl = self.var_decl(span)?;
+                (Span::from(span.union(decl.span)), Some(decl))
+            }
+            Some(&(Semicolon, span)) => {
+                let _ = self.tokens.next();
+                (span, None)
+            }
+            Some(_) => {
+                let expr = self.expr_statement()?;
+                (expr.span, Some(expr))
+            }
+            None => {
+                return Err(
+                    EndOfInput::expected(TokenSet::from_iter([Semicolon, Var]), paren).into(),
+                )
+            }
+        };
+
+        let condition = match self.tokens.peek() {
+            Some(&(Semicolon, span)) => Expr::tru().at(span),
+            Some(_) => self.expression()?,
+            None => return Err(EndOfInput::expected(Semicolon, init_span).into()),
+        };
+        let cond_span = condition.span;
+
+        let _ = self.expect(Semicolon, EndOfInput::expected(Semicolon, cond_span))?;
+
+        let (inc_span, increment) = match self.tokens.peek() {
+            Some(&(RightParen, span)) => (span, None),
+            Some(_) => {
+                let increment = self.expression()?;
+                (increment.span, Some(increment))
+            }
+            None => return Err(EndOfInput::expected(RightBrace, cond_span).into()),
+        };
+
+        let _ = self.expect(RightParen, EndOfInput::Unclosed(LeftParen, paren))?;
+
+        let mut body = self.statement()?;
+        let body_span = body.span;
+
+        if let Some(increment) = increment {
+            let increment = Stmt::expression(increment).at(inc_span);
+            let item = match body.item {
+                Stmt::Block(stmts) => {
+                    let mut stmts = stmts.to_vec();
+                    stmts.push(increment);
+                    Stmt::block(stmts)
+                }
+                _ => Stmt::block(vec![body, increment]),
+            };
+            body = item.at(body_span);
+        };
+
+        let body = Stmt::while_(condition, body).at(body_span);
+
+        let body = match initializer {
+            Some(init) => Stmt::block(vec![init, body]),
+            None => body.item,
+        };
+
+        Ok(body.at(for_span.union(body_span)))
+    }
+
     ///      ifStmt := "if" "(" expression ")" statement ( "else" statement )? ;
     fn if_statement(&mut self, span: Span) -> Result<StmtNode<'a>> {
-        self.expect(LeftParen, EndOfInput::Expected(LeftParen, span))?;
+        self.expect(LeftParen, EndOfInput::expected(LeftParen, span))?;
         let cond = self.expression()?;
-        self.expect(RightParen, EndOfInput::Unclosed(LeftParen, span))?;
+        self.expect(RightParen, EndOfInput::unclosed(LeftParen, span))?;
 
         let then_ = self.statement()?;
         let stmt = match self.tokens.peek() {
@@ -204,9 +277,9 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
     ///   whileStmt := "while" "(" expression ")" statement ;
     fn while_statement(&mut self, span: Span) -> Result<StmtNode<'a>> {
-        self.expect(LeftParen, EndOfInput::Expected(LeftParen, span))?;
+        self.expect(LeftParen, EndOfInput::expected(LeftParen, span))?;
         let cond = self.expression()?;
-        self.expect(RightParen, EndOfInput::Unclosed(LeftParen, span))?;
+        self.expect(RightParen, EndOfInput::unclosed(LeftParen, span))?;
 
         let body = self.statement()?;
         let span = span.union(body.span);
@@ -463,7 +536,17 @@ impl<T: Iterator<Item = Token>> Iterator for UnpackToken<T> {
 
 enum EndOfInput {
     Unclosed(TokenType, Span),
-    Expected(TokenType, Span),
+    Expected(TokenSet, Span),
+}
+
+impl EndOfInput {
+    pub fn unclosed(open: TokenType, span: impl Into<Span>) -> Self {
+        EndOfInput::Unclosed(open, span.into())
+    }
+
+    pub fn expected(expected: impl Into<TokenSet>, span: impl Into<Span>) -> Self {
+        EndOfInput::Expected(expected.into(), span.into())
+    }
 }
 
 impl From<EndOfInput> for CroxErrorKind {
@@ -478,7 +561,7 @@ impl From<EndOfInput> for CroxError {
             EndOfInput::Unclosed(unclosed, span) => {
                 CroxErrorKind::UnclosedDelimiter { unclosed }.at(span)
             }
-            EndOfInput::Expected(typ, span) => CroxErrorKind::from(TokenSet::from(typ)).at(span),
+            EndOfInput::Expected(typ, span) => CroxErrorKind::from(typ).at(span),
         }
     }
 }
@@ -586,5 +669,156 @@ mod tests {
 
         let expected = Expr::not_equals(one, two).at(0..6);
         assert_eq!(actual, vec![expected]);
+    }
+
+    #[test]
+    fn test_for_desugar() {
+        let actual = parse::<StatementRule>("for (var i = 0; i < 10; i = i + 1) print i;");
+
+        // constants
+        let zero = Expr::number(0.0).at(13..14);
+        let ten = Expr::number(10.0).at(20..22);
+        let one = Expr::number(1.0).at(32..33);
+
+        // initializer
+        let init = Stmt::var("i", Some(zero)).at(5..15);
+
+        // condition
+        let i = Expr::var("i").at(16..17);
+        let cond = Expr::less_than(i, ten).at(16..22);
+
+        // increment
+        let i = Expr::var("i").at(28..29);
+        let add = Expr::add(i, one).at(28..33);
+        let incr = Expr::assign("i", add).at(24..33);
+
+        // body
+        let i = Expr::var("i").at(41..42);
+        let body = Stmt::print(i).at(35..43);
+
+        // desugar body
+        let body = Stmt::block(vec![body, Stmt::expression(incr).at(24..33)]).at(35..43);
+        let body = Stmt::while_(cond, body).at(35..43);
+        let body = Stmt::block(vec![init, body]).at(0..43);
+
+        assert_eq!(actual, vec![body]);
+    }
+
+    #[test]
+    fn test_for_desugar_block() {
+        let actual =
+            parse::<StatementRule>("for (var i = 0; i < 10; i = i + 1) { print i; print i; }");
+
+        // constants
+        let zero = Expr::number(0.0).at(13..14);
+        let ten = Expr::number(10.0).at(20..22);
+        let one = Expr::number(1.0).at(32..33);
+
+        // initializer
+        let init = Stmt::var("i", Some(zero)).at(5..15);
+
+        // condition
+        let i = Expr::var("i").at(16..17);
+        let cond = Expr::less_than(i, ten).at(16..22);
+
+        // increment
+        let i = Expr::var("i").at(28..29);
+        let add = Expr::add(i, one).at(28..33);
+        let incr = Expr::assign("i", add).at(24..33);
+
+        // body
+        let i = Expr::var("i").at(43..44);
+        let print1 = Stmt::print(i).at(37..45);
+        let i = Expr::var("i").at(52..53);
+        let print2 = Stmt::print(i).at(46..54);
+
+        // desugar body
+        let body = Stmt::block(vec![print1, print2, Stmt::expression(incr).at(24..33)]).at(35..56);
+        let body = Stmt::while_(cond, body).at(35..56);
+        let body = Stmt::block(vec![init, body]).at(0..56);
+
+        assert_eq!(actual, vec![body]);
+    }
+
+    #[test]
+    fn test_for_desugar_no_increment() {
+        let actual = parse::<StatementRule>("for (var i = 0; i < 10; ) print i;");
+
+        // constants
+        let zero = Expr::number(0.0).at(13..14);
+        let ten = Expr::number(10.0).at(20..22);
+
+        // initializer
+        let init = Stmt::var("i", Some(zero)).at(5..15);
+
+        // condition
+        let i = Expr::var("i").at(16..17);
+        let cond = Expr::less_than(i, ten).at(16..22);
+
+        // body
+        let i = Expr::var("i").at(32..33);
+        let body = Stmt::print(i).at(26..34);
+
+        // desugar body
+        let body = Stmt::while_(cond, body).at(26..34);
+        let body = Stmt::block(vec![init, body]).at(0..34);
+
+        assert_eq!(actual, vec![body]);
+    }
+
+    #[test]
+    fn test_for_desugar_no_condition() {
+        let actual = parse::<StatementRule>("for (var i = 0 ;; i = i + 1) print i;");
+
+        // constants
+        let zero = Expr::number(0.0).at(13..14);
+        let one = Expr::number(1.0).at(26..27);
+
+        // initializer
+        let init = Stmt::var("i", Some(zero)).at(5..16);
+
+        // increment
+        let i = Expr::var("i").at(22..23);
+        let add = Expr::add(i, one).at(22..27);
+        let incr = Expr::assign("i", add).at(18..27);
+
+        // body
+        let i = Expr::var("i").at(35..36);
+        let body = Stmt::print(i).at(29..37);
+
+        // desugar body
+        let body = Stmt::block(vec![body, Stmt::expression(incr).at(18..27)]).at(29..37);
+        let body = Stmt::while_(Expr::tru().at(16..17), body).at(29..37);
+        let body = Stmt::block(vec![init, body]).at(0..37);
+
+        assert_eq!(actual, vec![body]);
+    }
+
+    #[test]
+    fn test_for_desugar_no_initializer() {
+        let actual = parse::<StatementRule>("for (; i < 10; i = i + 1) print i;");
+
+        // constants
+        let ten = Expr::number(10.0).at(11..13);
+        let one = Expr::number(1.0).at(23..24);
+
+        // condition
+        let i = Expr::var("i").at(7..8);
+        let cond = Expr::less_than(i, ten).at(7..13);
+
+        // increment
+        let i = Expr::var("i").at(19..20);
+        let add = Expr::add(i, one).at(19..24);
+        let incr = Expr::assign("i", add).at(15..24);
+
+        // body
+        let i = Expr::var("i").at(32..33);
+        let body = Stmt::print(i).at(26..34);
+
+        // desugar body
+        let body = Stmt::block(vec![body, Stmt::expression(incr).at(15..24)]).at(26..34);
+        let body = Stmt::while_(cond, body).at(0..34);
+
+        assert_eq!(actual, vec![body]);
     }
 }
