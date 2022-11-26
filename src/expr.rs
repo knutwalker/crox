@@ -139,64 +139,6 @@ pub enum BinaryOp {
     Div,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum OpGroup {
-    Equality,
-    Comparison,
-    Term,
-    Factor,
-    Unary,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Associativity {
-    Left,
-    Right,
-}
-
-pub trait Precedence {
-    fn precedence(&self) -> OpGroup;
-}
-
-impl Precedence for BinaryOp {
-    fn precedence(&self) -> OpGroup {
-        match self {
-            BinaryOp::Equals => OpGroup::Equality,
-            BinaryOp::NotEquals => OpGroup::Equality,
-            BinaryOp::LessThan => OpGroup::Comparison,
-            BinaryOp::LessThanOrEqual => OpGroup::Comparison,
-            BinaryOp::GreaterThan => OpGroup::Comparison,
-            BinaryOp::GreaterThanOrEqual => OpGroup::Comparison,
-            BinaryOp::Add => OpGroup::Term,
-            BinaryOp::Sub => OpGroup::Term,
-            BinaryOp::Mul => OpGroup::Factor,
-            BinaryOp::Div => OpGroup::Factor,
-        }
-    }
-}
-
-impl Precedence for UnaryOp {
-    fn precedence(&self) -> OpGroup {
-        OpGroup::Unary
-    }
-}
-
-pub trait Associate {
-    fn associate(&self) -> Associativity;
-}
-
-impl Associate for BinaryOp {
-    fn associate(&self) -> Associativity {
-        Associativity::Left
-    }
-}
-
-impl Associate for UnaryOp {
-    fn associate(&self) -> Associativity {
-        Associativity::Right
-    }
-}
-
 impl Display for UnaryOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
