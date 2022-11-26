@@ -3,10 +3,11 @@
 //! ```bnf
 //!     program := declaration* EOF ;
 //! declaration := varDecl | statement ;
-//!   statement := exprStmt | printStmt | block;
+//!   statement := exprStmt | ifStmt | printStmt | block;
 //!
 //!     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
 //!    exprStmt := expression ";" ;
+//!      ifStmt := "if" "(" expression ")" statement ( "else" statement )? ;
 //!   printStmt := "print" expression ";" ;
 //!       block := "{" declaration* "}" ;
 //!
@@ -146,6 +147,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     ///  statement := exprStmt | printStmt ;
     fn statement(&mut self) -> Result<StmtNode<'a>> {
         let stmt = peek!(self, {
+            (If, span) => self.if_statement(span),
             (Print, span) => self.print_statement(span),
             (LeftBrace, span) => self.block(span).map(|n| n.map(Stmt::block)),
         });
@@ -154,6 +156,29 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             Some(Err(err)) => Err(err),
             None => self.expr_statement(),
         }
+    }
+
+    ///      ifStmt := "if" "(" expression ")" statement ( "else" statement )? ;
+    fn if_statement(&mut self, span: Span) -> Result<StmtNode<'a>> {
+        self.expect(LeftParen, EndOfInput::Expected(LeftParen, span))?;
+        let cond = self.expression()?;
+        self.expect(RightParen, EndOfInput::Unclosed(LeftParen, span))?;
+
+        let then_ = self.statement()?;
+        let stmt = match self.tokens.peek() {
+            Some((Else, _)) => {
+                let _ = self.tokens.next();
+                let else_ = self.statement()?;
+                let span = span.union(else_.span);
+                Stmt::if_else(cond, then_, else_).at(span)
+            }
+            _ => {
+                let span = span.union(then_.span);
+                Stmt::if_(cond, then_).at(span)
+            }
+        };
+
+        Ok(stmt)
     }
 
     ///   printStmt := "print" expression ";" ;

@@ -1,6 +1,6 @@
 use crate::{
-    BinaryOp, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule, Result, StatementRule,
-    Stmt, StmtNode, Type, TypeSet, UnaryOp, Value, Valued,
+    BinaryOp, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule, Result, Span,
+    StatementRule, Stmt, StmtNode, Type, TypeSet, UnaryOp, Value, Valued,
 };
 use std::{cmp::Ordering, marker::PhantomData};
 
@@ -22,10 +22,17 @@ impl<'a, R, I> Interpreter<'a, R, I> {
 }
 
 impl<'a, R, I> Interpreter<'a, R, I> {
-    pub fn eval_stmt(&self, stmt: &StmtNode<'a>) -> Result<Valued<StmtNode<'a>>> {
-        match &stmt.item {
+    pub fn eval_stmt(&self, stmt: &Stmt<'a>, span: Span) -> Result<Valued<StmtNode<'a>>> {
+        match &stmt {
             Stmt::Expression(expr) => {
                 let _ = self.eval_expr(expr)?;
+            }
+            Stmt::If(cond, then_, else_) => {
+                if self.eval_expr(cond)?.value.as_bool() {
+                    self.eval_stmt(&then_.item, then_.span)?;
+                } else if let Some(else_) = else_ {
+                    self.eval_stmt(&else_.item, else_.span)?;
+                }
             }
             Stmt::Print(expr) => {
                 let val = self.eval_expr(expr)?.value;
@@ -43,13 +50,13 @@ impl<'a, R, I> Interpreter<'a, R, I> {
             Stmt::Block(stmts) => {
                 let _scope = self.env.push_scope();
                 for stmt in stmts.iter() {
-                    self.eval_stmt(stmt)?;
+                    self.eval_stmt(&stmt.item, stmt.span)?;
                 }
             }
         }
 
         Ok(Valued {
-            item: stmt.clone(),
+            item: stmt.clone().at(span),
             value: Value::Nil,
         })
     }
@@ -296,6 +303,6 @@ impl InterpreterRule for StatementRule {
     where
         T: Iterator<Item = Self::Input<'a>>,
     {
-        interpreter.eval_stmt(&input)
+        interpreter.eval_stmt(&input.item, input.span)
     }
 }
