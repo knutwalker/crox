@@ -14,7 +14,7 @@ mod value;
 
 pub use env::Environment;
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
-pub use expr::{BinaryOp, Expr, ExprNode, Literal, UnaryOp};
+pub use expr::{BinaryOp, Expr, ExprNode, Literal, LogicalOp, UnaryOp};
 pub use interp::{expr_interpreter, stmt_interpreter};
 pub use node::Node;
 pub use parser::{expr_parser, stmt_parser, Parser};

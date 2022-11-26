@@ -12,6 +12,7 @@ pub enum Expr<'a> {
     Var(&'a str),
     Assignment(&'a str, ExprNode<'a>),
     Unary(UnaryOp, ExprNode<'a>),
+    Logical(ExprNode<'a>, LogicalOp, ExprNode<'a>),
     Binary(ExprNode<'a>, BinaryOp, ExprNode<'a>),
     Group(ExprNode<'a>),
 }
@@ -55,6 +56,18 @@ impl<'a> Expr<'a> {
 
     pub fn unary(op: UnaryOp, expr: ExprNode<'a>) -> Self {
         Self::Unary(op, expr)
+    }
+
+    pub fn and(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
+        Self::Logical(lhs, LogicalOp::And, rhs)
+    }
+
+    pub fn or(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
+        Self::Logical(lhs, LogicalOp::Or, rhs)
+    }
+
+    pub fn logical(lhs: ExprNode<'a>, op: LogicalOp, rhs: ExprNode<'a>) -> Self {
+        Self::Logical(lhs, op, rhs)
     }
 
     pub fn add(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
@@ -126,6 +139,12 @@ pub enum UnaryOp {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum LogicalOp {
+    And,
+    Or,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum BinaryOp {
     Equals,
     NotEquals,
@@ -144,6 +163,15 @@ impl Display for UnaryOp {
         match self {
             Self::Neg => f.write_str("-"),
             Self::Not => f.write_str("!"),
+        }
+    }
+}
+
+impl Display for LogicalOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::And => f.write_str("and"),
+            Self::Or => f.write_str("or"),
         }
     }
 }
@@ -178,6 +206,7 @@ fn print_expr(node: ExprNode, source: &str) -> String {
                 parens(source, res, "=", Some(expr));
             }
             Expr::Unary(op, expr) => parens(source, res, op, Some(expr)),
+            Expr::Logical(lhs, op, rhs) => parens(source, res, op, [lhs, rhs]),
             Expr::Binary(lhs, op, rhs) => parens(source, res, op, [lhs, rhs]),
             Expr::Group(expr) => parens(source, res, "group", Some(expr)),
         }

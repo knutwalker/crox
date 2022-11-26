@@ -12,7 +12,9 @@
 //!       block := "{" declaration* "}" ;
 //!
 //!  expression := assignment ;
-//!  assignment := IDENTIFIER "=" assignment | eqaulity ;
+//!  assignment := IDENTIFIER "=" assignment | logic_or ;
+//!    logic_or := logic_and ( "or" logic_and )* ;
+//!   logic_and := equality ( "and" equality )* ;
 //!    eqaulity := comparison ( ( "==" | "!=" ) comparison )* ;
 //!  comparison := term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 //!        term := factor ( ( "+" | "-" ) factor )* ;
@@ -225,9 +227,9 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         self.assignment()
     }
 
-    ///  assignment := IDENTIFIER "=" assignment | eqaulity ;
+    ///  assignment := IDENTIFIER "=" assignment | logic_or ;
     fn assignment(&mut self) -> Result<ExprNode<'a>> {
-        let expr = self.equality()?;
+        let expr = self.logic_or()?;
 
         if let Some((Equal, _)) = self.tokens.peek() {
             let _ = self.tokens.next();
@@ -239,6 +241,34 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
             let span = expr.span.union(value.span);
             return Ok(Expr::assign(name, value).at(span));
+        }
+
+        Ok(expr)
+    }
+
+    ///    logic_or := logic_and ( "or" logic_and )* ;
+    fn logic_or(&mut self) -> Result<ExprNode<'a>> {
+        let mut expr = self.logic_and()?;
+
+        while let Some((Or, _)) = self.tokens.peek() {
+            let _ = self.tokens.next();
+            let right = self.logic_and()?;
+            let span = expr.span.union(right.span);
+            expr = Expr::or(expr, right).at(span);
+        }
+
+        Ok(expr)
+    }
+
+    ///   logic_and := equality ( "and" equality )* ;
+    fn logic_and(&mut self) -> Result<ExprNode<'a>> {
+        let mut expr = self.equality()?;
+
+        while let Some((And, _)) = self.tokens.peek() {
+            let _ = self.tokens.next();
+            let right = self.equality()?;
+            let span = expr.span.union(right.span);
+            expr = Expr::and(expr, right).at(span);
         }
 
         Ok(expr)

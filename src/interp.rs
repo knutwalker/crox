@@ -1,5 +1,5 @@
 use crate::{
-    BinaryOp, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule, Result, Span,
+    BinaryOp, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule, LogicalOp, Result, Span,
     StatementRule, Stmt, StmtNode, Type, TypeSet, UnaryOp, Value, Valued,
 };
 use std::{cmp::Ordering, marker::PhantomData};
@@ -91,6 +91,14 @@ impl<'a, R, I> Interpreter<'a, R, I> {
                 match op {
                     UnaryOp::Neg => value.neg().map_err(|e| e.at(node.span))?,
                     UnaryOp::Not => value.not(),
+                }
+            }
+            Expr::Logical(lhs_node, op, rhs_node) => {
+                let lhs = self.eval_expr(lhs_node)?.value;
+                match op {
+                    LogicalOp::And if !lhs.as_bool() => lhs,
+                    LogicalOp::Or if lhs.as_bool() => lhs,
+                    LogicalOp::And | LogicalOp::Or => self.eval_expr(rhs_node)?.value,
                 }
             }
             Expr::Binary(lhs_node, op, rhs_node) => {
