@@ -10,6 +10,7 @@ pub enum Stmt<'a> {
     If(ExprNode<'a>, BoxedStmt<'a>, Option<BoxedStmt<'a>>),
     Print(ExprNode<'a>),
     Var(&'a str, Option<ExprNode<'a>>),
+    While(ExprNode<'a>, BoxedStmt<'a>),
     Block(Rc<[StmtNode<'a>]>),
 }
 
@@ -32,6 +33,10 @@ impl<'a> Stmt<'a> {
 
     pub fn var(name: &'a str, initializer: impl Into<Option<ExprNode<'a>>>) -> Self {
         Self::Var(name, initializer.into())
+    }
+
+    pub fn while_(condition: ExprNode<'a>, body: StmtNode<'a>) -> Self {
+        Self::While(condition, body.map(Rc::new))
     }
 
     pub fn block(stmts: impl Into<Rc<[StmtNode<'a>]>>) -> Self {

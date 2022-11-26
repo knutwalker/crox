@@ -3,12 +3,13 @@
 //! ```bnf
 //!     program := declaration* EOF ;
 //! declaration := varDecl | statement ;
-//!   statement := exprStmt | ifStmt | printStmt | block;
+//!   statement := exprStmt | ifStmt | printStmt | whileStmt | block;
 //!
 //!     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
 //!    exprStmt := expression ";" ;
 //!      ifStmt := "if" "(" expression ")" statement ( "else" statement )? ;
 //!   printStmt := "print" expression ";" ;
+//!   whileStmt := "while" "(" expression ")" statement ;
 //!       block := "{" declaration* "}" ;
 //!
 //!  expression := assignment ;
@@ -146,11 +147,12 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         Ok(Stmt::var(name, init).at(span.union(end_span)))
     }
 
-    ///   statement := exprStmt | ifStmt | printStmt | block;
+    ///   statement := exprStmt | ifStmt | printStmt | whileStmt | block;
     fn statement(&mut self) -> Result<StmtNode<'a>> {
         let stmt = peek!(self, {
             (If, span) => self.if_statement(span),
             (Print, span) => self.print_statement(span),
+            (While, span) => self.while_statement(span),
             (LeftBrace, span) => self.block(span).map(|n| n.map(Stmt::block)),
         });
         match stmt {
@@ -158,6 +160,15 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             Some(Err(err)) => Err(err),
             None => self.expr_statement(),
         }
+    }
+
+    ///    exprStmt := expression ";" ;
+    fn expr_statement(&mut self) -> Result<StmtNode<'a>> {
+        let expr = self.expression()?;
+        let end_span = self.expect(Semicolon, EndOfInput::Expected(Semicolon, expr.span))?;
+        let span = expr.span.union(end_span);
+        let stmt = Stmt::expression(expr);
+        Ok(stmt.at(span))
     }
 
     ///      ifStmt := "if" "(" expression ")" statement ( "else" statement )? ;
@@ -191,13 +202,15 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         Ok(stmt.at(print_span.union(end_span)))
     }
 
-    ///    exprStmt := expression ";" ;
-    fn expr_statement(&mut self) -> Result<StmtNode<'a>> {
-        let expr = self.expression()?;
-        let end_span = self.expect(Semicolon, EndOfInput::Expected(Semicolon, expr.span))?;
-        let span = expr.span.union(end_span);
-        let stmt = Stmt::expression(expr);
-        Ok(stmt.at(span))
+    ///   whileStmt := "while" "(" expression ")" statement ;
+    fn while_statement(&mut self, span: Span) -> Result<StmtNode<'a>> {
+        self.expect(LeftParen, EndOfInput::Expected(LeftParen, span))?;
+        let cond = self.expression()?;
+        self.expect(RightParen, EndOfInput::Unclosed(LeftParen, span))?;
+
+        let body = self.statement()?;
+        let span = span.union(body.span);
+        Ok(Stmt::while_(cond, body).at(span))
     }
 
     ///       block := "{" declaration* "}" ;

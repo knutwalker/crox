@@ -47,6 +47,11 @@ impl<'a, R, I> Interpreter<'a, R, I> {
                     .unwrap_or_default();
                 self.env.define(name, value);
             }
+            Stmt::While(cond, body) => {
+                while self.eval_expr(cond)?.value.as_bool() {
+                    self.eval_stmt(&body.item, body.span)?;
+                }
+            }
             Stmt::Block(stmts) => {
                 let _scope = self.env.push_scope();
                 for stmt in stmts.iter() {
