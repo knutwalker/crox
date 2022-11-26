@@ -4,6 +4,7 @@ use crate::Value;
 pub struct Environment<'a> {
     names: Vec<&'a str>,
     values: Vec<Value>,
+    scopes: Vec<usize>,
 }
 
 impl<'a> Environment<'a> {
@@ -28,6 +29,16 @@ impl<'a> Environment<'a> {
             .iter()
             .rposition(|&n| n == name)
             .map(|idx| &mut self.values[idx])
+    }
+
+    pub fn push_scope(&mut self) {
+        self.scopes.push(self.names.len());
+    }
+
+    pub fn pop_scope(&mut self) {
+        let scope = self.scopes.pop().expect("popped empty scope");
+        self.names.truncate(scope);
+        self.values.truncate(scope);
     }
 }
 
@@ -89,5 +100,29 @@ mod tests {
             Some(Value::Number(42.0))
         );
         assert_eq!(env.get_mut("foo"), Some(&mut Value::Number(24.0)));
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn test_scope() {
+        let mut env = Environment::default();
+        env.define("foo", Value::Number(42.0));                  // var foo = 42;
+                                                                 //
+        env.push_scope();                                        // {
+        assert_eq!(env.get("foo"), Some(&Value::Number(42.0)));  //     foo; // 42
+                                                                 //
+        env.define("foo", Value::Number(24.0));                  //     var foo = 24;
+        assert_eq!(env.get("foo"), Some(&Value::Number(24.0)));  //     foo; // 24
+                                                                 //
+        env.assign("foo", Value::Number(12.0));                  //     foo = 12;
+        assert_eq!(env.get("foo"), Some(&Value::Number(12.0)));  //     foo; // 12
+                                                                 //
+        env.define("bar", Value::Number(42.0));                  //     var bar = 42;
+        assert_eq!(env.get("bar"), Some(&Value::Number(42.0)));  //     bar; // 42
+                                                                 //
+        env.pop_scope();                                         // }
+                                                                 //
+        assert_eq!(env.get("foo"), Some(&Value::Number(42.0)));  // foo; // 42
+        assert_eq!(env.get("bar"), None);                        // bar; // undefined
     }
 }
