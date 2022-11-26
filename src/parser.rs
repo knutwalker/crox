@@ -144,7 +144,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         Ok(Stmt::var(name, init).at(span.union(end_span)))
     }
 
-    ///  statement := exprStmt | printStmt ;
+    ///   statement := exprStmt | ifStmt | printStmt | block;
     fn statement(&mut self) -> Result<StmtNode<'a>> {
         let stmt = peek!(self, {
             (If, span) => self.if_statement(span),
@@ -198,6 +198,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         Ok(stmt.at(span))
     }
 
+    ///       block := "{" declaration* "}" ;
     fn block(&mut self, start: Span) -> Result<Node<Vec<StmtNode<'a>>>> {
         let mut stmts = Vec::new();
 
@@ -219,7 +220,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         Ok(Node::new(stmts, start.union(end)))
     }
 
-    /// expression := equality ;
+    ///  expression := assignment ;
     fn expression(&mut self) -> Result<ExprNode<'a>> {
         self.assignment()
     }
@@ -243,7 +244,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         Ok(expr)
     }
 
-    ///   eqaulity := comparison ( ( "==" | "!=" ) comparison )* ;
+    ///    eqaulity := comparison ( ( "==" | "!=" ) comparison )* ;
     fn equality(&mut self) -> Result<ExprNode<'a>> {
         bin_op!(self, comparison, {
             (BangEqual, _) => BinaryOp::Equals,
@@ -251,7 +252,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         })
     }
 
-    /// comparison := term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
+    ///  comparison := term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
     fn comparison(&mut self) -> Result<ExprNode<'a>> {
         bin_op!(self, term, {
             (Greater, _) => BinaryOp::GreaterThan,
@@ -261,7 +262,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         })
     }
 
-    ///       term := factor ( ( "+" | "-" ) factor )* ;
+    ///        term := factor ( ( "+" | "-" ) factor )* ;
     fn term(&mut self) -> Result<ExprNode<'a>> {
         bin_op!(self, factor, {
             (Plus, _) => BinaryOp::Add,
@@ -269,7 +270,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         })
     }
 
-    ///     factor := unary ( ( "*" | "/" ) unary )* ;
+    ///      factor := unary ( ( "*" | "/" ) unary )* ;
     fn factor(&mut self) -> Result<ExprNode<'a>> {
         bin_op!(self, unary, {
             (Star, _) => BinaryOp::Mul,
@@ -277,7 +278,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         })
     }
 
-    ///      unary := ( "!" | "-" ) unary | primary ;
+    ///       unary := ( "!" | "-" ) unary | primary ;
     fn unary(&mut self) -> Result<ExprNode<'a>> {
         let (op, span) = match self.tokens.peek() {
             Some(&(Bang, span)) => (UnaryOp::Not, span),
@@ -290,7 +291,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         Ok(Expr::unary(op, inner).at(span))
     }
 
-    ///    primary := NUMBER | STRING | IDENTIFIER | "true" | "false" | "(" expression ")" ;
+    ///     primary := NUMBER | STRING | IDENTIFIER | "true" | "false" | "nil" | "(" expression ")" ;
     fn primary(&mut self) -> Result<ExprNode<'a>> {
         fn expected() -> TokenSet {
             TokenSet::from_iter([LeftParen, String, Number, Identifier, False, Nil, True])
