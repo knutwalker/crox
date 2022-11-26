@@ -1,5 +1,5 @@
 use crate::{ExprNode, Node, Span};
-use std::fmt::Debug;
+use std::{fmt::Debug, rc::Rc};
 
 pub type StmtNode<'a> = Node<Stmt<'a>>;
 
@@ -8,6 +8,7 @@ pub enum Stmt<'a> {
     Expression(ExprNode<'a>),
     Print(ExprNode<'a>),
     Var(&'a str, Option<ExprNode<'a>>),
+    Block(Rc<[StmtNode<'a>]>),
 }
 
 impl<'a> Stmt<'a> {
@@ -23,7 +24,11 @@ impl<'a> Stmt<'a> {
         Self::Var(name, initializer.into())
     }
 
-    pub fn node(self, span: impl Into<Span>) -> StmtNode<'a> {
+    pub fn block(stmts: impl Into<Rc<[StmtNode<'a>]>>) -> Self {
+        Self::Block(stmts.into())
+    }
+
+    pub fn at(self, span: impl Into<Span>) -> StmtNode<'a> {
         Node::new(self, span)
     }
 }

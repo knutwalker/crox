@@ -1,8 +1,8 @@
 mod ast;
 mod env;
 mod error;
-mod eval;
 mod expr;
+mod interp;
 mod node;
 mod parser;
 mod scanner;
@@ -16,10 +16,10 @@ use std::cell::Cell;
 pub use ast::Ast;
 pub use env::Environment;
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
-pub use eval::{evaluator, Value, ValueExpr, ValueStmt, Valued};
 pub use expr::{
     Associate, Associativity, BinaryOp, Expr, ExprNode, Literal, OpGroup, Precedence, UnaryOp,
 };
+pub use interp::{interpreter, Value, ValueExpr, ValueStmt, Valued};
 pub use node::Node;
 pub use parser::{expr_parser, stmt_parser, Parser};
 pub use scanner::{Scanner, Source};
@@ -52,7 +52,7 @@ pub fn run(content: &str) -> Result<Ast<Stmt<'_>>, CroxErrors> {
     let source = scan(content);
     let tokens = source.into_iter().filter_map(|t| ok!(t));
     let statements = stmt_parser(source, tokens).filter_map(|e| ok!(e));
-    let values = evaluator(statements).filter_map(|e| ok!(e));
+    let values = interpreter(statements).filter_map(|e| ok!(e));
     let ast = values.collect();
 
     let errs = errs.into_inner();

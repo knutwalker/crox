@@ -14,6 +14,10 @@ impl<T> Node<T> {
             span: span.into(),
         }
     }
+
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Node<U> {
+        Node::new(f(self.item), self.span)
+    }
 }
 
 impl<T: Debug> Debug for Node<T> {

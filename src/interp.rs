@@ -23,12 +23,12 @@ pub type ValueExpr<'a> = Valued<Expr<'a>>;
 pub type ValueStmt<'a> = Valued<Stmt<'a>>;
 
 #[derive(Clone, Debug, Default)]
-pub struct Evaluator<'a, I> {
+pub struct Interpreter<'a, I> {
     env: Environment<'a>,
     statements: I,
 }
 
-impl<'a, I> Evaluator<'a, I> {
+impl<'a, I> Interpreter<'a, I> {
     pub fn new(tokens: I) -> Self {
         Self {
             env: Environment::default(),
@@ -37,11 +37,11 @@ impl<'a, I> Evaluator<'a, I> {
     }
 }
 
-impl<'a, I> Evaluator<'a, I>
+impl<'a, I> Interpreter<'a, I>
 where
     I: Iterator<Item = StmtNode<'a>>,
 {
-    pub fn eval_stmt(&mut self, stmt: StmtNode<'a>) -> Result<Node<ValueStmt<'a>>> {
+    pub fn eval_stmt(&self, stmt: &StmtNode<'a>) -> Result<Node<ValueStmt<'a>>> {
         match &stmt.item {
             Stmt::Expression(expr) => {
                 let _ = self.eval(&expr.item, expr.span)?;
@@ -58,18 +58,24 @@ where
                     .unwrap_or_default();
                 self.env.define(name, value);
             }
+            Stmt::Block(stmts) => {
+                let _scope = self.env.push_scope();
+                for stmt in stmts.iter() {
+                    self.eval_stmt(stmt)?;
+                }
+            }
         }
 
         Ok(Node::new(
             ValueStmt {
-                item: stmt.item,
+                item: stmt.item.clone(),
                 value: Value::Nil,
             },
             stmt.span,
         ))
     }
 
-    pub fn eval(&mut self, expr: &Expr<'a>, span: Span) -> Result<Value> {
+    pub fn eval(&self, expr: &Expr<'a>, span: Span) -> Result<Value> {
         match expr {
             Expr::Literal(literal) => Ok(Value::from(literal)),
             Expr::Var(name) => self
@@ -81,7 +87,7 @@ where
                     }
                     .at(span)
                 })
-                .cloned(),
+                .map(|v| v.clone()),
             Expr::Assignment(name, value) => {
                 let span = value.span;
                 let value = self.eval(&value.item, span)?;
@@ -125,11 +131,11 @@ where
     }
 }
 
-pub fn evaluator<'a, I>(tokens: I) -> impl Iterator<Item = Result<Node<ValueStmt<'a>>>>
+pub fn interpreter<'a, I>(tokens: I) -> impl Iterator<Item = Result<Node<ValueStmt<'a>>>>
 where
     I: IntoIterator<Item = StmtNode<'a>>,
 {
-    Evaluator::new(tokens.into_iter())
+    Interpreter::new(tokens.into_iter())
 }
 
 impl Value {
@@ -318,7 +324,7 @@ impl fmt::Display for Value {
     }
 }
 
-impl<'a, I> Iterator for Evaluator<'a, I>
+impl<'a, I> Iterator for Interpreter<'a, I>
 where
     I: Iterator<Item = StmtNode<'a>>,
 {
@@ -326,6 +332,6 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         let stmt = self.statements.next()?;
-        Some(self.eval_stmt(stmt))
+        Some(self.eval_stmt(&stmt))
     }
 }

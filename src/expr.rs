@@ -1,7 +1,10 @@
 use crate::{Node, Span};
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    rc::Rc,
+};
 
-pub type ExprNode<'a> = Node<Box<Expr<'a>>>;
+pub type ExprNode<'a> = Node<Rc<Expr<'a>>>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr<'a> {
@@ -102,8 +105,8 @@ impl<'a> Expr<'a> {
         Self::Group(expr)
     }
 
-    pub fn node(self, span: impl Into<Span>) -> ExprNode<'a> {
-        Node::new(Box::new(self), span)
+    pub fn at(self, span: impl Into<Span>) -> ExprNode<'a> {
+        Node::new(Rc::new(self), span)
     }
 }
 
@@ -224,8 +227,8 @@ impl Display for BinaryOp {
 fn print_expr(node: ExprNode, source: &str) -> String {
     use crate::Range;
 
-    fn inner(source: &str, node: ExprNode, res: &mut String) {
-        match *node.item {
+    fn inner(source: &str, node: &ExprNode, res: &mut String) {
+        match &*node.item {
             Expr::Literal(_) => res.push_str(&source[Range::from(node.span)]),
             Expr::Var(ident) => res.push_str(ident),
             Expr::Assignment(ident, expr) => {
@@ -238,11 +241,11 @@ fn print_expr(node: ExprNode, source: &str) -> String {
         }
     }
 
-    fn parens<'a>(
+    fn parens<'x, 'a: 'x>(
         source: &'a str,
         res: &mut String,
         name: impl Display,
-        nodes: impl IntoIterator<Item = ExprNode<'a>>,
+        nodes: impl IntoIterator<Item = &'x ExprNode<'a>> + 'x,
     ) {
         use std::fmt::Write;
 
@@ -258,7 +261,7 @@ fn print_expr(node: ExprNode, source: &str) -> String {
     }
 
     let mut res = String::new();
-    inner(source, node, &mut res);
+    inner(source, &node, &mut res);
     res
 }
 
@@ -270,13 +273,13 @@ mod tests {
     fn test_print() {
         let input = "-123 * (45.67)";
 
-        let neg = Expr::number(123.0).node(1..4);
-        let neg = Expr::neg(neg).node(0..4);
+        let neg = Expr::number(123.0).at(1..4);
+        let neg = Expr::neg(neg).at(0..4);
 
-        let group = Expr::number(45.67).node(8..13);
-        let group = Expr::group(group).node(7..14);
+        let group = Expr::number(45.67).at(8..13);
+        let group = Expr::group(group).at(7..14);
 
-        let ast = Expr::mul(neg, group).node(0..14);
+        let ast = Expr::mul(neg, group).at(0..14);
 
         assert_eq!(print_expr(ast, input), "(* (- 123) (group 45.67))");
     }

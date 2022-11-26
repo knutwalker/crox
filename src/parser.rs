@@ -3,11 +3,12 @@
 //! ```bnf
 //!     program := declaration* EOF ;
 //! declaration := varDecl | statement ;
-//!   statement := exprStmt | printStmt ;
+//!   statement := exprStmt | printStmt | block;
 //!
 //!     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
 //!    exprStmt := expression ";" ;
 //!   printStmt := "print" expression ";" ;
+//!       block := "{" declaration* "}" ;
 //!
 //!  expression := assignment ;
 //!  assignment := IDENTIFIER "=" assignment | eqaulity ;
@@ -19,7 +20,7 @@
 //!     primary := NUMBER | STRING | IDENTIFIER | "true" | "false" | "nil" | "(" expression ")" ;
 //!```
 use crate::{
-    BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, Range, Result, Source, Span, Stmt,
+    BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, Node, Range, Result, Source, Span, Stmt,
     StmtNode, Token, TokenSet, TokenType, UnaryOp,
 };
 use std::{iter::Peekable, marker::PhantomData};
@@ -90,7 +91,7 @@ macro_rules! bin_op {
             };
             let rhs = $this.$descent()?;
             let span = lhs.span.union(rhs.span);
-            lhs = Self::mk_node(Expr::binary(lhs, op, rhs), span);
+            lhs = Expr::binary(lhs, op, rhs).at(span);
         }
         Ok(lhs)
     }};
@@ -143,13 +144,14 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
         let end_span = self.expect(Semicolon, EndOfInput::Unclosed(Identifier, span))?;
 
-        Ok(Stmt::var(name, init).node(span.union(end_span)))
+        Ok(Stmt::var(name, init).at(span.union(end_span)))
     }
 
     ///  statement := exprStmt | printStmt ;
     fn statement(&mut self) -> Result<StmtNode<'a>> {
         let stmt = peek!(self, {
             (Print, span) => self.print_statement(span),
+            (LeftBrace, span) => self.block(span).map(|n| n.map(Stmt::block)),
         });
         match stmt {
             Some(Ok(stmt)) => Ok(stmt),
@@ -163,7 +165,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let expr = self.expression()?;
         let end_span = self.expect(Semicolon, EndOfInput::Unclosed(Print, print_span))?;
         let stmt = Stmt::print(expr);
-        Ok(Self::mk_stmt(stmt, print_span.union(end_span)))
+        Ok(stmt.at(print_span.union(end_span)))
     }
 
     ///    exprStmt := expression ";" ;
@@ -172,7 +174,28 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let end_span = self.expect(Semicolon, EndOfInput::Expected(Semicolon, expr.span))?;
         let span = expr.span.union(end_span);
         let stmt = Stmt::expression(expr);
-        Ok(Self::mk_stmt(stmt, span))
+        Ok(stmt.at(span))
+    }
+
+    fn block(&mut self, start: Span) -> Result<Node<Vec<StmtNode<'a>>>> {
+        let mut stmts = Vec::new();
+
+        let end = loop {
+            match self.tokens.peek() {
+                Some(&(RightBrace, end)) => {
+                    let _ = self.tokens.next();
+                    break end;
+                }
+                Some(_) => {
+                    stmts.push(self.declaration()?);
+                }
+                None => {
+                    return Err(EndOfInput::Unclosed(LeftBrace, start).into());
+                }
+            }
+        };
+
+        Ok(Node::new(stmts, start.union(end)))
     }
 
     /// expression := equality ;
@@ -190,10 +213,10 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             let value = self.assignment()?;
             let Expr::Var(name) = &*expr.item else {
                 return Err(CroxErrorKind::InvalidAssignmentTarget.at(expr.span));
-};
+            };
 
             let span = expr.span.union(value.span);
-            return Ok(Self::mk_node(Expr::assign(name, value), span));
+            return Ok(Expr::assign(name, value).at(span));
         }
 
         Ok(expr)
@@ -243,13 +266,13 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let _ = self.tokens.next();
         let inner = self.unary()?;
         let span = span.union(inner.span);
-        Ok(Self::mk_node(Expr::unary(op, inner), span))
+        Ok(Expr::unary(op, inner).at(span))
     }
 
-    ///    primary := NUMBER | STRING | "true" | "false" | "(" expression ")" ;
+    ///    primary := NUMBER | STRING | IDENTIFIER | "true" | "false" | "(" expression ")" ;
     fn primary(&mut self) -> Result<ExprNode<'a>> {
         fn expected() -> TokenSet {
-            TokenSet::from_iter([LeftParen, String, Number, False, Nil, True])
+            TokenSet::from_iter([LeftParen, String, Number, Identifier, False, Nil, True])
         }
 
         let (node, span) = match self.tokens.next() {
@@ -283,10 +306,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             Some((False, span)) => (Expr::fals(), span),
             Some((Nil, span)) => (Expr::nil(), span),
             Some((True, span)) => (Expr::tru(), span),
-            Some((typ, span)) => {
-                let kind = CroxErrorKind::of((typ, expected()));
-                return Err(CroxError::new(kind, span));
-            }
+            Some((typ, span)) => return Err(CroxErrorKind::of((typ, expected())).at(span)),
             None => {
                 let kind = CroxErrorKind::of(expected());
                 let end = self.source.source.len();
@@ -294,7 +314,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             }
         };
 
-        Ok(Self::mk_node(node, span))
+        Ok(node.at(span))
     }
 
     fn expect(&mut self, expected: impl Into<TokenSet>, on_eoi: EndOfInput) -> Result<Span> {
@@ -302,23 +322,8 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         match self.tokens.next() {
             Some((typ, span)) if expected.contains(typ) => Ok(span),
             Some((typ, span)) => Err(CroxError::new(CroxErrorKind::of((typ, expected)), span)),
-            None => Err(match on_eoi {
-                EndOfInput::Unclosed(unclosed, span) => {
-                    CroxError::new(CroxErrorKind::UnclosedDelimiter { unclosed }, span)
-                }
-                EndOfInput::Expected(typ, span) => {
-                    CroxError::new(CroxErrorKind::from(TokenSet::from(typ)), span)
-                }
-            }),
+            None => Err(CroxError::from(on_eoi)),
         }
-    }
-
-    fn mk_node(expr: Expr<'a>, span: impl Into<Span>) -> ExprNode<'a> {
-        expr.node(span)
-    }
-
-    fn mk_stmt(stmt: Stmt<'a>, span: impl Into<Span>) -> StmtNode<'a> {
-        stmt.node(span)
     }
 }
 
@@ -337,25 +342,44 @@ impl<R, T: Iterator<Item = Tok>> Parser<'_, R, T> {
     }
 }
 
-impl<'a, T: Iterator<Item = Tok>> Iterator for Parser<'a, ExpressionRule, T> {
-    type Item = Result<ExprNode<'a>>;
+impl<'a, T: Iterator<Item = Tok>, R: ParserRule> Iterator for Parser<'a, R, T> {
+    type Item = Result<R::Parsed<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // check if we are at EOF since the previous iteration
         // could have reported an 'unexpected EOI'
         let _ = self.tokens.peek()?;
-        Some(self.expression())
+        Some(R::rule(self))
     }
 }
 
-impl<'a, T: Iterator<Item = Tok>> Iterator for Parser<'a, StatementRule, T> {
-    type Item = Result<StmtNode<'a>>;
+pub trait ParserRule: Sized {
+    type Parsed<'a>;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        // check if we are at EOF since the previous iteration
-        // could have reported an 'unexpected EOI'
-        let _ = self.tokens.peek()?;
-        Some(self.declaration())
+    fn rule<'a, T>(parser: &mut Parser<'a, Self, T>) -> Result<Self::Parsed<'a>>
+    where
+        T: Iterator<Item = Tok>;
+}
+
+impl ParserRule for ExpressionRule {
+    type Parsed<'a> = ExprNode<'a>;
+
+    fn rule<'a, T>(parser: &mut Parser<'a, Self, T>) -> Result<Self::Parsed<'a>>
+    where
+        T: Iterator<Item = Tok>,
+    {
+        parser.expression()
+    }
+}
+
+impl ParserRule for StatementRule {
+    type Parsed<'a> = StmtNode<'a>;
+
+    fn rule<'a, T>(parser: &mut Parser<'a, Self, T>) -> Result<Self::Parsed<'a>>
+    where
+        T: Iterator<Item = Tok>,
+    {
+        parser.declaration()
     }
 }
 
@@ -376,96 +400,103 @@ enum EndOfInput {
     Expected(TokenType, Span),
 }
 
+impl From<EndOfInput> for CroxErrorKind {
+    fn from(eoi: EndOfInput) -> Self {
+        CroxError::from(eoi).kind
+    }
+}
+
+impl From<EndOfInput> for CroxError {
+    fn from(eoi: EndOfInput) -> Self {
+        match eoi {
+            EndOfInput::Unclosed(unclosed, span) => {
+                CroxErrorKind::UnclosedDelimiter { unclosed }.at(span)
+            }
+            EndOfInput::Expected(typ, span) => CroxErrorKind::from(TokenSet::from(typ)).at(span),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use pretty_assertions::assert_eq;
 
+    fn parse<T: ParserRule>(source: &str) -> Vec<T::Parsed<'_>> {
+        let source = Source::new(source);
+        let tokens = source.scan_all().unwrap();
+
+        let parser = any_parser::<T, _>(source, tokens);
+        parser.collect::<Result<Vec<_>>>().unwrap()
+    }
+
     #[test]
     fn test_parse1() {
-        let source = Source::new("6 / 3 - 1");
+        let actual = parse::<ExpressionRule>("6 / 3 - 1");
 
-        let tokens = [
-            Token::new(TokenType::Number, 0, 1),
-            Token::new(TokenType::Slash, 2, 1),
-            Token::new(TokenType::Number, 4, 1),
-            Token::new(TokenType::Minus, 6, 1),
-            Token::new(TokenType::Number, 8, 1),
-        ];
+        let lhs = Expr::number(6.0).at(0..1);
+        let rhs = Expr::number(3.0).at(4..5);
+        let div = Expr::binary(lhs, BinaryOp::Div, rhs).at(0..5);
 
-        let actual = expr_parser(source, tokens)
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
-
-        let lhs = Expr::number(6.0).node(0..1);
-        let rhs = Expr::number(3.0).node(4..5);
-        let div = Expr::binary(lhs, BinaryOp::Div, rhs).node(0..5);
-
-        let rhs = Expr::number(1.0).node(8..9);
-        let sub = Expr::binary(div, BinaryOp::Sub, rhs).node(0..9);
+        let rhs = Expr::number(1.0).at(8..9);
+        let sub = Expr::binary(div, BinaryOp::Sub, rhs).at(0..9);
 
         assert_eq!(actual, vec![sub]);
     }
 
     #[test]
     fn test_parse2() {
-        let source = Source::new("6 - 3 / 1");
+        let actual = parse::<ExpressionRule>("6 - 3 / 1");
 
-        let tokens = [
-            Token::new(TokenType::Number, 0, 1),
-            Token::new(TokenType::Minus, 2, 1),
-            Token::new(TokenType::Number, 4, 1),
-            Token::new(TokenType::Slash, 6, 1),
-            Token::new(TokenType::Number, 8, 1),
-        ];
+        let first = Expr::number(6.0).at(0..1);
 
-        let actual = expr_parser(source, tokens)
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
+        let lhs = Expr::number(3.0).at(4..5);
+        let rhs = Expr::number(1.0).at(8..9);
+        let div = Expr::binary(lhs, BinaryOp::Div, rhs).at(4..9);
 
-        let first = Expr::number(6.0).node(0..1);
-
-        let lhs = Expr::number(3.0).node(4..5);
-        let rhs = Expr::number(1.0).node(8..9);
-        let div = Expr::binary(lhs, BinaryOp::Div, rhs).node(4..9);
-
-        let sub = Expr::binary(first, BinaryOp::Sub, div).node(0..9);
+        let sub = Expr::binary(first, BinaryOp::Sub, div).at(0..9);
 
         assert_eq!(actual, vec![sub]);
     }
 
     #[test]
-    fn test_parse_stmt1() -> Result<()> {
-        let source = Source::new("print 1;");
-        let tokens = source.into_iter().collect::<Result<Vec<_>>>()?;
+    fn test_parse_stmt1() {
+        let actual = parse::<StatementRule>("print 1;");
 
-        let stmts = stmt_parser(source, tokens).collect::<Result<Vec<_>>>()?;
-
-        let expected = Stmt::print(Expr::number(1.0).node(6..7)).node(0..8);
-        assert_eq!(stmts, vec![expected]);
-        Ok(())
+        let expected = Stmt::print(Expr::number(1.0).at(6..7)).at(0..8);
+        assert_eq!(actual, vec![expected]);
     }
 
     #[test]
-    fn test_parse_stmt2() -> Result<()> {
-        let source = Source::new("print 1 + 3 + 3 + 7;");
-        let tokens = source.into_iter().collect::<Result<Vec<_>>>()?;
+    fn test_parse_stmt2() {
+        let actual = parse::<StatementRule>("print 1 + 3 + 3 + 7;");
 
-        let stmts = stmt_parser(source, tokens).collect::<Result<Vec<_>>>()?;
+        let one = Expr::number(1.0).at(6..7);
+        let three = Expr::number(3.0).at(10..11);
+        let sum = Expr::add(one, three).at(6..11);
 
-        let one = Expr::number(1.0).node(6..7);
-        let three = Expr::number(3.0).node(10..11);
-        let sum = Expr::add(one, three).node(6..11);
+        let three = Expr::number(3.0).at(14..15);
+        let sum = Expr::add(sum, three).at(6..15);
 
-        let three = Expr::number(3.0).node(14..15);
-        let sum = Expr::add(sum, three).node(6..15);
+        let seven = Expr::number(7.0).at(18..19);
+        let sum = Expr::add(sum, seven).at(6..19);
 
-        let seven = Expr::number(7.0).node(18..19);
-        let sum = Expr::add(sum, seven).node(6..19);
+        let expected = Stmt::print(sum).at(0..20);
+        assert_eq!(actual, vec![expected]);
+    }
 
-        let expected = Stmt::print(sum).node(0..20);
-        assert_eq!(stmts, vec![expected]);
-        Ok(())
+    #[test]
+    fn test_parse_block() {
+        let actual = parse::<StatementRule>("{ print 1; print 2; }");
+
+        let one = Expr::number(1.0).at(8..9);
+        let two = Expr::number(2.0).at(17..18);
+
+        let first = Stmt::print(one).at(2..10);
+        let second = Stmt::print(two).at(11..19);
+
+        let expected = Stmt::block(vec![first, second]).at(0..21);
+        assert_eq!(actual, vec![expected]);
     }
 }
