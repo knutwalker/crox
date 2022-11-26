@@ -290,8 +290,8 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     ///    eqaulity := comparison ( ( "==" | "!=" ) comparison )* ;
     fn equality(&mut self) -> Result<ExprNode<'a>> {
         bin_op!(self, comparison, {
-            (BangEqual, _) => BinaryOp::Equals,
-            (EqualEqual, _) => BinaryOp::NotEquals,
+            (BangEqual, _) => BinaryOp::NotEquals,
+            (EqualEqual, _) => BinaryOp::Equals,
         })
     }
 
@@ -563,6 +563,28 @@ mod tests {
         let second = Stmt::print(two).at(11..19);
 
         let expected = Stmt::block(vec![first, second]).at(0..21);
+        assert_eq!(actual, vec![expected]);
+    }
+
+    #[test]
+    fn test_parse_eq() {
+        let actual = parse::<ExpressionRule>("1 == 2");
+
+        let one = Expr::number(1.0).at(0..1);
+        let two = Expr::number(2.0).at(5..6);
+
+        let expected = Expr::equals(one, two).at(0..6);
+        assert_eq!(actual, vec![expected]);
+    }
+
+    #[test]
+    fn test_parse_not_eq() {
+        let actual = parse::<ExpressionRule>("1 != 2");
+
+        let one = Expr::number(1.0).at(0..1);
+        let two = Expr::number(2.0).at(5..6);
+
+        let expected = Expr::not_equals(one, two).at(0..6);
         assert_eq!(actual, vec![expected]);
     }
 }
