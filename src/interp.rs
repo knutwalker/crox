@@ -161,16 +161,6 @@ impl Value {
         }
     }
 
-    fn as_str(&self) -> Result<&str, CroxErrorKind> {
-        match self {
-            Self::Str(s) => Ok(s),
-            otherwise => Err(CroxErrorKind::InvalidType {
-                expected: TypeSet::from(Type::String),
-                actual: otherwise.typ(),
-            }),
-        }
-    }
-
     fn as_bool(&self) -> bool {
         match self {
             Self::Bool(b) => *b,
@@ -190,18 +180,21 @@ impl Value {
     }
 
     fn add(&self, rhs: &Self) -> Result<Self, Result<CroxErrorKind, CroxErrorKind>> {
-        match self {
-            Self::Number(lhs) => {
-                let rhs = rhs.as_num().map_err(Err)?;
-                Ok((*lhs + rhs).into())
-            }
-            Self::Str(lhs) => {
-                let rhs = rhs.as_str().map_err(Err)?;
+        match (self, rhs) {
+            (lhs, rhs @ Self::Str(_)) | (lhs @ Self::Str(_), rhs) => {
                 Ok(format!("{}{}", lhs, rhs).into())
             }
-            otherwise => Err(Ok(CroxErrorKind::InvalidType {
+            (Self::Number(lhs), rhs) => {
+                let rhs = rhs.as_num().map_err(Err)?;
+                Ok((lhs + rhs).into())
+            }
+            (lhs, Self::Number(rhs)) => {
+                let lhs = lhs.as_num().map_err(Ok)?;
+                Ok((lhs + rhs).into())
+            }
+            (lhs, _) => Err(Ok(CroxErrorKind::InvalidType {
                 expected: TypeSet::from_iter([Type::Number, Type::String]),
-                actual: otherwise.typ(),
+                actual: lhs.typ(),
             })),
         }
     }
@@ -317,5 +310,117 @@ impl InterpreterRule for StatementRule {
         T: Iterator<Item = Self::Input<'a>>,
     {
         interpreter.eval_stmt(&input.item, input.span)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_add_nums() {
+        let lhs = Value::Number(42.0);
+        let rhs = Value::Number(24.0);
+        let result = lhs.add(&rhs);
+        assert_eq!(result, Ok(Value::Number(66.0)));
+    }
+
+    #[test]
+    fn test_add_num_to_bool() {
+        let lhs = Value::Number(42.0);
+        let rhs = Value::Bool(true);
+        let result = lhs.add(&rhs);
+        assert_eq!(
+            result,
+            Err(Err(CroxErrorKind::InvalidType {
+                expected: TypeSet::from(Type::Number),
+                actual: Type::Bool,
+            }))
+        );
+    }
+
+    #[test]
+    fn test_add_bool_to_num() {
+        let lhs = Value::Bool(true);
+        let rhs = Value::Number(42.0);
+        let result = lhs.add(&rhs);
+        assert_eq!(
+            result,
+            Err(Ok(CroxErrorKind::InvalidType {
+                expected: TypeSet::from(Type::Number),
+                actual: Type::Bool,
+            }))
+        );
+    }
+
+    #[test]
+    fn test_add_bool_to_bool() {
+        let lhs = Value::Bool(true);
+        let rhs = Value::Bool(false);
+        let result = lhs.add(&rhs);
+        assert_eq!(
+            result,
+            Err(Ok(CroxErrorKind::InvalidType {
+                expected: TypeSet::from_iter([Type::Number, Type::String]),
+                actual: Type::Bool,
+            }))
+        );
+    }
+
+    #[test]
+    fn test_add_str_to_str() {
+        let lhs = Value::from("foo");
+        let rhs = Value::from("bar");
+        let result = lhs.add(&rhs);
+        assert_eq!(result, Ok(Value::from("foobar")));
+    }
+
+    #[test]
+    fn test_add_str_to_num() {
+        let lhs = Value::from("foo");
+        let rhs = Value::Number(42.0);
+        let result = lhs.add(&rhs);
+        assert_eq!(result, Ok(Value::from("foo42")));
+    }
+
+    #[test]
+    fn test_add_num_to_str() {
+        let lhs = Value::Number(42.0);
+        let rhs = Value::from("foo");
+        let result = lhs.add(&rhs);
+        assert_eq!(result, Ok(Value::from("42foo")));
+    }
+
+    #[test]
+    fn test_add_str_to_bool() {
+        let lhs = Value::from("foo");
+        let rhs = Value::Bool(true);
+        let result = lhs.add(&rhs);
+        assert_eq!(result, Ok(Value::from("footrue")));
+    }
+
+    #[test]
+    fn test_add_bool_to_str() {
+        let lhs = Value::Bool(true);
+        let rhs = Value::from("foo");
+        let result = lhs.add(&rhs);
+        assert_eq!(result, Ok(Value::from("truefoo")));
+    }
+
+    #[test]
+    fn test_add_str_to_nil() {
+        let lhs = Value::from("foo");
+        let rhs = Value::Nil;
+        let result = lhs.add(&rhs);
+        assert_eq!(result, Ok(Value::from("foonil")));
+    }
+
+    #[test]
+    fn test_add_nil_to_str() {
+        let lhs = Value::Nil;
+        let rhs = Value::from("foo");
+        let result = lhs.add(&rhs);
+        assert_eq!(result, Ok(Value::from("nilfoo")));
     }
 }
