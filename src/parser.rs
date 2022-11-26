@@ -327,12 +327,13 @@ impl<R, T: Iterator<Item = Tok>> Parser<'_, R, T> {
     fn synchronize(&mut self) {
         while let Some((tok, _)) = self.tokens.peek() {
             match *tok {
-                Semicolon => {
-                    let _ = self.tokens.next();
-                    break;
-                }
                 Class | Fun | For | If | Print | Return | Var | While => break,
-                _ => {}
+                otherwise => {
+                    let _ = self.tokens.next();
+                    if otherwise == Semicolon {
+                        break;
+                    }
+                }
             }
         }
     }
