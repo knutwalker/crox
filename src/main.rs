@@ -1,8 +1,8 @@
 use crox::{Ast, CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Node, TokenType, Value};
 use std::{
     fmt::Debug,
-    fs,
-    io::{self, Write},
+    fs::{self, File},
+    io::{self, Read, Seek, Write},
     path::Path,
 };
 
@@ -21,29 +21,64 @@ fn run() -> io::Result<()> {
         std::process::exit(64);
     }
 
-    match file {
-        Some(file) => match run_file(file)? {
-            Ok(_) => {}
-            Err(e) => {
-                let scope = e.scope();
-                report_error(e);
-                let exit_code = match scope {
-                    CroxErrorScope::Custom | CroxErrorScope::Scanner | CroxErrorScope::Parser => 65,
-                    CroxErrorScope::Interpreter => 70,
-                };
-                std::process::exit(exit_code)
-            }
-        },
-        None => repl()?,
+    let res = match open_script(file)? {
+        Some(content) if !content.trim().is_empty() => run_script(&content),
+        _ => Ok(repl()?),
+    };
+
+    if let Err(e) = res {
+        let scope = e.scope();
+        report_error(e);
+        let exit_code = match scope {
+            CroxErrorScope::Custom | CroxErrorScope::Scanner | CroxErrorScope::Parser => 65,
+            CroxErrorScope::Interpreter => 70,
+        };
+        std::process::exit(exit_code)
     }
 
     Ok(())
 }
 
-fn run_file(file: impl AsRef<Path>) -> io::Result<crox::Result<(), CroxErrors>> {
-    let content = fs::read_to_string(file)?;
-    let res = crox::run(&content).map(|exprs| report_ok(false, exprs));
-    Ok(res)
+fn open_script(file: Option<impl AsRef<Path>>) -> io::Result<Option<String>> {
+    match file {
+        Some(file) => fs::read_to_string(file).map(Some),
+        None => {
+            let stdin = io::stdin();
+
+            #[cfg(unix)]
+            let file = {
+                use std::os::unix::prelude::AsFd;
+                let stdin = stdin.as_fd().try_clone_to_owned();
+                stdin.map(File::from)
+            };
+
+            #[cfg(windows)]
+            let file = {
+                use std::os::windows::io::AsHandle;
+                let stdin = std.as_handle().try_clone_to_owned();
+                stdin.map(File::from)
+            };
+
+            #[cfg(not(any(unix, windows)))]
+            compile_error!("Unsupported platform, only unix and windows are supported");
+
+            let has_stdin = file.map_or(false, |mut f| {
+                f.seek(io::SeekFrom::End(0)).map_or(true, |len| len > 0)
+            });
+
+            Ok(if has_stdin {
+                let mut content = String::new();
+                io::stdin().read_to_string(&mut content)?;
+                Some(content)
+            } else {
+                None
+            })
+        }
+    }
+}
+
+fn run_script(content: &str) -> crox::Result<(), CroxErrors> {
+    crox::run(content).map(|exprs| report_ok(false, exprs))
 }
 
 fn repl() -> io::Result<()> {
