@@ -167,6 +167,9 @@ pub enum CroxErrorKind {
     UndefinedVariable { name: String },
 
     #[cfg_attr(feature = "fancy", diagnostic())]
+    UninitializedVariable { name: String },
+
+    #[cfg_attr(feature = "fancy", diagnostic())]
     Other(String),
 }
 
@@ -235,6 +238,7 @@ impl CroxErrorKind {
             Self::InvalidAssignmentTarget => "Invalid assignment target: ",
             Self::InvalidType { .. } => "Invalid type: ",
             Self::UndefinedVariable { .. } => "Undefined variable: ",
+            Self::UninitializedVariable { .. } => "Uninitialized variable: ",
             Self::Other(_) => "Error: ",
         }
     }
@@ -283,6 +287,9 @@ impl Display for CroxErrorKind {
             Self::UndefinedVariable { name } => {
                 f.write_str(name)?;
             }
+            Self::UninitializedVariable { name } => {
+                f.write_str(name)?;
+            }
             Self::Other(msg) => {
                 write!(f, "{}", msg)?;
             }
@@ -304,19 +311,20 @@ pub enum CroxErrorScope {
 
 impl From<&CroxErrorKind> for CroxErrorScope {
     fn from(kind: &CroxErrorKind) -> Self {
+        use CroxErrorKind::*;
         match kind {
-            CroxErrorKind::UnexpectedInput { .. }
-            | CroxErrorKind::UnexpectedEndOfInput { expected: None }
-            | CroxErrorKind::UnclosedStringLiteral => Self::Scanner,
-            CroxErrorKind::UnexpectedEndOfInput { expected: Some(_) }
-            | CroxErrorKind::UnexpectedToken { .. }
-            | CroxErrorKind::UnclosedDelimiter { .. }
-            | CroxErrorKind::InvalidNumberLiteral { .. }
-            | CroxErrorKind::InvalidAssignmentTarget => Self::Parser,
-            CroxErrorKind::InvalidType { .. } | CroxErrorKind::UndefinedVariable { .. } => {
+            UnexpectedInput { .. }
+            | UnexpectedEndOfInput { expected: None }
+            | UnclosedStringLiteral => Self::Scanner,
+            UnexpectedEndOfInput { expected: Some(_) }
+            | UnexpectedToken { .. }
+            | UnclosedDelimiter { .. }
+            | InvalidNumberLiteral { .. }
+            | InvalidAssignmentTarget => Self::Parser,
+            InvalidType { .. } | UndefinedVariable { .. } | UninitializedVariable { .. } => {
                 Self::Interpreter
             }
-            CroxErrorKind::Other(_) => Self::Custom,
+            Other(_) => Self::Custom,
         }
     }
 }

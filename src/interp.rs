@@ -43,8 +43,7 @@ impl<'a, R, I> Interpreter<'a, R, I> {
                     .as_ref()
                     .map(|e| self.eval_expr(e))
                     .transpose()?
-                    .map(|v| v.value)
-                    .unwrap_or_default();
+                    .map(|v| v.value);
                 self.env.define(name, value);
             }
             Stmt::While(cond, body) => {
@@ -76,23 +75,15 @@ impl<'a, R, I> Interpreter<'a, R, I> {
             Expr::Var(name) => self
                 .env
                 .get(name)
-                .ok_or_else(|| {
-                    CroxErrorKind::UndefinedVariable {
-                        name: (*name).to_owned(),
-                    }
-                    .at(span)
-                })
-                .map(|v| v.clone())?,
+                .map_err(|e| CroxErrorKind::from(e).at(span))?
+                .clone(),
             Expr::Assignment(name, value) => {
                 let span = value.span;
                 let value = self.eval_expr(value)?.value;
-                let _prev = self.env.assign(name, value.clone()).ok_or_else(|| {
-                    CroxErrorKind::UndefinedVariable {
-                        name: (*name).to_owned(),
-                    }
-                    .at(span)
-                })?;
-                value
+                self.env
+                    .assign(name, value)
+                    .map_err(|e| CroxErrorKind::from(e).at(span))?
+                    .clone()
             }
             Expr::Unary(op, node) => {
                 let value = self.eval_expr(node)?.value;
