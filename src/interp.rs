@@ -22,7 +22,7 @@ impl<'a, R, I> Interpreter<'a, R, I> {
 }
 
 impl<'a, R, I> Interpreter<'a, R, I> {
-    pub fn eval_stmt(&self, stmt: &Stmt<'a>, span: Span) -> Result<Valued<StmtNode<'a>>> {
+    pub fn eval_stmt(&mut self, stmt: &Stmt<'a>, span: Span) -> Result<Valued<StmtNode<'a>>> {
         match &stmt {
             Stmt::Expression(expr) => {
                 let _ = self.eval_expr(expr)?;
@@ -53,10 +53,13 @@ impl<'a, R, I> Interpreter<'a, R, I> {
                 }
             }
             Stmt::Block(stmts) => {
-                let _scope = self.env.push_scope();
-                for stmt in stmts.iter() {
+                let scope = self.env.new_scope();
+                let res = stmts.iter().try_for_each(|stmt| -> Result {
                     self.eval_stmt(&stmt.item, stmt.span)?;
-                }
+                    Ok(())
+                });
+                self.env.drop_scope(scope);
+                res?;
             }
         }
 
@@ -66,7 +69,7 @@ impl<'a, R, I> Interpreter<'a, R, I> {
         })
     }
 
-    pub fn eval_expr(&self, expr: &ExprNode<'a>) -> Result<Valued<ExprNode<'a>>> {
+    pub fn eval_expr(&mut self, expr: &ExprNode<'a>) -> Result<Valued<ExprNode<'a>>> {
         let span = expr.span;
         let value = match &*expr.item {
             Expr::Literal(literal) => Value::from(literal),
