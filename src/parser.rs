@@ -80,6 +80,16 @@ macro_rules! peek {
             _ => None,
         }
     };
+
+    ($this:ident, $($pat:pat),+ $(,)?) => {
+        match $this.tokens.peek() {
+            $(Some(&($pat, _)) => {
+                let _ = $this.tokens.next();
+                true
+            }),+,
+            _ => false,
+        }
+    };
 }
 
 macro_rules! bin_op {
@@ -121,7 +131,6 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             None => match self.statement() {
                 Ok(stmt) => Ok(stmt),
                 Err(e) => {
-                    // are we really gonna ignore all errors?
                     self.synchronize();
                     Err(e)
                 }
@@ -134,14 +143,9 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let name = self.expect(Identifier, EndOfInput::expected(Identifier, span))?;
         let name = self.source.slice(name);
 
-        let init = match self.tokens.peek() {
-            Some((Equal, _)) => {
-                let _ = self.tokens.next();
-                let init = self.expression()?;
-                Some(init)
-            }
-            _ => None,
-        };
+        let init = peek!(self, {
+            (Equal, _) => self.expression()?,
+        });
 
         let end_span = self.expect(Semicolon, EndOfInput::unclosed(Identifier, span))?;
 
@@ -177,6 +181,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     fn for_statement(&mut self, for_span: Span) -> Result<StmtNode<'a>> {
         let paren = self.expect(LeftParen, EndOfInput::expected(LeftParen, for_span))?;
 
+        // cannot use peek since we don't consume in the catch all case
         let (init_span, initializer) = match self.tokens.peek() {
             Some(&(Var, span)) => {
                 let _ = self.tokens.next();
@@ -191,29 +196,30 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
                 let expr = self.expr_statement()?;
                 (expr.span, Some(expr))
             }
-            None => {
-                return Err(
-                    EndOfInput::expected(TokenSet::from_iter([Semicolon, Var]), paren).into(),
-                )
-            }
+            None => Err(EndOfInput::expected(
+                TokenSet::from_iter([Semicolon, Var]),
+                paren,
+            ))?,
         };
 
+        // cannot use peek since we don't consume the token
         let condition = match self.tokens.peek() {
             Some(&(Semicolon, span)) => Expr::tru().at(span),
             Some(_) => self.expression()?,
-            None => return Err(EndOfInput::expected(Semicolon, init_span).into()),
+            None => Err(EndOfInput::expected(Semicolon, init_span))?,
         };
         let cond_span = condition.span;
 
         let _ = self.expect(Semicolon, EndOfInput::expected(Semicolon, cond_span))?;
 
+        // cannot use peek since we don't consume the token
         let (inc_span, increment) = match self.tokens.peek() {
             Some(&(RightParen, span)) => (span, None),
             Some(_) => {
-                let increment = self.expression()?;
-                (increment.span, Some(increment))
+                let expr = self.expression()?;
+                (expr.span, Some(expr))
             }
-            None => return Err(EndOfInput::expected(RightBrace, cond_span).into()),
+            None => Err(EndOfInput::expected(RightBrace, cond_span))?,
         };
 
         let _ = self.expect(RightParen, EndOfInput::Unclosed(LeftParen, paren))?;
@@ -251,6 +257,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         self.expect(RightParen, EndOfInput::unclosed(LeftParen, span))?;
 
         let then_ = self.statement()?;
+        // cannot rewrite this with peek! because we move cond into the match
         let stmt = match self.tokens.peek() {
             Some((Else, _)) => {
                 let _ = self.tokens.next();
@@ -291,6 +298,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let mut stmts = Vec::new();
 
         let end = loop {
+            // cannot use peek since we don't consume the token in the catch all case
             match self.tokens.peek() {
                 Some(&(RightBrace, end)) => {
                     let _ = self.tokens.next();
@@ -299,10 +307,8 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
                 Some(_) => {
                     stmts.push(self.declaration()?);
                 }
-                None => {
-                    return Err(EndOfInput::Unclosed(LeftBrace, start).into());
-                }
-            }
+                _ => Err(EndOfInput::Unclosed(LeftBrace, start))?,
+            };
         };
 
         Ok(Node::new(stmts, start.union(end)))
@@ -317,9 +323,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     fn assignment(&mut self) -> Result<ExprNode<'a>> {
         let expr = self.logic_or()?;
 
-        if let Some((Equal, _)) = self.tokens.peek() {
-            let _ = self.tokens.next();
-
+        if peek!(self, Equal) {
             let value = self.assignment()?;
             let Expr::Var(name) = &*expr.item else {
                 return Err(CroxErrorKind::InvalidAssignmentTarget.at(expr.span));
@@ -336,8 +340,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     fn logic_or(&mut self) -> Result<ExprNode<'a>> {
         let mut expr = self.logic_and()?;
 
-        while let Some((Or, _)) = self.tokens.peek() {
-            let _ = self.tokens.next();
+        while peek!(self, Or) {
             let right = self.logic_and()?;
             let span = expr.span.union(right.span);
             expr = Expr::or(expr, right).at(span);
@@ -350,8 +353,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     fn logic_and(&mut self) -> Result<ExprNode<'a>> {
         let mut expr = self.equality()?;
 
-        while let Some((And, _)) = self.tokens.peek() {
-            let _ = self.tokens.next();
+        while peek!(self, And) {
             let right = self.equality()?;
             let span = expr.span.union(right.span);
             expr = Expr::and(expr, right).at(span);
@@ -396,15 +398,17 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
     ///       unary := ( "!" | "-" ) unary | primary ;
     fn unary(&mut self) -> Result<ExprNode<'a>> {
-        let (op, span) = match self.tokens.peek() {
-            Some(&(Bang, span)) => (UnaryOp::Not, span),
-            Some(&(Minus, span)) => (UnaryOp::Neg, span),
-            _ => return self.primary(),
-        };
-        let _ = self.tokens.next();
-        let inner = self.unary()?;
-        let span = span.union(inner.span);
-        Ok(Expr::unary(op, inner).at(span))
+        match peek!(self, {
+            (Bang, span) => (UnaryOp::Not, span),
+            (Minus, span) => (UnaryOp::Neg, span),
+        }) {
+            Some((op, span)) => {
+                let inner = self.unary()?;
+                let span = span.union(inner.span);
+                Ok(Expr::unary(op, inner).at(span))
+            }
+            None => self.primary(),
+        }
     }
 
     ///     primary := NUMBER | STRING | IDENTIFIER | "true" | "false" | "nil" | "(" expression ")" ;
@@ -467,8 +471,9 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
 impl<R, T: Iterator<Item = Tok>> Parser<'_, R, T> {
     fn synchronize(&mut self) {
-        while let Some((tok, _)) = self.tokens.peek() {
-            match *tok {
+        // not peek! because we don't want to consume the token
+        while let Some(&(tok, _)) = self.tokens.peek() {
+            match tok {
                 Class | Fun | For | If | Print | Return | Var | While => break,
                 otherwise => {
                     let _ = self.tokens.next();
