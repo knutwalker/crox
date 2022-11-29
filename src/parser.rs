@@ -21,8 +21,11 @@
 //!  comparison := term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 //!        term := factor ( ( "+" | "-" ) factor )* ;
 //!      factor := unary ( ( "*" | "/" ) unary )* ;
-//!       unary := ( "!" | "-" ) unary | primary ;
+//!       unary := ( "!" | "-" ) unary | call ;
+//!        call := primary ( "(" arguments? ")" )* ;
+//!
 //!     primary := NUMBER | STRING | IDENTIFIER | "true" | "false" | "nil" | "(" expression ")" ;
+//!   arguments := expression ( "," expression )* ;
 //!```
 use crate::{
     BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule, Node, Range, Result,
@@ -396,7 +399,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         })
     }
 
-    ///       unary := ( "!" | "-" ) unary | primary ;
+    ///       unary := ( "!" | "-" ) unary | call ;
     fn unary(&mut self) -> Result<ExprNode<'a>> {
         match peek!(self, {
             (Bang, span) => (UnaryOp::Not, span),
@@ -407,8 +410,21 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
                 let span = span.union(inner.span);
                 Ok(Expr::unary(op, inner).at(span))
             }
-            None => self.primary(),
+            None => self.call(),
         }
+    }
+
+    ///        call := primary ( "(" arguments? ")" )* ;
+    fn call(&mut self) -> Result<ExprNode<'a>> {
+        let mut expr = self.primary()?;
+
+        while let Some(span) = peek!(self, { (LeftParen, start) => start }) {
+            let (args, end) = self.arguments(span)?;
+            let span = expr.span.union(end);
+            expr = Expr::call(expr, args).at(span);
+        }
+
+        Ok(expr)
     }
 
     ///     primary := NUMBER | STRING | IDENTIFIER | "true" | "false" | "nil" | "(" expression ")" ;
@@ -457,6 +473,55 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         };
 
         Ok(node.at(span))
+    }
+
+    ///   arguments := expression ( "," expression )* ;
+    fn arguments(&mut self, start: Span) -> Result<(Vec<ExprNode<'a>>, Span)> {
+        struct Args<T> {
+            items: Result<Vec<Node<T>>>,
+            limit: usize,
+        }
+
+        impl<T> Args<T> {
+            fn new() -> Self {
+                Self {
+                    items: Ok(Vec::new()),
+                    limit: 255,
+                }
+            }
+
+            fn push(&mut self, item: Node<T>) {
+                if let Ok(items) = self.items.as_mut() {
+                    if items.len() >= self.limit {
+                        self.items = Err(CroxErrorKind::TooManyArguments.at(item.span));
+                    } else {
+                        items.push(item);
+                    }
+                }
+            }
+
+            fn finish(self) -> Result<Vec<Node<T>>> {
+                self.items
+            }
+        }
+
+        let mut args = Args::new();
+
+        // not peek! because we don't want to consume the token
+        match self.tokens.peek() {
+            Some(&(RightParen, _)) => {}
+            _ => loop {
+                args.push(self.expression()?);
+                if !peek!(self, Comma) {
+                    break;
+                }
+            },
+        };
+
+        let end = self.expect(RightParen, EndOfInput::Unclosed(LeftParen, start))?;
+        let args = args.finish()?;
+
+        Ok((args, end))
     }
 
     fn expect(&mut self, expected: impl Into<TokenSet>, on_eoi: EndOfInput) -> Result<Span> {

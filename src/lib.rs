@@ -1,3 +1,4 @@
+mod call;
 mod env;
 mod error;
 mod expr;
@@ -12,6 +13,7 @@ mod typer;
 mod util;
 mod value;
 
+pub use call::{Callable, Clock};
 pub use env::Environment;
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
 pub use expr::{BinaryOp, Expr, ExprNode, Literal, LogicalOp, UnaryOp};

@@ -10,11 +10,31 @@ pub type ExprNode<'a> = Node<Rc<Expr<'a>>>;
 pub enum Expr<'a> {
     Literal(Literal<'a>),
     Var(&'a str),
-    Assignment(&'a str, ExprNode<'a>),
-    Unary(UnaryOp, ExprNode<'a>),
-    Logical(ExprNode<'a>, LogicalOp, ExprNode<'a>),
-    Binary(ExprNode<'a>, BinaryOp, ExprNode<'a>),
-    Group(ExprNode<'a>),
+    Assignment {
+        name: &'a str,
+        value: ExprNode<'a>,
+    },
+    Unary {
+        op: UnaryOp,
+        expr: ExprNode<'a>,
+    },
+    Logical {
+        lhs: ExprNode<'a>,
+        op: LogicalOp,
+        rhs: ExprNode<'a>,
+    },
+    Binary {
+        lhs: ExprNode<'a>,
+        op: BinaryOp,
+        rhs: ExprNode<'a>,
+    },
+    Call {
+        callee: ExprNode<'a>,
+        arguments: Rc<[ExprNode<'a>]>,
+    },
+    Group {
+        expr: ExprNode<'a>,
+    },
 }
 
 impl<'a> Expr<'a> {
@@ -42,80 +62,141 @@ impl<'a> Expr<'a> {
         Self::Var(s)
     }
 
-    pub fn assign(s: &'a str, expr: ExprNode<'a>) -> Self {
-        Self::Assignment(s, expr)
+    pub fn assign(name: &'a str, value: ExprNode<'a>) -> Self {
+        Self::Assignment { name, value }
     }
 
     pub fn neg(expr: ExprNode<'a>) -> Self {
-        Self::Unary(UnaryOp::Neg, expr)
+        Self::Unary {
+            op: UnaryOp::Neg,
+            expr,
+        }
     }
 
     pub fn not(expr: ExprNode<'a>) -> Self {
-        Self::Unary(UnaryOp::Not, expr)
+        Self::Unary {
+            op: UnaryOp::Not,
+            expr,
+        }
     }
 
     pub fn unary(op: UnaryOp, expr: ExprNode<'a>) -> Self {
-        Self::Unary(op, expr)
+        Self::Unary { op, expr }
     }
 
     pub fn and(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
-        Self::Logical(lhs, LogicalOp::And, rhs)
+        Self::Logical {
+            lhs,
+            op: LogicalOp::And,
+            rhs,
+        }
     }
 
     pub fn or(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
-        Self::Logical(lhs, LogicalOp::Or, rhs)
+        Self::Logical {
+            lhs,
+            op: LogicalOp::Or,
+            rhs,
+        }
     }
 
     pub fn logical(lhs: ExprNode<'a>, op: LogicalOp, rhs: ExprNode<'a>) -> Self {
-        Self::Logical(lhs, op, rhs)
+        Self::Logical { lhs, op, rhs }
     }
 
     pub fn add(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
-        Self::Binary(lhs, BinaryOp::Add, rhs)
+        Self::Binary {
+            lhs,
+            op: BinaryOp::Add,
+            rhs,
+        }
     }
 
     pub fn sub(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
-        Self::Binary(lhs, BinaryOp::Sub, rhs)
+        Self::Binary {
+            lhs,
+            op: BinaryOp::Sub,
+            rhs,
+        }
     }
 
     pub fn mul(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
-        Self::Binary(lhs, BinaryOp::Mul, rhs)
+        Self::Binary {
+            lhs,
+            op: BinaryOp::Mul,
+            rhs,
+        }
     }
 
     pub fn div(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
-        Self::Binary(lhs, BinaryOp::Div, rhs)
+        Self::Binary {
+            lhs,
+            op: BinaryOp::Div,
+            rhs,
+        }
     }
 
     pub fn equals(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
-        Self::Binary(lhs, BinaryOp::Equals, rhs)
+        Self::Binary {
+            lhs,
+            op: BinaryOp::Equals,
+            rhs,
+        }
     }
 
     pub fn not_equals(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
-        Self::Binary(lhs, BinaryOp::NotEquals, rhs)
+        Self::Binary {
+            lhs,
+            op: BinaryOp::NotEquals,
+            rhs,
+        }
     }
 
     pub fn less_than(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
-        Self::Binary(lhs, BinaryOp::LessThan, rhs)
+        Self::Binary {
+            lhs,
+            op: BinaryOp::LessThan,
+            rhs,
+        }
     }
 
     pub fn less_than_or_equal(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
-        Self::Binary(lhs, BinaryOp::LessThanOrEqual, rhs)
+        Self::Binary {
+            lhs,
+            op: BinaryOp::LessThanOrEqual,
+            rhs,
+        }
     }
 
     pub fn greater_than(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
-        Self::Binary(lhs, BinaryOp::GreaterThan, rhs)
+        Self::Binary {
+            lhs,
+            op: BinaryOp::GreaterThan,
+            rhs,
+        }
     }
 
     pub fn greater_than_or_equal(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
-        Self::Binary(lhs, BinaryOp::GreaterThanOrEqual, rhs)
+        Self::Binary {
+            lhs,
+            op: BinaryOp::GreaterThanOrEqual,
+            rhs,
+        }
     }
 
     pub fn binary(lhs: ExprNode<'a>, op: BinaryOp, rhs: ExprNode<'a>) -> Self {
-        Self::Binary(lhs, op, rhs)
+        Self::Binary { lhs, op, rhs }
+    }
+
+    pub fn call(callee: ExprNode<'a>, arguments: impl Into<Rc<[ExprNode<'a>]>>) -> Self {
+        Self::Call {
+            callee,
+            arguments: arguments.into(),
+        }
     }
 
     pub fn group(expr: ExprNode<'a>) -> Self {
-        Self::Group(expr)
+        Self::Group { expr }
     }
 
     pub fn at(self, span: impl Into<Span>) -> ExprNode<'a> {
@@ -190,68 +271,5 @@ impl Display for BinaryOp {
             Self::Mul => f.write_str("*"),
             Self::Div => f.write_str("/"),
         }
-    }
-}
-
-#[cfg(test)]
-fn print_expr(node: ExprNode, source: &str) -> String {
-    use crate::Range;
-
-    fn inner(source: &str, node: &ExprNode, res: &mut String) {
-        match &*node.item {
-            Expr::Literal(_) => res.push_str(&source[Range::from(node.span)]),
-            Expr::Var(ident) => res.push_str(ident),
-            Expr::Assignment(ident, expr) => {
-                res.push_str(ident);
-                parens(source, res, "=", Some(expr));
-            }
-            Expr::Unary(op, expr) => parens(source, res, op, Some(expr)),
-            Expr::Logical(lhs, op, rhs) => parens(source, res, op, [lhs, rhs]),
-            Expr::Binary(lhs, op, rhs) => parens(source, res, op, [lhs, rhs]),
-            Expr::Group(expr) => parens(source, res, "group", Some(expr)),
-        }
-    }
-
-    fn parens<'x, 'a: 'x>(
-        source: &'a str,
-        res: &mut String,
-        name: impl Display,
-        nodes: impl IntoIterator<Item = &'x ExprNode<'a>> + 'x,
-    ) {
-        use std::fmt::Write;
-
-        res.push('(');
-        write!(res, "{}", name).unwrap();
-
-        for node in nodes {
-            res.push(' ');
-            inner(source, node, res);
-        }
-
-        res.push(')');
-    }
-
-    let mut res = String::new();
-    inner(source, &node, &mut res);
-    res
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_print() {
-        let input = "-123 * (45.67)";
-
-        let neg = Expr::number(123.0).at(1..4);
-        let neg = Expr::neg(neg).at(0..4);
-
-        let group = Expr::number(45.67).at(8..13);
-        let group = Expr::group(group).at(7..14);
-
-        let ast = Expr::mul(neg, group).at(0..14);
-
-        assert_eq!(print_expr(ast, input), "(* (- 123) (group 45.67))");
     }
 }

@@ -77,7 +77,7 @@ impl<'a, R, I> Interpreter<'a, R, I> {
                 .get(name)
                 .map_err(|e| CroxErrorKind::from(e).at(span))?
                 .clone(),
-            Expr::Assignment(name, value) => {
+            Expr::Assignment { name, value } => {
                 let span = value.span;
                 let value = self.eval_expr(value)?.value;
                 self.env
@@ -85,28 +85,30 @@ impl<'a, R, I> Interpreter<'a, R, I> {
                     .map_err(|e| CroxErrorKind::from(e).at(span))?
                     .clone()
             }
-            Expr::Unary(op, node) => {
-                let value = self.eval_expr(node)?.value;
+            Expr::Unary { op, expr } => {
+                let value = self.eval_expr(expr)?.value;
                 match op {
-                    UnaryOp::Neg => value.neg().map_err(|e| e.at(node.span))?,
+                    UnaryOp::Neg => value.neg().map_err(|e| e.at(expr.span))?,
                     UnaryOp::Not => value.not(),
                 }
             }
-            Expr::Logical(lhs_node, op, rhs_node) => {
-                let lhs = self.eval_expr(lhs_node)?.value;
+            Expr::Logical { lhs, op, rhs } => {
+                let lhs = self.eval_expr(lhs)?.value;
                 match op {
                     LogicalOp::And if !lhs.as_bool() => lhs,
                     LogicalOp::Or if lhs.as_bool() => lhs,
-                    LogicalOp::And | LogicalOp::Or => self.eval_expr(rhs_node)?.value,
+                    LogicalOp::And | LogicalOp::Or => self.eval_expr(rhs)?.value,
                 }
             }
-            Expr::Binary(lhs_node, op, rhs_node) => {
-                let lhs = self.eval_expr(lhs_node)?.value;
-                let rhs = self.eval_expr(rhs_node)?.value;
+            Expr::Binary { lhs, op, rhs } => {
+                let lhs = self.eval_expr(lhs)?;
+                let rhs = self.eval_expr(rhs)?;
                 let to_error = |e: Result<CroxErrorKind, CroxErrorKind>| match e {
-                    Ok(e) => e.at(lhs_node.span),
-                    Err(e) => e.at(rhs_node.span),
+                    Ok(e) => e.at(lhs.item.span),
+                    Err(e) => e.at(rhs.item.span),
                 };
+                let lhs = lhs.value;
+                let rhs = rhs.value;
                 match op {
                     BinaryOp::Equals => lhs.eq(&rhs),
                     BinaryOp::NotEquals => lhs.not_eq(&rhs),
@@ -120,7 +122,37 @@ impl<'a, R, I> Interpreter<'a, R, I> {
                     BinaryOp::Div => lhs.div(&rhs).map_err(to_error)?,
                 }
             }
-            Expr::Group(inner) => self.eval_expr(inner)?.value,
+            Expr::Call { callee, arguments } => {
+                let callee = self.eval_expr(callee)?;
+                let span = callee.item.span;
+
+                let callee = match &callee.value {
+                    Value::Fn(callee) => &**callee,
+                    _ => {
+                        return Err(CroxErrorKind::InvalidType {
+                            expected: TypeSet::from_iter([Type::Function, Type::Class]),
+                            actual: callee.value.typ(),
+                        }
+                        .at(span))
+                    }
+                };
+
+                let arguments = arguments
+                    .iter()
+                    .map(|arg| self.eval_expr(arg).map(|v| v.value))
+                    .collect::<Result<Vec<_>>>()?;
+
+                if callee.arity() != arguments.len() {
+                    return Err(CroxErrorKind::ArityMismatch {
+                        expected: callee.arity(),
+                        actual: arguments.len(),
+                    }
+                    .at(span));
+                }
+
+                callee.call(&arguments)?
+            }
+            Expr::Group { expr } => self.eval_expr(expr)?.value,
         };
 
         Ok(Valued {

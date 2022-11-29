@@ -1,14 +1,15 @@
-use crate::Literal;
+use crate::{Callable, Literal};
 
 use std::{cmp::Ordering, fmt, ops::Deref, rc::Rc};
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default)]
 pub enum Value {
     #[default]
     Nil,
     Bool(bool),
     Number(f64),
     Str(Rc<str>),
+    Fn(Rc<dyn Callable>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -40,6 +41,19 @@ impl<T> FromIterator<Valued<T>> for Ast<T> {
     fn from_iter<I: IntoIterator<Item = Valued<T>>>(iter: I) -> Self {
         Self {
             values: iter.into_iter().collect(),
+        }
+    }
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Nil, Self::Nil) => true,
+            (Self::Bool(lhs), Self::Bool(rhs)) => lhs == rhs,
+            (Self::Number(lhs), Self::Number(rhs)) => lhs == rhs,
+            (Self::Str(lhs), Self::Str(rhs)) => lhs == rhs,
+            (Self::Fn(_), Self::Fn(_)) => false,
+            _ => false,
         }
     }
 }
@@ -111,6 +125,7 @@ impl fmt::Display for Value {
             Value::Bool(b) => fmt::Display::fmt(b, f),
             Value::Number(n) => fmt::Display::fmt(n, f),
             Value::Str(s) => fmt::Display::fmt(s, f),
+            Value::Fn(fun) => fmt::Debug::fmt(fun, f),
         }
     }
 }

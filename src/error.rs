@@ -161,6 +161,9 @@ pub enum CroxErrorKind {
     InvalidAssignmentTarget,
 
     #[cfg_attr(feature = "fancy", diagnostic())]
+    TooManyArguments,
+
+    #[cfg_attr(feature = "fancy", diagnostic())]
     InvalidType { expected: TypeSet, actual: Type },
 
     #[cfg_attr(feature = "fancy", diagnostic())]
@@ -168,6 +171,9 @@ pub enum CroxErrorKind {
 
     #[cfg_attr(feature = "fancy", diagnostic())]
     UninitializedVariable { name: String },
+
+    #[cfg_attr(feature = "fancy", diagnostic())]
+    ArityMismatch { expected: usize, actual: usize },
 
     #[cfg_attr(feature = "fancy", diagnostic())]
     Other(String),
@@ -236,9 +242,11 @@ impl CroxErrorKind {
             Self::InvalidNumberLiteral { reason: None } => "Invalid number literal",
             Self::InvalidNumberLiteral { reason: Some(_) } => "Invalid number literal: ",
             Self::InvalidAssignmentTarget => "Invalid assignment target: ",
+            Self::TooManyArguments => "Too many arguments: ",
             Self::InvalidType { .. } => "Invalid type: ",
             Self::UndefinedVariable { .. } => "Undefined variable: ",
             Self::UninitializedVariable { .. } => "Uninitialized variable: ",
+            Self::ArityMismatch { .. } => "Arity mismatch: ",
             Self::Other(_) => "Error: ",
         }
     }
@@ -278,6 +286,9 @@ impl Display for CroxErrorKind {
             Self::InvalidAssignmentTarget => {
                 write!(f, "expected an identifier")?;
             }
+            Self::TooManyArguments => {
+                f.write_str("expected at most 255 arguments")?;
+            }
             Self::InvalidType { expected, actual } if expected.len() > 1 => {
                 write!(f, "expected one of {:?}, got {:?}", expected, actual)?;
             }
@@ -289,6 +300,9 @@ impl Display for CroxErrorKind {
             }
             Self::UninitializedVariable { name } => {
                 f.write_str(name)?;
+            }
+            Self::ArityMismatch { expected, actual } => {
+                write!(f, "Expected {} arguments but got {}", expected, actual)?;
             }
             Self::Other(msg) => {
                 write!(f, "{}", msg)?;
@@ -320,10 +334,12 @@ impl From<&CroxErrorKind> for CroxErrorScope {
             | UnexpectedToken { .. }
             | UnclosedDelimiter { .. }
             | InvalidNumberLiteral { .. }
-            | InvalidAssignmentTarget => Self::Parser,
-            InvalidType { .. } | UndefinedVariable { .. } | UninitializedVariable { .. } => {
-                Self::Interpreter
-            }
+            | InvalidAssignmentTarget
+            | TooManyArguments => Self::Parser,
+            InvalidType { .. }
+            | UndefinedVariable { .. }
+            | UninitializedVariable { .. }
+            | ArityMismatch { .. } => Self::Interpreter,
             Other(_) => Self::Custom,
         }
     }

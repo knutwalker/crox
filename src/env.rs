@@ -1,9 +1,18 @@
-use crate::{CroxErrorKind, Value};
+use crate::{Clock, CroxErrorKind, Value};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Environment<'a> {
     names: Vec<&'a str>,
     values: Vec<Option<Value>>,
+}
+
+impl<'a> Default for Environment<'a> {
+    fn default() -> Self {
+        Self {
+            names: vec!["clock"],
+            values: vec![Some(Clock.to_value())],
+        }
+    }
 }
 
 impl<'a> Environment<'a> {
