@@ -24,34 +24,38 @@ impl<'a, R, I> Interpreter<'a, R, I> {
 impl<'a, R, I> Interpreter<'a, R, I> {
     pub fn eval_stmt(&mut self, stmt: &Stmt<'a>, span: Span) -> Result<Valued<StmtNode<'a>>> {
         match &stmt {
-            Stmt::Expression(expr) => {
+            Stmt::Expression { expr } => {
                 let _ = self.eval_expr(expr)?;
             }
-            Stmt::If(cond, then_, else_) => {
-                if self.eval_expr(cond)?.value.as_bool() {
+            Stmt::If {
+                condition,
+                then_,
+                else_,
+            } => {
+                if self.eval_expr(condition)?.value.as_bool() {
                     self.eval_stmt(&then_.item, then_.span)?;
                 } else if let Some(else_) = else_ {
                     self.eval_stmt(&else_.item, else_.span)?;
                 }
             }
-            Stmt::Print(expr) => {
+            Stmt::Print { expr } => {
                 let val = self.eval_expr(expr)?.value;
                 println!("{}", val);
             }
-            Stmt::Var(name, expr) => {
-                let value = expr
+            Stmt::Var { name, initializer } => {
+                let value = initializer
                     .as_ref()
                     .map(|e| self.eval_expr(e))
                     .transpose()?
                     .map(|v| v.value);
                 self.env.define(name, value);
             }
-            Stmt::While(cond, body) => {
-                while self.eval_expr(cond)?.value.as_bool() {
+            Stmt::While { condition, body } => {
+                while self.eval_expr(condition)?.value.as_bool() {
                     self.eval_stmt(&body.item, body.span)?;
                 }
             }
-            Stmt::Block(stmts) => {
+            Stmt::Block { stmts } => {
                 let scope = self.env.new_scope();
                 let res = stmts.iter().try_for_each(|stmt| -> Result {
                     self.eval_stmt(&stmt.item, stmt.span)?;

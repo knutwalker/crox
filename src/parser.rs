@@ -233,7 +233,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         if let Some(increment) = increment {
             let increment = Stmt::expression(increment).at(inc_span);
             let item = match body.item {
-                Stmt::Block(stmts) => {
+                Stmt::Block { stmts } => {
                     let mut stmts = stmts.to_vec();
                     stmts.push(increment);
                     Stmt::block(stmts)
