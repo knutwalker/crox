@@ -1,4 +1,4 @@
-use crate::{Clock, CroxErrorKind, Value};
+use crate::{Callable, Clock, CroxErrorKind, Value};
 
 #[derive(Clone, Debug)]
 pub struct Environment<'a> {
