@@ -40,7 +40,7 @@ impl<'a, R, I> Interpreter<'a, R, I> {
             }
             Stmt::Print { expr } => {
                 let val = self.eval_expr(expr)?.value;
-                println!("{}", val);
+                println!("{val}");
             }
             Stmt::Var { name, initializer } => {
                 let value = initializer
@@ -212,7 +212,7 @@ impl Value {
     fn add(&self, rhs: &Self) -> Result<Self, Result<CroxErrorKind, CroxErrorKind>> {
         match (self, rhs) {
             (lhs, rhs @ Self::Str(_)) | (lhs @ Self::Str(_), rhs) => {
-                Ok(format!("{}{}", lhs, rhs).into())
+                Ok(format!("{lhs}{rhs}").into())
             }
             (Self::Number(lhs), rhs) => {
                 let rhs = rhs.as_num().map_err(Err)?;

@@ -408,10 +408,10 @@ mod tests {
     #[test]
     fn test_debug() {
         let mut set = EnumSet::<E>::empty();
-        assert_eq!("[]", format!("{:?}", set));
+        assert_eq!("[]", format!("{set:?}"));
         set.insert(A);
-        assert_eq!("[A]", format!("{:?}", set));
+        assert_eq!("[A]", format!("{set:?}"));
         set.insert(B);
-        assert_eq!("[A, B]", format!("{:?}", set));
+        assert_eq!("[A, B]", format!("{set:?}"));
     }
 }

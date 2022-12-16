@@ -1,3 +1,6 @@
+#![warn(clippy::all, rust_2018_idioms)]
+#![warn(clippy::uninlined_format_args)]
+
 mod call;
 mod env;
 mod error;

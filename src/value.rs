@@ -71,7 +71,7 @@ impl PartialOrd for Value {
 }
 
 impl From<Literal<'_>> for Value {
-    fn from(literal: Literal) -> Self {
+    fn from(literal: Literal<'_>) -> Self {
         match literal {
             Literal::Nil => Value::Nil,
             Literal::True => Value::Bool(true),
@@ -83,7 +83,7 @@ impl From<Literal<'_>> for Value {
 }
 
 impl From<&Literal<'_>> for Value {
-    fn from(literal: &Literal) -> Self {
+    fn from(literal: &Literal<'_>) -> Self {
         match literal {
             Literal::Nil => Value::Nil,
             Literal::True => Value::Bool(true),

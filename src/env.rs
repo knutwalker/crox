@@ -88,7 +88,7 @@ impl Scope {
         }
     }
 
-    pub fn stop(self, env: &mut Environment) {
+    pub fn stop(self, env: &mut Environment<'_>) {
         env.drop_scope(self);
     }
 }

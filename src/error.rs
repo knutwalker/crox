@@ -260,28 +260,28 @@ impl Display for CroxErrorKind {
 
         match self {
             Self::UnexpectedInput { input } => {
-                write!(f, "{}", input)?;
+                write!(f, "{input}")?;
             }
             Self::UnexpectedEndOfInput { expected: Some(e) } if e.len() > 1 => {
-                write!(f, "expected one of: {:?}", e)?;
+                write!(f, "expected one of: {e:?}")?;
             }
             Self::UnexpectedEndOfInput { expected: Some(e) } => {
-                write!(f, "expected {:?}", e)?;
+                write!(f, "expected {e:?}")?;
             }
             Self::UnexpectedEndOfInput { expected: None } => {}
             Self::UnclosedStringLiteral => {}
             Self::UnexpectedToken { expected, actual } if expected.len() > 1 => {
-                write!(f, "expected one of {:?}, got `{:?}`", expected, actual)?;
+                write!(f, "expected one of {expected:?}, got `{actual:?}`")?;
             }
             Self::UnexpectedToken { expected, actual } => {
-                write!(f, "expected {:?}, got `{:?}`", expected, actual)?;
+                write!(f, "expected {expected:?}, got `{actual:?}`")?;
             }
             Self::UnclosedDelimiter { unclosed } => {
-                write!(f, "{:?}", unclosed)?;
+                write!(f, "{unclosed:?}")?;
             }
             Self::InvalidNumberLiteral { reason: None } => {}
             Self::InvalidNumberLiteral { reason: Some(r) } => {
-                write!(f, "{}", r)?;
+                write!(f, "{r}")?;
             }
             Self::InvalidAssignmentTarget => {
                 write!(f, "expected an identifier")?;
@@ -290,10 +290,10 @@ impl Display for CroxErrorKind {
                 f.write_str("expected at most 255 arguments")?;
             }
             Self::InvalidType { expected, actual } if expected.len() > 1 => {
-                write!(f, "expected one of {:?}, got {:?}", expected, actual)?;
+                write!(f, "expected one of {expected:?}, got {actual:?}")?;
             }
             Self::InvalidType { expected, actual } => {
-                write!(f, "expected {:?}, got {:?}", expected, actual)?;
+                write!(f, "expected {expected:?}, got {actual:?}")?;
             }
             Self::UndefinedVariable { name } => {
                 f.write_str(name)?;
@@ -302,10 +302,10 @@ impl Display for CroxErrorKind {
                 f.write_str(name)?;
             }
             Self::ArityMismatch { expected, actual } => {
-                write!(f, "Expected {} arguments but got {}", expected, actual)?;
+                write!(f, "Expected {expected} arguments but got {actual}")?;
             }
             Self::Other(msg) => {
-                write!(f, "{}", msg)?;
+                write!(f, "{msg}")?;
             }
         }
 

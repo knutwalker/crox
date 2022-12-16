@@ -39,7 +39,7 @@ type Tok = (TokenType, Span);
 pub fn expr_parser<I>(
     source: Source<'_>,
     tokens: I,
-) -> Parser<ExpressionRule, UnpackToken<I::IntoIter>>
+) -> Parser<'_, ExpressionRule, UnpackToken<I::IntoIter>>
 where
     I: IntoIterator<Item = Token>,
 {
@@ -49,14 +49,14 @@ where
 pub fn stmt_parser<I>(
     source: Source<'_>,
     tokens: I,
-) -> Parser<StatementRule, UnpackToken<I::IntoIter>>
+) -> Parser<'_, StatementRule, UnpackToken<I::IntoIter>>
 where
     I: IntoIterator<Item = Token>,
 {
     any_parser(source, tokens)
 }
 
-fn any_parser<R, I>(source: Source<'_>, tokens: I) -> Parser<R, UnpackToken<I::IntoIter>>
+fn any_parser<R, I>(source: Source<'_>, tokens: I) -> Parser<'_, R, UnpackToken<I::IntoIter>>
 where
     I: IntoIterator<Item = Token>,
 {
