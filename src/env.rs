@@ -3,7 +3,7 @@ use crate::{Callable, Clock, CroxErrorKind, Value};
 #[derive(Clone, Debug)]
 pub struct Environment<'a> {
     names: Vec<&'a str>,
-    values: Vec<Option<Value>>,
+    values: Vec<Option<Value<'a>>>,
 }
 
 impl<'a> Default for Environment<'a> {
@@ -16,21 +16,21 @@ impl<'a> Default for Environment<'a> {
 }
 
 impl<'a> Environment<'a> {
-    pub fn define(&mut self, name: &'a str, value: impl Into<Option<Value>>) {
+    pub fn define(&mut self, name: &'a str, value: impl Into<Option<Value<'a>>>) {
         self.names.push(name);
         self.values.push(value.into());
     }
 
-    pub fn assign(&mut self, name: &'a str, value: Value) -> Result<&Value, Error<'a>> {
+    pub fn assign(&mut self, name: &'a str, value: Value<'a>) -> Result<&Value<'a>, Error<'a>> {
         self.find(name).map(|idx| &*self.values[idx].insert(value))
     }
 
-    pub fn get(&self, name: &'a str) -> Result<&Value, Error<'a>> {
+    pub fn get(&self, name: &'a str) -> Result<&Value<'a>, Error<'a>> {
         self.find(name)
             .and_then(|idx| self.values[idx].as_ref().ok_or(Error::Uninitialized(name)))
     }
 
-    pub fn get_mut(&mut self, name: &'a str) -> Result<&mut Value, Error<'a>> {
+    pub fn get_mut(&mut self, name: &'a str) -> Result<&mut Value<'a>, Error<'a>> {
         self.find(name)
             .and_then(|idx| self.values[idx].as_mut().ok_or(Error::Uninitialized(name)))
     }

@@ -16,16 +16,16 @@ mod typer;
 mod util;
 mod value;
 
-pub use call::{Callable, Clock};
+pub use call::{Callable, Clock, Function};
 pub use env::Environment;
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
 pub use expr::{BinaryOp, Expr, ExprNode, Literal, LogicalOp, UnaryOp};
-pub use interp::{expr_interpreter, stmt_interpreter};
+pub use interp::{expr_interpreter, stmt_interpreter, Interpreter};
 pub use node::{Ident, Node, Spannable};
 pub use parser::{expr_parser, stmt_parser, Parser};
 pub use rule::{ExpressionRule, StatementRule};
 pub use scanner::{Scanner, Source};
-pub use stmt::{Stmt, StmtNode};
+pub use stmt::{FunctionDecl, Stmt, StmtNode};
 pub use token::{Range, Span, Spanned, Token, TokenSet, TokenType};
 pub use typer::{Type, TypeSet};
 pub use util::{EnumSet, ValueEnum};
@@ -33,7 +33,7 @@ pub use value::{Ast, Value, Valued};
 
 use crate::error::CroxErrorsBuilder;
 
-pub fn run(content: &str) -> Result<Ast<StmtNode<'_>>, CroxErrors> {
+pub fn run(content: &str) -> Result<Ast<'_, StmtNode<'_>>, CroxErrors> {
     let errs = CroxErrorsBuilder::new();
 
     let source = scan(content);
@@ -48,7 +48,7 @@ pub fn run(content: &str) -> Result<Ast<StmtNode<'_>>, CroxErrors> {
     }
 }
 
-pub fn eval(content: &str) -> Result<Ast<ExprNode<'_>>, CroxErrors> {
+pub fn eval(content: &str) -> Result<Ast<'_, ExprNode<'_>>, CroxErrors> {
     let errs = CroxErrorsBuilder::new();
 
     let source = scan(content);

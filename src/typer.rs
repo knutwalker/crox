@@ -22,7 +22,7 @@ impl Literal<'_> {
     }
 }
 
-impl Value {
+impl Value<'_> {
     pub fn typ(&self) -> Type {
         match self {
             Self::Nil => Type::Nil,
