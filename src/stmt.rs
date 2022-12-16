@@ -9,12 +9,12 @@ pub enum Stmt<'a> {
     Expression {
         expr: ExprNode<'a>,
     },
+    Function(FunctionDecl<'a>),
     If {
         condition: ExprNode<'a>,
         then_: BoxedStmt<'a>,
         else_: Option<BoxedStmt<'a>>,
     },
-    // Function(&'a str, Rc<[ExprNode<'a>]>, Rc<[StmtNode<'a>]>),
     Print {
         expr: ExprNode<'a>,
     },
@@ -34,6 +34,18 @@ pub enum Stmt<'a> {
 impl<'a> Stmt<'a> {
     pub fn expression(expr: ExprNode<'a>) -> Self {
         Self::Expression { expr }
+    }
+
+    pub fn fun(
+        name: Node<&'a str>,
+        params: impl Into<Rc<[Node<&'a str>]>>,
+        body: impl Into<Rc<[StmtNode<'a>]>>,
+    ) -> Self {
+        Self::Function(FunctionDecl {
+            name,
+            params: params.into(),
+            body: body.into(),
+        })
     }
 
     pub fn if_(condition: ExprNode<'a>, then_: StmtNode<'a>) -> Self {
@@ -79,4 +91,11 @@ impl<'a> Stmt<'a> {
     pub fn at(self, span: impl Into<Span>) -> StmtNode<'a> {
         Node::new(self, span)
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FunctionDecl<'a> {
+    pub name: Node<&'a str>,
+    pub params: Rc<[Node<&'a str>]>,
+    pub body: Rc<[StmtNode<'a>]>,
 }

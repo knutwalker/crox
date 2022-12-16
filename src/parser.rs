@@ -2,10 +2,13 @@
 //!
 //! ```bnf
 //!     program := declaration* EOF ;
-//! declaration := varDecl | statement ;
+//! declaration := funDecl | varDecl | statement ;
+//!
+//!     funDecl := "fun" function ;
+//!    function := IDENTIFIER "(" parameters? ")" block ;
+//!     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
 //!   statement := exprStmt | forStmt | ifStmt | printStmt | whileStmt | block;
 //!
-//!     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
 //!    exprStmt := expression ";" ;
 //!     forStmt := "for" "(" ( varDecl | exprStmt | ";" ) expression? ";" expression? ")" statement ;
 //!      ifStmt := "if" "(" expression ")" statement ( "else" statement )? ;
@@ -23,9 +26,10 @@
 //!      factor := unary ( ( "*" | "/" ) unary )* ;
 //!       unary := ( "!" | "-" ) unary | call ;
 //!        call := primary ( "(" arguments? ")" )* ;
-//!
 //!     primary := NUMBER | STRING | IDENTIFIER | "true" | "false" | "nil" | "(" expression ")" ;
+//!
 //!   arguments := expression ( "," expression )* ;
+//!  parameters := IDENTIFIER ( "," IDENTIFIER )* ;
 //!```
 use crate::{
     BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule, Node, Range, Result,
@@ -122,10 +126,11 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 }
 
 impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
-    /// declaration := varDecl | statement ;
+    /// declaration := funDecl | varDecl | statement ;
     fn declaration(&mut self) -> Result<StmtNode<'a>> {
         let stmt = peek!(self, {
          (Var, span) => self.var_decl(span),
+         (Fun, span) => self.fun_decl(FnKind::Function, span),
         })
         .transpose()?;
 
@@ -139,6 +144,25 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
                 }
             },
         }
+    }
+
+    ///     funDecl := "fun" function ;
+    ///    function := IDENTIFIER "(" parameters? ")" block ;
+    ///  parameters := IDENTIFIER ( "," IDENTIFIER )* ;
+    fn fun_decl(&mut self, kind: FnKind, start: Span) -> Result<StmtNode<'a>> {
+        let name = self
+            .ident(start)
+            .map_err(|c| c.with_payload(ExpectedFn(kind)))?;
+
+        let params = self.parens_list(name.span, true, |this, span| this.ident(span))?;
+        let right_paren = params.span;
+
+        let open_brace = self.expect(LeftBrace, EndOfInput::expected(LeftBrace, right_paren))?;
+        let body = self.block(open_brace)?;
+
+        let span = start.union(body.span);
+
+        Ok(Stmt::fun(name, params.item, body.item).at(span))
     }
 
     ///     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
@@ -631,6 +655,27 @@ impl From<EndOfInput> for CroxError {
             }
             EndOfInput::Expected(typ, span) => CroxErrorKind::from(typ).at(span),
         }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum FnKind {
+    Function,
+}
+
+impl std::fmt::Display for FnKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FnKind::Function => f.write_str("function"),
+        }
+    }
+}
+
+struct ExpectedFn(FnKind);
+
+impl std::fmt::Display for ExpectedFn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Expected {} name", self.0)
     }
 }
 

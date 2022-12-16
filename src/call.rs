@@ -1,4 +1,4 @@
-use crate::{Interpreter, Result, Value};
+use crate::{FunctionDecl, Interpreter, Result, Value};
 pub use builtin::Clock;
 
 pub trait Callable<'a>: std::fmt::Debug + 'a {
@@ -10,6 +10,39 @@ pub trait Callable<'a>: std::fmt::Debug + 'a {
         Self: Sized,
     {
         Value::Fn(std::rc::Rc::new(self))
+    }
+}
+
+#[derive(Clone)]
+pub struct Function<'a> {
+    decl: FunctionDecl<'a>,
+}
+
+impl<'a> Function<'a> {
+    pub fn new(decl: FunctionDecl<'a>) -> Self {
+        Self { decl }
+    }
+}
+
+impl<'a> Callable<'a> for Function<'a> {
+    fn arity(&self) -> usize {
+        self.decl.params.len()
+    }
+
+    fn call(&self, interpreter: &mut Interpreter<'a>, args: &[Value<'a>]) -> Result<Value<'a>> {
+        interpreter.run_with_new_scope(|interpreter| {
+            for (param, arg) in self.decl.params.iter().zip(args) {
+                interpreter.env.define(param.item, arg.clone());
+            }
+            interpreter.eval_stmts_in_scope(&self.decl.body)
+        })?;
+        Ok(Value::Nil)
+    }
+}
+
+impl<'a> std::fmt::Debug for Function<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<fn {}>", self.decl.name.item)
     }
 }
 
