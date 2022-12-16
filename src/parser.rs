@@ -143,8 +143,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
     ///     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
     fn var_decl(&mut self, span: Span) -> Result<StmtNode<'a>> {
-        let name = self.expect(Identifier, EndOfInput::expected(Identifier, span))?;
-        let name = self.source.slice(name);
+        let name = self.ident(span)?;
 
         let init = peek!(self, {
             (Equal, _) => self.expression()?,
@@ -477,51 +476,9 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
     ///   arguments := expression ( "," expression )* ;
     fn arguments(&mut self, start: Span) -> Result<(Vec<ExprNode<'a>>, Span)> {
-        struct Args<T> {
-            items: Result<Vec<Node<T>>>,
-            limit: usize,
-        }
+        let args = self.parens_list(start, false, |this, _| this.expression())?;
 
-        impl<T> Args<T> {
-            fn new() -> Self {
-                Self {
-                    items: Ok(Vec::new()),
-                    limit: 255,
-                }
-            }
-
-            fn push(&mut self, item: Node<T>) {
-                if let Ok(items) = self.items.as_mut() {
-                    if items.len() >= self.limit {
-                        self.items = Err(CroxErrorKind::TooManyArguments.at(item.span));
-                    } else {
-                        items.push(item);
-                    }
-                }
-            }
-
-            fn finish(self) -> Result<Vec<Node<T>>> {
-                self.items
-            }
-        }
-
-        let mut args = Args::new();
-
-        // not peek! because we don't want to consume the token
-        match self.tokens.peek() {
-            Some(&(RightParen, _)) => {}
-            _ => loop {
-                args.push(self.expression()?);
-                if !peek!(self, Comma) {
-                    break;
-                }
-            },
-        };
-
-        let end = self.expect(RightParen, EndOfInput::Unclosed(LeftParen, start))?;
-        let args = args.finish()?;
-
-        Ok((args, end))
+        Ok((args.item, args.span))
     }
 
     fn expect(&mut self, expected: impl Into<TokenSet>, on_eoi: EndOfInput) -> Result<Span> {
@@ -531,6 +488,47 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             Some((typ, span)) => Err(CroxError::new(CroxErrorKind::of((typ, expected)), span)),
             None => Err(CroxError::from(on_eoi)),
         }
+    }
+
+    fn ident(&mut self, span: Span) -> Result<Node<&'a str>> {
+        let span = self.expect(Identifier, EndOfInput::expected(Identifier, span))?;
+        let identifier = self.source.slice(span);
+        Ok(Node::new(identifier, span))
+    }
+
+    fn parens_list<A>(
+        &mut self,
+        start: Span,
+        parse_left_paren: bool,
+        mut item: impl FnMut(&mut Self, Span) -> Result<Node<A>>,
+    ) -> Result<Node<Vec<Node<A>>>> {
+        let left_paren = if parse_left_paren {
+            self.expect(LeftParen, EndOfInput::expected(LeftParen, start))?
+        } else {
+            start
+        };
+
+        let mut args = Args::new();
+
+        // not peek! because we don't want to consume the token
+        match self.tokens.peek() {
+            Some(&(RightParen, _)) => {}
+            _ => {
+                let mut span = left_paren;
+                loop {
+                    args.push(item(self, span)?);
+                    match peek!(self, { (Comma, span) => span }) {
+                        Some(comma) => span = comma,
+                        None => break,
+                    }
+                }
+            }
+        };
+
+        let right_paren = self.expect(RightParen, EndOfInput::Unclosed(LeftParen, left_paren))?;
+        let args = args.finish()?;
+
+        Ok(Node::new(args, right_paren))
     }
 }
 
@@ -636,8 +634,38 @@ impl From<EndOfInput> for CroxError {
     }
 }
 
+struct Args<T> {
+    items: Result<Vec<Node<T>>>,
+    limit: usize,
+}
+
+impl<T> Args<T> {
+    fn new() -> Self {
+        Self {
+            items: Ok(Vec::new()),
+            limit: 255,
+        }
+    }
+
+    fn push(&mut self, item: Node<T>) {
+        if let Ok(items) = self.items.as_mut() {
+            if items.len() >= self.limit {
+                self.items = Err(CroxErrorKind::TooManyArguments.at(item.span));
+            } else {
+                items.push(item);
+            }
+        }
+    }
+
+    fn finish(self) -> Result<Vec<Node<T>>> {
+        self.items
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::Spannable;
+
     use super::*;
 
     use pretty_assertions::assert_eq;
@@ -751,7 +779,7 @@ mod tests {
         let one = Expr::number(1.0).at(32..33);
 
         // initializer
-        let init = Stmt::var("i", Some(zero)).at(5..15);
+        let init = Stmt::var("i".at(9..10), Some(zero)).at(5..15);
 
         // condition
         let i = Expr::var("i").at(16..17);
@@ -785,7 +813,7 @@ mod tests {
         let one = Expr::number(1.0).at(32..33);
 
         // initializer
-        let init = Stmt::var("i", Some(zero)).at(5..15);
+        let init = Stmt::var("i".at(9..10), Some(zero)).at(5..15);
 
         // condition
         let i = Expr::var("i").at(16..17);
@@ -819,7 +847,7 @@ mod tests {
         let ten = Expr::number(10.0).at(20..22);
 
         // initializer
-        let init = Stmt::var("i", Some(zero)).at(5..15);
+        let init = Stmt::var("i".at(9..10), Some(zero)).at(5..15);
 
         // condition
         let i = Expr::var("i").at(16..17);
@@ -845,7 +873,7 @@ mod tests {
         let one = Expr::number(1.0).at(26..27);
 
         // initializer
-        let init = Stmt::var("i", Some(zero)).at(5..16);
+        let init = Stmt::var("i".at(9..10), Some(zero)).at(5..16);
 
         // increment
         let i = Expr::var("i").at(22..23);

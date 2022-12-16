@@ -19,7 +19,7 @@ pub enum Stmt<'a> {
         expr: ExprNode<'a>,
     },
     Var {
-        name: &'a str,
+        name: Node<&'a str>,
         initializer: Option<ExprNode<'a>>,
     },
     While {
@@ -56,7 +56,7 @@ impl<'a> Stmt<'a> {
         Self::Print { expr }
     }
 
-    pub fn var(name: &'a str, initializer: impl Into<Option<ExprNode<'a>>>) -> Self {
+    pub fn var(name: Node<&'a str>, initializer: impl Into<Option<ExprNode<'a>>>) -> Self {
         Self::Var {
             name,
             initializer: initializer.into(),

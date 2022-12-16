@@ -48,7 +48,7 @@ impl<'a, R, I> Interpreter<'a, R, I> {
                     .map(|e| self.eval_expr(e))
                     .transpose()?
                     .map(|v| v.value);
-                self.env.define(name, value);
+                self.env.define(name.item, value);
             }
             Stmt::While { condition, body } => {
                 while self.eval_expr(condition)?.value.as_bool() {
