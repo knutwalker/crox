@@ -3,6 +3,7 @@ use std::{
     cell::Cell,
     error::Error as StdError,
     fmt::{Debug, Display},
+    sync::Arc,
 };
 
 #[cfg(feature = "fancy")]
@@ -97,13 +98,14 @@ impl CroxErrorsBuilder {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone)]
 #[cfg_attr(feature = "fancy", derive(Diagnostic))]
 #[cfg_attr(feature = "fancy", diagnostic())]
 pub struct CroxError {
     pub kind: CroxErrorKind,
     #[cfg_attr(feature = "fancy", label("{}", kind))]
     pub span: Range,
+    pub payload: Option<Arc<dyn Display + Send + Sync + 'static>>,
 }
 
 impl CroxError {
@@ -111,16 +113,29 @@ impl CroxError {
         Self {
             kind,
             span: span.into(),
+            payload: None,
         }
+    }
+
+    pub fn with_payload<T: Display + Send + Sync + 'static>(mut self, payload: T) -> Self {
+        self.payload = Some(Arc::new(payload));
+        self
     }
 }
 
 impl Display for CroxError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if cfg!(feature = "fancy") {
+            if let Some(payload) = self.payload.as_deref() {
+                write!(f, "{payload} ")?;
+            }
             f.write_str(self.kind.prefix().trim_end_matches(": "))
         } else {
-            write!(f, "[offset {:?}] Error: {}", self.span, self.kind)
+            write!(f, "[offset {:?}] Error: ", self.span)?;
+            if let Some(payload) = self.payload.as_deref() {
+                write!(f, "{payload} ")?;
+            }
+            write!(f, "{}", self.kind)
         }
     }
 }
@@ -128,6 +143,23 @@ impl Display for CroxError {
 impl StdError for CroxError {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         cfg!(not(feature = "fancy")).then_some(&self.kind)
+    }
+}
+
+impl Eq for CroxError {}
+
+impl PartialEq for CroxError {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind && self.span == other.span
+    }
+}
+
+impl Debug for CroxError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CroxError")
+            .field("kind", &self.kind)
+            .field("span", &self.span)
+            .finish_non_exhaustive()
     }
 }
 

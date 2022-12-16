@@ -251,7 +251,7 @@ fn error<'a>(input: &'a str, source: &'a str, kind: CroxErrorKind) -> CroxError 
     let offset = offset_from(input, source);
     let len = input.len().min(1);
     let span = offset..(offset + len);
-    CroxError { kind, span }
+    CroxError::new(kind, span)
 }
 
 fn offset_from<'a>(input: &'a str, source: &'a str) -> usize {
