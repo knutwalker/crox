@@ -1,6 +1,7 @@
 use crate::{
-    BinaryOp, Callable, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule, Function,
-    LogicalOp, Result, Span, StatementRule, Stmt, StmtNode, Type, TypeSet, UnaryOp, Value, Valued,
+    BinaryOp, Callable, CroxError, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule,
+    Function, LogicalOp, Span, StatementRule, Stmt, StmtNode, Type, TypeSet, UnaryOp, Value,
+    Valued,
 };
 use std::marker::PhantomData;
 
@@ -18,21 +19,28 @@ impl<'a> Interpreter<'a> {
 }
 
 impl<'a> Interpreter<'a> {
-    pub fn run_with_new_scope<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+    pub fn run_with_new_scope<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Result<'a, T>,
+    ) -> Result<'a, T> {
         let scope = self.env.new_scope();
         let res = f(self);
         self.env.drop_scope(scope);
         res
     }
 
-    pub fn eval_stmts_in_scope(&mut self, stmts: &[StmtNode<'a>]) -> Result<()> {
-        stmts.iter().try_for_each(|stmt| -> Result {
+    pub fn eval_stmts_in_scope(&mut self, stmts: &[StmtNode<'a>]) -> Result<'a, ()> {
+        stmts.iter().try_for_each(|stmt| -> Result<'a, ()> {
             self.eval_stmt(&stmt.item, stmt.span)?;
             Ok(())
         })
     }
 
-    pub fn eval_stmt(&mut self, stmt: &Stmt<'a>, span: Span) -> Result<Valued<'a, StmtNode<'a>>> {
+    pub fn eval_stmt(
+        &mut self,
+        stmt: &Stmt<'a>,
+        span: Span,
+    ) -> Result<'a, Valued<'a, StmtNode<'a>>> {
         match &stmt {
             Stmt::Expression { expr } => {
                 let _ = self.eval_expr(expr)?;
@@ -58,6 +66,14 @@ impl<'a> Interpreter<'a> {
                 let val = self.eval_expr(expr)?.value;
                 println!("{val}");
             }
+            Stmt::Return { expr } => {
+                return Err(InterpreterError::Return(
+                    expr.as_ref()
+                        .map(|e| self.eval_expr(e).map(|v| v.value))
+                        .transpose()?
+                        .unwrap_or(Value::Nil),
+                ))
+            }
             Stmt::Var { name, initializer } => {
                 let value = initializer
                     .as_ref()
@@ -82,7 +98,7 @@ impl<'a> Interpreter<'a> {
         })
     }
 
-    pub fn eval_expr(&mut self, expr: &ExprNode<'a>) -> Result<Valued<'a, ExprNode<'a>>> {
+    pub fn eval_expr(&mut self, expr: &ExprNode<'a>) -> crate::Result<Valued<'a, ExprNode<'a>>> {
         let span = expr.span;
         let value = match &*expr.item {
             Expr::Literal(literal) => Value::from(literal),
@@ -117,7 +133,7 @@ impl<'a> Interpreter<'a> {
             Expr::Binary { lhs, op, rhs } => {
                 let lhs = self.eval_expr(lhs)?;
                 let rhs = self.eval_expr(rhs)?;
-                let to_error = |e: Result<CroxErrorKind, CroxErrorKind>| match e {
+                let to_error = |e: crate::Result<CroxErrorKind, CroxErrorKind>| match e {
                     Ok(e) => e.at(lhs.item.span),
                     Err(e) => e.at(rhs.item.span),
                 };
@@ -154,7 +170,7 @@ impl<'a> Interpreter<'a> {
                 let arguments = arguments
                     .iter()
                     .map(|arg| self.eval_expr(arg).map(|v| v.value))
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<crate::Result<Vec<_>>>()?;
 
                 if callee.arity() != arguments.len() {
                     return Err(CroxErrorKind::ArityMismatch {
@@ -176,6 +192,26 @@ impl<'a> Interpreter<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum InterpreterError<'a> {
+    Return(Value<'a>),
+    Err(CroxError),
+}
+
+impl<'a> From<CroxError> for InterpreterError<'a> {
+    fn from(e: CroxError) -> Self {
+        Self::Err(e)
+    }
+}
+
+impl<'a> From<Value<'a>> for InterpreterError<'a> {
+    fn from(e: Value<'a>) -> Self {
+        Self::Return(e)
+    }
+}
+
+pub type Result<'a, T, E = InterpreterError<'a>> = std::result::Result<T, E>;
+
 #[derive(Clone, Debug, Default)]
 pub struct StreamInterpreter<'a, R, I> {
     interpreter: Interpreter<'a>,
@@ -193,14 +229,18 @@ impl<'a, R, I> StreamInterpreter<'a, R, I> {
     }
 }
 
-pub fn stmt_interpreter<'a, I>(tokens: I) -> impl Iterator<Item = Result<Valued<'a, StmtNode<'a>>>>
+pub fn stmt_interpreter<'a, I>(
+    tokens: I,
+) -> impl Iterator<Item = crate::Result<Valued<'a, StmtNode<'a>>>>
 where
     I: IntoIterator<Item = StmtNode<'a>>,
 {
     StreamInterpreter::<StatementRule, _>::new(tokens.into_iter())
 }
 
-pub fn expr_interpreter<'a, I>(tokens: I) -> impl Iterator<Item = Result<Valued<'a, ExprNode<'a>>>>
+pub fn expr_interpreter<'a, I>(
+    tokens: I,
+) -> impl Iterator<Item = crate::Result<Valued<'a, ExprNode<'a>>>>
 where
     I: IntoIterator<Item = ExprNode<'a>>,
 {
@@ -212,7 +252,7 @@ where
     R: InterpreterRule,
     I: Iterator<Item = R::Input<'a>>,
 {
-    type Item = Result<R::Interpreted<'a>>;
+    type Item = crate::Result<R::Interpreted<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let input = self.input.next()?;
@@ -227,7 +267,7 @@ pub trait InterpreterRule: Sized {
     fn interpret<'a>(
         interpreter: &mut Interpreter<'a>,
         input: Self::Input<'a>,
-    ) -> Result<Self::Interpreted<'a>>;
+    ) -> crate::Result<Self::Interpreted<'a>>;
 }
 
 impl InterpreterRule for ExpressionRule {
@@ -237,7 +277,7 @@ impl InterpreterRule for ExpressionRule {
     fn interpret<'a>(
         interpreter: &mut Interpreter<'a>,
         input: Self::Input<'a>,
-    ) -> Result<Self::Interpreted<'a>> {
+    ) -> crate::Result<Self::Interpreted<'a>> {
         interpreter.eval_expr(&input)
     }
 }
@@ -249,8 +289,15 @@ impl InterpreterRule for StatementRule {
     fn interpret<'a>(
         interpreter: &mut Interpreter<'a>,
         input: Self::Input<'a>,
-    ) -> Result<Self::Interpreted<'a>> {
-        interpreter.eval_stmt(&input.item, input.span)
+    ) -> crate::Result<Self::Interpreted<'a>> {
+        match interpreter.eval_stmt(&input.item, input.span) {
+            Ok(value) => Ok(value),
+            Err(InterpreterError::Return(value)) => Ok(Valued {
+                item: input.clone(),
+                value,
+            }),
+            Err(InterpreterError::Err(e)) => Err(e),
+        }
     }
 }
 

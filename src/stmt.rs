@@ -18,6 +18,9 @@ pub enum Stmt<'a> {
     Print {
         expr: ExprNode<'a>,
     },
+    Return {
+        expr: Option<ExprNode<'a>>,
+    },
     Var {
         name: Node<&'a str>,
         initializer: Option<ExprNode<'a>>,
@@ -66,6 +69,10 @@ impl<'a> Stmt<'a> {
 
     pub fn print(expr: ExprNode<'a>) -> Self {
         Self::Print { expr }
+    }
+
+    pub fn return_(expr: impl Into<Option<ExprNode<'a>>>) -> Self {
+        Self::Return { expr: expr.into() }
     }
 
     pub fn var(name: Node<&'a str>, initializer: impl Into<Option<ExprNode<'a>>>) -> Self {

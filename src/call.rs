@@ -30,13 +30,16 @@ impl<'a> Callable<'a> for Function<'a> {
     }
 
     fn call(&self, interpreter: &mut Interpreter<'a>, args: &[Value<'a>]) -> Result<Value<'a>> {
-        interpreter.run_with_new_scope(|interpreter| {
+        match interpreter.run_with_new_scope(|interpreter| {
             for (param, arg) in self.decl.params.iter().zip(args) {
                 interpreter.env.define(param.item, arg.clone());
             }
             interpreter.eval_stmts_in_scope(&self.decl.body)
-        })?;
-        Ok(Value::Nil)
+        }) {
+            Ok(()) => Ok(Value::Nil),
+            Err(crate::interp::InterpreterError::Return(value)) => Ok(value),
+            Err(crate::interp::InterpreterError::Err(err)) => Err(err),
+        }
     }
 }
 

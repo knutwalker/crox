@@ -7,12 +7,13 @@
 //!     funDecl := "fun" function ;
 //!    function := IDENTIFIER "(" parameters? ")" block ;
 //!     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
-//!   statement := exprStmt | forStmt | ifStmt | printStmt | whileStmt | block;
+//!   statement := exprStmt | forStmt | ifStmt | printStmt | returnStmt | whileStmt | block;
 //!
 //!    exprStmt := expression ";" ;
 //!     forStmt := "for" "(" ( varDecl | exprStmt | ";" ) expression? ";" expression? ")" statement ;
 //!      ifStmt := "if" "(" expression ")" statement ( "else" statement )? ;
 //!   printStmt := "print" expression ";" ;
+//!  returnStmt := "return" expression? ";" ;
 //!   whileStmt := "while" "(" expression ")" statement ;
 //!       block := "{" declaration* "}" ;
 //!
@@ -184,6 +185,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             (For, span) => self.for_statement(span),
             (If, span) => self.if_statement(span),
             (Print, span) => self.print_statement(span),
+            (Return, span) => self.return_statement(span),
             (While, span) => self.while_statement(span),
             (LeftBrace, span) => self.block(span).map(|n| n.map(Stmt::block)),
         });
@@ -306,6 +308,18 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let end_span = self.expect(Semicolon, EndOfInput::Unclosed(Print, print_span))?;
         let stmt = Stmt::print(expr);
         Ok(stmt.at(print_span.union(end_span)))
+    }
+
+    ///  returnStmt := "return" expression? ";" ;
+    fn return_statement(&mut self, span: Span) -> Result<StmtNode<'a>> {
+        let expr = match self.tokens.peek() {
+            Some(&(Semicolon, _)) => None,
+            Some(_) => Some(self.expression()?),
+            None => None,
+        };
+        let end_span = self.expect(Semicolon, EndOfInput::Unclosed(Return, span))?;
+
+        Ok(Stmt::return_(expr).at(span.union(end_span)))
     }
 
     ///   whileStmt := "while" "(" expression ")" statement ;
