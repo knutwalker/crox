@@ -34,7 +34,7 @@
 //!```
 use crate::{
     BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule, FunctionDef, Node, Range,
-    Result, Source, Span, StatementRule, Stmt, StmtNode, Token, TokenSet, TokenType, UnaryOp,
+    Result, Source, Span, StatementRule, Stmt, StmtNode, Token, TokenSet, TokenType, UnaryOp, Var,
 };
 use std::{iter::Peekable, marker::PhantomData};
 use TokenType::*;
@@ -372,7 +372,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
         if peek!(self, Equal) {
             let value = self.assignment()?;
-            let Expr::Var(name) = &*expr.item else {
+            let Expr::Var(Var { name, .. }) = &*expr.item else {
                 return Err(CroxErrorKind::InvalidAssignmentTarget.at(expr.span));
             };
 

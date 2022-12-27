@@ -202,3 +202,6 @@ Temporary Items
 .apdisk
 
 *.code-workspace
+
+# Example crox files
+examples/*.crox

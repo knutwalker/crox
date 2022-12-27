@@ -1,7 +1,7 @@
 use crate::{
     BinaryOp, Callable, CroxError, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule,
     Function, LogicalOp, Span, StatementRule, Stmt, StmtNode, Type, TypeSet, UnaryOp, Value,
-    Valued,
+    Valued, Var,
 };
 use std::marker::PhantomData;
 
@@ -95,12 +95,26 @@ impl<'a> Interpreter<'a> {
         let span = expr.span;
         let value = match &*expr.item {
             Expr::Literal(literal) => Value::from(literal),
-            Expr::Var(name) => env.get(name).map_err(|e| CroxErrorKind::from(e).at(span))?,
+            Expr::Var(Var {
+                name,
+                resolved_scope,
+            }) => {
+                let scope = resolved_scope.get().expect("No resolver pass");
+                env.get_from_scope_ref(name, scope)
+                    .map_err(|e| CroxErrorKind::from(e).at(span))?
+            }
             Expr::Fun(func) => Function::new("<anon>", func.clone(), env.clone()).to_value(),
-            Expr::Assignment { name, value } => {
-                let span = value.span;
+            Expr::Assignment {
+                var:
+                    Var {
+                        name,
+                        resolved_scope,
+                    },
+                value,
+            } => {
                 let value = Self::eval_expr(env, value)?.value;
-                env.assign(name, value)
+                let scope = resolved_scope.get().expect("No resolver pass");
+                env.assign_at_scope_ref(name, scope, value)
                     .map_err(|e| CroxErrorKind::from(e).at(span))?
             }
             Expr::Unary { op, expr } => {
@@ -151,7 +165,8 @@ impl<'a> Interpreter<'a> {
                             expected: TypeSet::from_iter([Type::Function, Type::Class]),
                             actual: callee.value.typ(),
                         }
-                        .at(span))
+                        .at(span)
+                        .with_payload(format!("{:?}", callee.value)))
                     }
                 };
 
@@ -180,16 +195,6 @@ impl<'a> Interpreter<'a> {
     }
 }
 impl<'a> Interpreter<'a> {
-    pub fn run_with_new_scope<T>(
-        &mut self,
-        f: impl FnOnce(&mut Self) -> Result<'a, T>,
-    ) -> Result<'a, T> {
-        let scope = self.env.new_scope();
-        let res = f(self);
-        self.env.drop_scope(scope);
-        res
-    }
-
     pub fn eval_own_stmts_in_scope(&self, stmts: &[StmtNode<'a>]) -> Result<'a, ()> {
         Self::eval_stmts_in_scope(&self.env, stmts)
     }

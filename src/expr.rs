@@ -1,5 +1,6 @@
-use crate::{Node, Span, StmtNode};
+use crate::{env::ScopeRef, Node, Span, StmtNode};
 use std::{
+    cell::Cell,
     fmt::{Debug, Display},
     rc::Rc,
 };
@@ -9,10 +10,10 @@ pub type ExprNode<'a> = Node<Rc<Expr<'a>>>;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr<'a> {
     Literal(Literal<'a>),
-    Var(&'a str),
+    Var(Var<'a>),
     Fun(FunctionDef<'a>),
     Assignment {
-        name: &'a str,
+        var: Var<'a>,
         value: ExprNode<'a>,
     },
     Unary {
@@ -60,7 +61,7 @@ impl<'a> Expr<'a> {
     }
 
     pub fn var(s: &'a str) -> Self {
-        Self::Var(s)
+        Self::Var(Var::new(s))
     }
 
     pub fn fun(fun: FunctionDef<'a>) -> Self {
@@ -68,7 +69,10 @@ impl<'a> Expr<'a> {
     }
 
     pub fn assign(name: &'a str, value: ExprNode<'a>) -> Self {
-        Self::Assignment { name, value }
+        Self::Assignment {
+            var: Var::new(name),
+            value,
+        }
     }
 
     pub fn neg(expr: ExprNode<'a>) -> Self {
@@ -216,6 +220,25 @@ pub enum Literal<'a> {
     False,
     Number(f64),
     String(&'a str),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Var<'a> {
+    pub name: &'a str,
+    pub resolved_scope: Cell<Option<ScopeRef>>,
+}
+
+impl<'a> Var<'a> {
+    pub fn new(name: &'a str) -> Self {
+        Self {
+            name,
+            resolved_scope: Cell::new(None),
+        }
+    }
+
+    pub fn resolve(&self, scope_ref: ScopeRef) {
+        self.resolved_scope.set(Some(scope_ref));
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

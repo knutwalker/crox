@@ -8,6 +8,7 @@ mod expr;
 mod interp;
 mod node;
 mod parser;
+mod resolver;
 mod rule;
 mod scanner;
 mod stmt;
@@ -19,10 +20,11 @@ mod value;
 pub use call::{Callable, Clock, Function};
 pub use env::Environment;
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
-pub use expr::{BinaryOp, Expr, ExprNode, FunctionDef, Literal, LogicalOp, UnaryOp};
+pub use expr::{BinaryOp, Expr, ExprNode, FunctionDef, Literal, LogicalOp, UnaryOp, Var};
 pub use interp::{expr_interpreter, stmt_interpreter, Interpreter};
 pub use node::{Ident, Node, Spannable};
 pub use parser::{expr_parser, stmt_parser, Parser};
+pub use resolver::{expr_resolver, stmt_resolver, Resolver};
 pub use rule::{ExpressionRule, StatementRule};
 pub use scanner::{Scanner, Source};
 pub use stmt::{FunctionDecl, Stmt, StmtNode};
@@ -39,7 +41,8 @@ pub fn run(content: &str) -> Result<Ast<'_, StmtNode<'_>>, CroxErrors> {
     let source = scan(content);
     let tokens = source.into_iter().filter_map(|t| errs.ok(t));
     let statements = stmt_parser(source, tokens).filter_map(|e| errs.ok(e));
-    let values = stmt_interpreter(statements).filter_map(|e| errs.ok(e));
+    let resolved = stmt_resolver(statements).filter_map(|e| errs.ok(e));
+    let values = stmt_interpreter(resolved).filter_map(|e| errs.ok(e));
     let ast = values.collect();
 
     match errs.finish(source.source) {
@@ -54,7 +57,8 @@ pub fn eval(content: &str) -> Result<Ast<'_, ExprNode<'_>>, CroxErrors> {
     let source = scan(content);
     let tokens = source.into_iter().filter_map(|t| errs.ok(t));
     let statements = expr_parser(source, tokens).filter_map(|e| errs.ok(e));
-    let values = expr_interpreter(statements).filter_map(|e| errs.ok(e));
+    let resolved = expr_resolver(statements).filter_map(|e| errs.ok(e));
+    let values = expr_interpreter(resolved).filter_map(|e| errs.ok(e));
     let ast = values.collect();
 
     match errs.finish(source.source) {
