@@ -33,8 +33,8 @@
 //!  parameters := IDENTIFIER ( "," IDENTIFIER )* ;
 //!```
 use crate::{
-    BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule, Node, Range, Result,
-    Source, Span, StatementRule, Stmt, StmtNode, Token, TokenSet, TokenType, UnaryOp,
+    BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule, FunctionDef, Node, Range,
+    Result, Source, Span, StatementRule, Stmt, StmtNode, Token, TokenSet, TokenType, UnaryOp,
 };
 use std::{iter::Peekable, marker::PhantomData};
 use TokenType::*;
@@ -155,7 +155,14 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             .ident(start)
             .map_err(|c| c.with_payload(ExpectedFn(kind)))?;
 
-        let params = self.parens_list(name.span, true, |this, span| this.ident(span))?;
+        let fn_def = self.function_def(name.span)?;
+        let span = start.union(fn_def.span);
+
+        Ok(Stmt::fun(name, fn_def.item).at(span))
+    }
+
+    fn function_def(&mut self, start: Span) -> Result<Node<FunctionDef<'a>>> {
+        let params = self.parens_list(start, true, |this, span| this.ident(span))?;
         let right_paren = params.span;
 
         let open_brace = self.expect(LeftBrace, EndOfInput::expected(LeftBrace, right_paren))?;
@@ -163,7 +170,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
         let span = start.union(body.span);
 
-        Ok(Stmt::fun(name, params.item, body.item).at(span))
+        Ok(Node::new(FunctionDef::new(params.item, body.item), span))
     }
 
     ///     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
@@ -467,7 +474,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     ///     primary := NUMBER | STRING | IDENTIFIER | "true" | "false" | "nil" | "(" expression ")" ;
     fn primary(&mut self) -> Result<ExprNode<'a>> {
         fn expected() -> TokenSet {
-            TokenSet::from_iter([LeftParen, String, Number, Identifier, False, Nil, True])
+            TokenSet::from_iter([LeftParen, String, Number, Identifier, Fun, False, Nil, True])
         }
 
         let (node, span) = match self.tokens.next() {
@@ -497,6 +504,10 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             Some((Identifier, span)) => {
                 let ident = self.source.slice(span);
                 (Expr::var(ident), span)
+            }
+            Some((Fun, span)) => {
+                let fun = self.function_def(span)?;
+                (Expr::fun(fun.item), fun.span)
             }
             Some((False, span)) => (Expr::fals(), span),
             Some((Nil, span)) => (Expr::nil(), span),

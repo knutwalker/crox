@@ -1,4 +1,4 @@
-use crate::{Node, Span};
+use crate::{Node, Span, StmtNode};
 use std::{
     fmt::{Debug, Display},
     rc::Rc,
@@ -10,6 +10,7 @@ pub type ExprNode<'a> = Node<Rc<Expr<'a>>>;
 pub enum Expr<'a> {
     Literal(Literal<'a>),
     Var(&'a str),
+    Fun(FunctionDef<'a>),
     Assignment {
         name: &'a str,
         value: ExprNode<'a>,
@@ -60,6 +61,10 @@ impl<'a> Expr<'a> {
 
     pub fn var(s: &'a str) -> Self {
         Self::Var(s)
+    }
+
+    pub fn fun(fun: FunctionDef<'a>) -> Self {
+        Self::Fun(fun)
     }
 
     pub fn assign(name: &'a str, value: ExprNode<'a>) -> Self {
@@ -211,6 +216,24 @@ pub enum Literal<'a> {
     False,
     Number(f64),
     String(&'a str),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FunctionDef<'a> {
+    pub params: Rc<[Node<&'a str>]>,
+    pub body: Rc<[StmtNode<'a>]>,
+}
+
+impl<'a> FunctionDef<'a> {
+    pub fn new(
+        params: impl Into<Rc<[Node<&'a str>]>>,
+        body: impl Into<Rc<[StmtNode<'a>]>>,
+    ) -> Self {
+        Self {
+            params: params.into(),
+            body: body.into(),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

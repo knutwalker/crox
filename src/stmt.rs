@@ -1,4 +1,4 @@
-use crate::{ExprNode, Node, Span};
+use crate::{ExprNode, FunctionDef, Node, Span};
 use std::{fmt::Debug, rc::Rc};
 
 pub type StmtNode<'a> = Node<Stmt<'a>>;
@@ -39,16 +39,8 @@ impl<'a> Stmt<'a> {
         Self::Expression { expr }
     }
 
-    pub fn fun(
-        name: Node<&'a str>,
-        params: impl Into<Rc<[Node<&'a str>]>>,
-        body: impl Into<Rc<[StmtNode<'a>]>>,
-    ) -> Self {
-        Self::Function(FunctionDecl {
-            name,
-            params: params.into(),
-            body: body.into(),
-        })
+    pub fn fun(name: Node<&'a str>, fun: FunctionDef<'a>) -> Self {
+        Self::Function(FunctionDecl { name, fun })
     }
 
     pub fn if_(condition: ExprNode<'a>, then_: StmtNode<'a>) -> Self {
@@ -103,6 +95,5 @@ impl<'a> Stmt<'a> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct FunctionDecl<'a> {
     pub name: Node<&'a str>,
-    pub params: Rc<[Node<&'a str>]>,
-    pub body: Rc<[StmtNode<'a>]>,
+    pub fun: FunctionDef<'a>,
 }

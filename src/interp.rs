@@ -19,57 +19,47 @@ impl<'a> Interpreter<'a> {
 }
 
 impl<'a> Interpreter<'a> {
-    pub fn run_with_new_scope<T>(
-        &mut self,
-        f: impl FnOnce(&mut Self) -> Result<'a, T>,
-    ) -> Result<'a, T> {
-        let scope = self.env.new_scope();
-        let res = f(self);
-        self.env.drop_scope(scope);
-        res
-    }
-
-    pub fn eval_stmts_in_scope(&mut self, stmts: &[StmtNode<'a>]) -> Result<'a, ()> {
+    pub fn eval_stmts_in_scope(env: &Environment<'a>, stmts: &[StmtNode<'a>]) -> Result<'a, ()> {
         stmts.iter().try_for_each(|stmt| -> Result<'a, ()> {
-            self.eval_stmt(&stmt.item, stmt.span)?;
+            Self::eval_stmt(env, &stmt.item, stmt.span)?;
             Ok(())
         })
     }
 
     pub fn eval_stmt(
-        &mut self,
+        env: &Environment<'a>,
         stmt: &Stmt<'a>,
         span: Span,
     ) -> Result<'a, Valued<'a, StmtNode<'a>>> {
         match &stmt {
             Stmt::Expression { expr } => {
-                let _ = self.eval_expr(expr)?;
+                let _ = Self::eval_expr(env, expr)?;
             }
             Stmt::Function(func) => {
                 let name = func.name.item;
-                let func = Function::new(func.clone());
+                let func = Function::new(name, func.fun.clone(), env.clone());
                 let func = func.to_value();
-                self.env.define(name, Some(func));
+                env.define(name, Some(func));
             }
             Stmt::If {
                 condition,
                 then_,
                 else_,
             } => {
-                if self.eval_expr(condition)?.value.as_bool() {
-                    self.eval_stmt(&then_.item, then_.span)?;
+                if Self::eval_expr(env, condition)?.value.as_bool() {
+                    Self::eval_stmt(env, &then_.item, then_.span)?;
                 } else if let Some(else_) = else_ {
-                    self.eval_stmt(&else_.item, else_.span)?;
+                    Self::eval_stmt(env, &else_.item, else_.span)?;
                 }
             }
             Stmt::Print { expr } => {
-                let val = self.eval_expr(expr)?.value;
+                let val = Self::eval_expr(env, expr)?.value;
                 println!("{val}");
             }
             Stmt::Return { expr } => {
                 return Err(InterpreterError::Return(
                     expr.as_ref()
-                        .map(|e| self.eval_expr(e).map(|v| v.value))
+                        .map(|e| Self::eval_expr(env, e).map(|v| v.value))
                         .transpose()?
                         .unwrap_or(Value::Nil),
                 ))
@@ -77,18 +67,18 @@ impl<'a> Interpreter<'a> {
             Stmt::Var { name, initializer } => {
                 let value = initializer
                     .as_ref()
-                    .map(|e| self.eval_expr(e))
+                    .map(|e| Self::eval_expr(env, e))
                     .transpose()?
                     .map(|v| v.value);
-                self.env.define(name.item, value);
+                env.define(name.item, value);
             }
             Stmt::While { condition, body } => {
-                while self.eval_expr(condition)?.value.as_bool() {
-                    self.eval_stmt(&body.item, body.span)?;
+                while Self::eval_expr(env, condition)?.value.as_bool() {
+                    Self::eval_stmt(env, &body.item, body.span)?;
                 }
             }
             Stmt::Block { stmts } => {
-                self.run_with_new_scope(|this| this.eval_stmts_in_scope(stmts))?;
+                env.run_with_new_scope(|env| Self::eval_stmts_in_scope(env, stmts))?;
             }
         }
 
@@ -98,41 +88,39 @@ impl<'a> Interpreter<'a> {
         })
     }
 
-    pub fn eval_expr(&mut self, expr: &ExprNode<'a>) -> crate::Result<Valued<'a, ExprNode<'a>>> {
+    pub fn eval_expr(
+        env: &Environment<'a>,
+        expr: &ExprNode<'a>,
+    ) -> crate::Result<Valued<'a, ExprNode<'a>>> {
         let span = expr.span;
         let value = match &*expr.item {
             Expr::Literal(literal) => Value::from(literal),
-            Expr::Var(name) => self
-                .env
-                .get(name)
-                .map_err(|e| CroxErrorKind::from(e).at(span))?
-                .clone(),
+            Expr::Var(name) => env.get(name).map_err(|e| CroxErrorKind::from(e).at(span))?,
+            Expr::Fun(func) => Function::new("<anon>", func.clone(), env.clone()).to_value(),
             Expr::Assignment { name, value } => {
                 let span = value.span;
-                let value = self.eval_expr(value)?.value;
-                self.env
-                    .assign(name, value)
+                let value = Self::eval_expr(env, value)?.value;
+                env.assign(name, value)
                     .map_err(|e| CroxErrorKind::from(e).at(span))?
-                    .clone()
             }
             Expr::Unary { op, expr } => {
-                let value = self.eval_expr(expr)?.value;
+                let value = Self::eval_expr(env, expr)?.value;
                 match op {
                     UnaryOp::Neg => value.neg().map_err(|e| e.at(expr.span))?,
                     UnaryOp::Not => value.not(),
                 }
             }
             Expr::Logical { lhs, op, rhs } => {
-                let lhs = self.eval_expr(lhs)?.value;
+                let lhs = Self::eval_expr(env, lhs)?.value;
                 match op {
                     LogicalOp::And if !lhs.as_bool() => lhs,
                     LogicalOp::Or if lhs.as_bool() => lhs,
-                    LogicalOp::And | LogicalOp::Or => self.eval_expr(rhs)?.value,
+                    LogicalOp::And | LogicalOp::Or => Self::eval_expr(env, rhs)?.value,
                 }
             }
             Expr::Binary { lhs, op, rhs } => {
-                let lhs = self.eval_expr(lhs)?;
-                let rhs = self.eval_expr(rhs)?;
+                let lhs = Self::eval_expr(env, lhs)?;
+                let rhs = Self::eval_expr(env, rhs)?;
                 let to_error = |e: crate::Result<CroxErrorKind, CroxErrorKind>| match e {
                     Ok(e) => e.at(lhs.item.span),
                     Err(e) => e.at(rhs.item.span),
@@ -153,7 +141,7 @@ impl<'a> Interpreter<'a> {
                 }
             }
             Expr::Call { callee, arguments } => {
-                let callee = self.eval_expr(callee)?;
+                let callee = Self::eval_expr(env, callee)?;
                 let span = callee.item.span;
 
                 let callee = match &callee.value {
@@ -169,7 +157,7 @@ impl<'a> Interpreter<'a> {
 
                 let arguments = arguments
                     .iter()
-                    .map(|arg| self.eval_expr(arg).map(|v| v.value))
+                    .map(|arg| Self::eval_expr(env, arg).map(|v| v.value))
                     .collect::<crate::Result<Vec<_>>>()?;
 
                 if callee.arity() != arguments.len() {
@@ -180,15 +168,42 @@ impl<'a> Interpreter<'a> {
                     .at(span));
                 }
 
-                callee.call(self, &arguments)?
+                callee.call(env, &arguments)?
             }
-            Expr::Group { expr } => self.eval_expr(expr)?.value,
+            Expr::Group { expr } => Self::eval_expr(env, expr)?.value,
         };
 
         Ok(Valued {
             item: expr.clone(),
             value,
         })
+    }
+}
+impl<'a> Interpreter<'a> {
+    pub fn run_with_new_scope<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Result<'a, T>,
+    ) -> Result<'a, T> {
+        let scope = self.env.new_scope();
+        let res = f(self);
+        self.env.drop_scope(scope);
+        res
+    }
+
+    pub fn eval_own_stmts_in_scope(&self, stmts: &[StmtNode<'a>]) -> Result<'a, ()> {
+        Self::eval_stmts_in_scope(&self.env, stmts)
+    }
+
+    pub fn eval_own_stmt(
+        &self,
+        stmt: &Stmt<'a>,
+        span: Span,
+    ) -> Result<'a, Valued<'a, StmtNode<'a>>> {
+        Self::eval_stmt(&self.env, stmt, span)
+    }
+
+    pub fn eval_own_expr(&self, expr: &ExprNode<'a>) -> crate::Result<Valued<'a, ExprNode<'a>>> {
+        Self::eval_expr(&self.env, expr)
     }
 }
 
@@ -278,7 +293,7 @@ impl InterpreterRule for ExpressionRule {
         interpreter: &mut Interpreter<'a>,
         input: Self::Input<'a>,
     ) -> crate::Result<Self::Interpreted<'a>> {
-        interpreter.eval_expr(&input)
+        interpreter.eval_own_expr(&input)
     }
 }
 
@@ -290,7 +305,7 @@ impl InterpreterRule for StatementRule {
         interpreter: &mut Interpreter<'a>,
         input: Self::Input<'a>,
     ) -> crate::Result<Self::Interpreted<'a>> {
-        match interpreter.eval_stmt(&input.item, input.span) {
+        match interpreter.eval_own_stmt(&input.item, input.span) {
             Ok(value) => Ok(value),
             Err(InterpreterError::Return(value)) => Ok(Valued {
                 item: input.clone(),

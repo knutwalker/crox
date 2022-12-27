@@ -1,40 +1,44 @@
-use crate::{FunctionDecl, Interpreter, Result, Value};
+use std::rc::Rc;
+
+use crate::{Environment, FunctionDef, Interpreter, Result, Value};
 pub use builtin::Clock;
 
 pub trait Callable<'a>: std::fmt::Debug + 'a {
     fn arity(&self) -> usize;
-    fn call(&self, interpreter: &mut Interpreter<'a>, args: &[Value<'a>]) -> Result<Value<'a>>;
+    fn call(&self, caller_env: &Environment<'a>, args: &[Value<'a>]) -> Result<Value<'a>>;
 
     fn to_value(self) -> Value<'a>
     where
         Self: Sized,
     {
-        Value::Fn(std::rc::Rc::new(self))
+        Value::Fn(Rc::new(self))
     }
 }
 
 #[derive(Clone)]
 pub struct Function<'a> {
-    decl: FunctionDecl<'a>,
+    name: &'a str,
+    fun: FunctionDef<'a>,
+    closure: Environment<'a>,
 }
 
 impl<'a> Function<'a> {
-    pub fn new(decl: FunctionDecl<'a>) -> Self {
-        Self { decl }
+    pub fn new(name: &'a str, fun: FunctionDef<'a>, closure: Environment<'a>) -> Self {
+        Self { name, fun, closure }
     }
 }
 
 impl<'a> Callable<'a> for Function<'a> {
     fn arity(&self) -> usize {
-        self.decl.params.len()
+        self.fun.params.len()
     }
 
-    fn call(&self, interpreter: &mut Interpreter<'a>, args: &[Value<'a>]) -> Result<Value<'a>> {
-        match interpreter.run_with_new_scope(|interpreter| {
-            for (param, arg) in self.decl.params.iter().zip(args) {
-                interpreter.env.define(param.item, arg.clone());
+    fn call(&self, _caller_env: &Environment<'a>, args: &[Value<'a>]) -> Result<Value<'a>> {
+        match self.closure.run_with_new_scope(|env| {
+            for (param, arg) in self.fun.params.iter().zip(args) {
+                env.define(param.item, arg.clone());
             }
-            interpreter.eval_stmts_in_scope(&self.decl.body)
+            Interpreter::eval_stmts_in_scope(env, &self.fun.body)
         }) {
             Ok(()) => Ok(Value::Nil),
             Err(crate::interp::InterpreterError::Return(value)) => Ok(value),
@@ -45,7 +49,7 @@ impl<'a> Callable<'a> for Function<'a> {
 
 impl<'a> std::fmt::Debug for Function<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<fn {}>", self.decl.name.item)
+        write!(f, "<fn {}>", self.name)
     }
 }
 
@@ -65,7 +69,7 @@ mod builtin {
 
         fn call(
             &self,
-            _interpreter: &mut crate::Interpreter<'a>,
+            _caller_env: &crate::Environment<'a>,
             _args: &[Value<'a>],
         ) -> Result<Value<'a>> {
             Ok(SystemTime::now()

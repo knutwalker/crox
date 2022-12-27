@@ -19,7 +19,7 @@ mod value;
 pub use call::{Callable, Clock, Function};
 pub use env::Environment;
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
-pub use expr::{BinaryOp, Expr, ExprNode, Literal, LogicalOp, UnaryOp};
+pub use expr::{BinaryOp, Expr, ExprNode, FunctionDef, Literal, LogicalOp, UnaryOp};
 pub use interp::{expr_interpreter, stmt_interpreter, Interpreter};
 pub use node::{Ident, Node, Spannable};
 pub use parser::{expr_parser, stmt_parser, Parser};
