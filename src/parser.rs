@@ -130,8 +130,8 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     /// declaration := funDecl | varDecl | statement ;
     fn declaration(&mut self) -> Result<StmtNode<'a>> {
         let stmt = peek!(self, {
-         (Var, span) => self.var_decl(span),
-         (Fun, span) => self.fun_decl(FnKind::Function, span),
+            (Var, span) => self.var_decl(span),
+            (Fun, span) => self.fun_decl(FnKind::Function, span),
         })
         .transpose()?;
 
