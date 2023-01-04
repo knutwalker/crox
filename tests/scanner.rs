@@ -26,52 +26,64 @@ fn run_test(content: &str, expected: Vec<Token>) -> Result<(), CroxErrors> {
 
 #[test]
 fn test_classes() -> Result<(), CroxErrors> {
-    run_test(include_str!("classes.crox"), include!("classes.tokens"))
+    run_test(
+        include_str!("scanner/classes.crox"),
+        include!("scanner/classes.tokens"),
+    )
 }
 
 #[test]
 fn test_control_flow() -> Result<(), CroxErrors> {
     run_test(
-        include_str!("control_flow.crox"),
-        include!("control_flow.tokens"),
+        include_str!("scanner/control_flow.crox"),
+        include!("scanner/control_flow.tokens"),
     )
 }
 
 #[test]
 fn test_expressions() -> Result<(), CroxErrors> {
     run_test(
-        include_str!("expressions.crox"),
-        include!("expressions.tokens"),
+        include_str!("scanner/expressions.crox"),
+        include!("scanner/expressions.tokens"),
     )
 }
 
 #[test]
 fn test_functions() -> Result<(), CroxErrors> {
-    run_test(include_str!("functions.crox"), include!("functions.tokens"))
+    run_test(
+        include_str!("scanner/functions.crox"),
+        include!("scanner/functions.tokens"),
+    )
 }
 
 #[test]
 fn test_hello_world() -> Result<(), CroxErrors> {
     run_test(
-        include_str!("hello_world.crox"),
-        include!("hello_world.tokens"),
+        include_str!("scanner/hello_world.crox"),
+        include!("scanner/hello_world.tokens"),
     )
 }
 
 #[test]
 fn test_statements() -> Result<(), CroxErrors> {
     run_test(
-        include_str!("statements.crox"),
-        include!("statements.tokens"),
+        include_str!("scanner/statements.crox"),
+        include!("scanner/statements.tokens"),
     )
 }
 
 #[test]
 fn test_types() -> Result<(), CroxErrors> {
-    run_test(include_str!("types.crox"), include!("types.tokens"))
+    run_test(
+        include_str!("scanner/types.crox"),
+        include!("scanner/types.tokens"),
+    )
 }
 
 #[test]
 fn test_variables() -> Result<(), CroxErrors> {
-    run_test(include_str!("variables.crox"), include!("variables.tokens"))
+    run_test(
+        include_str!("scanner/variables.crox"),
+        include!("scanner/variables.tokens"),
+    )
 }
