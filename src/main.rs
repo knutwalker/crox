@@ -43,26 +43,26 @@ fn open_script(file: Option<impl AsRef<Path>>) -> io::Result<Option<String>> {
     match file {
         Some(file) => fs::read_to_string(file).map(Some),
         None => {
-            let stdin = io::stdin();
-
             #[cfg(unix)]
-            let file = {
+            let stdio_file = {
                 use std::os::unix::prelude::AsFd;
+                let stdin = io::stdin();
                 let stdin = stdin.as_fd().try_clone_to_owned();
-                stdin.map(File::from)
+                stdin.map(File::from).ok()
             };
 
             #[cfg(windows)]
-            let file = {
+            let stdio_file = {
                 use std::os::windows::io::AsHandle;
+                let stdin = io::stdin();
                 let stdin = std.as_handle().try_clone_to_owned();
-                stdin.map(File::from)
+                stdin.map(File::from).ok()
             };
 
             #[cfg(not(any(unix, windows)))]
-            compile_error!("Unsupported platform, only unix and windows are supported");
+            let std_file = None;
 
-            let has_stdin = file.map_or(false, |mut f| {
+            let has_stdin = stdio_file.map_or(false, |mut f| {
                 f.seek(io::SeekFrom::End(0)).map_or(true, |len| len > 0)
             });
 
