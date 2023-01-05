@@ -55,7 +55,7 @@ impl<'a, V> Environment<'a, V> {
         self.inner.borrow().scope_of(name)
     }
 
-    pub fn new_scope(&self) -> Scope<'_, 'a, V> {
+    pub fn new_scope(&self) -> Scope<'a, V> {
         Scope::new(self.inner.borrow_mut().new_scope(), self)
     }
 
@@ -118,20 +118,23 @@ impl ScopeRef {
 }
 
 #[derive(Debug)]
-pub struct Scope<'env, 'source, V> {
+pub struct Scope<'source, V> {
     scope: usize,
-    env: &'env Environment<'source, V>,
+    env: *const Environment<'source, V>,
 }
 
-impl<'env, 'source, V> Scope<'env, 'source, V> {
-    pub fn new(scope: usize, env: &'env Environment<'source, V>) -> Self {
+impl<'source, V> Scope<'source, V> {
+    pub fn new(scope: usize, env: &Environment<'source, V>) -> Self {
         Self { env, scope }
     }
 }
 
-impl<V> Drop for Scope<'_, '_, V> {
+impl<V> Drop for Scope<'_, V> {
     fn drop(&mut self) {
-        self.env.inner.borrow_mut().drop_scope(self.scope);
+        unsafe { &*self.env }
+            .inner
+            .borrow_mut()
+            .drop_scope(self.scope);
     }
 }
 

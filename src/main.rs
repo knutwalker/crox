@@ -1,6 +1,5 @@
-use crox::{Ast, CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Node, TokenType, Value};
+use crox::{CroxError, CroxErrorKind, CroxErrors, TokenType};
 use std::{
-    fmt::Debug,
     fs::{self, File},
     io::{self, Read, Seek, Write},
     path::Path,
@@ -27,13 +26,7 @@ fn run() -> io::Result<()> {
     };
 
     if let Err(e) = res {
-        let scope = e.scope();
-        report_error(e);
-        let exit_code = match scope {
-            CroxErrorScope::Custom | CroxErrorScope::Scanner | CroxErrorScope::Parser => 65,
-            CroxErrorScope::Interpreter => 70,
-        };
-        std::process::exit(exit_code)
+        std::process::exit(e)
     }
 
     Ok(())
@@ -77,8 +70,10 @@ fn open_script(file: Option<impl AsRef<Path>>) -> io::Result<Option<String>> {
     }
 }
 
-fn run_script(content: &str) -> crox::Result<(), CroxErrors> {
-    crox::run(content).map(|exprs| report_ok(false, exprs))
+fn run_script(content: &str) -> crox::Result<(), i32> {
+    let ast = crox::run_as_script(true, std::io::stdout(), std::io::stderr(), content)?;
+    crox::print_ast(false, ast);
+    Ok(())
 }
 
 fn repl() -> io::Result<()> {
@@ -119,38 +114,21 @@ fn handle(verbose: bool, line: &str) {
         false
     }
 
-    match crox::run(line) {
-        Ok(res) => report_ok(verbose, res),
+    match crox::run(std::io::stdout(), line) {
+        Ok(res) => crox::print_ast(verbose, res),
         Err(e) => match e.errors() {
-            [e] if is_semicolon_instead_of_eof(e, line) => match crox::eval(line) {
-                Ok(res) => report_ok(verbose, res),
-                Err(e) => report_error(e),
-            },
+            [e] if is_semicolon_instead_of_eof(e, line) => {
+                match crox::eval(std::io::stdout(), line) {
+                    Ok(res) => crox::print_ast(verbose, res),
+                    Err(e) => report_error(e),
+                }
+            }
             _ => report_error(e),
         },
     }
 }
 
-fn report_ok<T: Debug>(verbose: bool, ast: Ast<Node<T>>) {
-    for node in ast.iter() {
-        let value = &node.value;
-        if verbose {
-            println!("{:#?}", node.item);
-            println!("{:#?}", value);
-        }
-        if value != &Value::Nil {
-            println!("{}", value);
-        }
-    }
-}
-
-#[cfg(feature = "fancy")]
 fn report_error(err: CroxErrors) {
-    let err = miette::Report::new(err);
-    eprintln!("{:?}", err);
-}
-
-#[cfg(not(feature = "fancy"))]
-fn report_error(err: CroxErrors) {
-    eprintln!("{:#}", err);
+    let stderr = std::io::stderr().lock();
+    crox::report_error(true, stderr, err);
 }

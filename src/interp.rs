@@ -1,65 +1,67 @@
 use crate::{
-    BinaryOp, Callable, CroxError, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule,
-    Function, LogicalOp, Span, StatementRule, Stmt, StmtNode, Type, TypeSet, UnaryOp, Value,
-    Valued, Var,
+    BinaryOp, Callable, Context, CroxError, CroxErrorKind, Environment, Expr, ExprNode,
+    ExpressionRule, Function, LogicalOp, Span, StatementRule, Stmt, StmtNode, Type, TypeSet,
+    UnaryOp, Value, Valued, Var,
 };
-use std::marker::PhantomData;
+use std::{io::Write, marker::PhantomData};
 
-#[derive(Clone, Debug, Default)]
-pub struct Interpreter<'a> {
-    pub(crate) env: Environment<'a>,
+pub struct Interpreter<'a, 'o> {
+    context: Context<'a, 'o>,
 }
 
-impl<'a> Interpreter<'a> {
-    pub fn new() -> Self {
+impl<'a, 'o> Interpreter<'a, 'o> {
+    pub fn new(out: &'o mut dyn Write) -> Self {
         Self {
-            env: Environment::default(),
+            context: Context::new(Environment::default(), out),
         }
     }
 }
 
-impl<'a> Interpreter<'a> {
-    pub fn eval_stmts_in_scope(env: &Environment<'a>, stmts: &[StmtNode<'a>]) -> Result<'a, ()> {
+impl<'a, 'o> Interpreter<'a, 'o> {
+    pub fn eval_stmts_in_scope(
+        ctx: &mut Context<'a, 'o>,
+        stmts: &[StmtNode<'a>],
+    ) -> Result<'a, ()> {
         stmts.iter().try_for_each(|stmt| -> Result<'a, ()> {
-            Self::eval_stmt(env, &stmt.item, stmt.span)?;
+            Self::eval_stmt(ctx, &stmt.item, stmt.span)?;
             Ok(())
         })
     }
 
     pub fn eval_stmt(
-        env: &Environment<'a>,
+        ctx: &mut Context<'a, 'o>,
         stmt: &Stmt<'a>,
         span: Span,
     ) -> Result<'a, Valued<'a, StmtNode<'a>>> {
         match &stmt {
             Stmt::Expression { expr } => {
-                let _ = Self::eval_expr(env, expr)?;
+                let _ = Self::eval_expr(ctx, expr)?;
             }
             Stmt::Function(func) => {
                 let name = func.name.item;
-                let func = Function::new(name, func.fun.clone(), env.clone());
+                let func = Function::new(name, func.fun.clone(), ctx.env.clone());
                 let func = func.to_value();
-                env.define(name, Some(func));
+                ctx.env.define(name, Some(func));
             }
             Stmt::If {
                 condition,
                 then_,
                 else_,
             } => {
-                if Self::eval_expr(env, condition)?.value.as_bool() {
-                    Self::eval_stmt(env, &then_.item, then_.span)?;
+                if Self::eval_expr(ctx, condition)?.value.as_bool() {
+                    Self::eval_stmt(ctx, &then_.item, then_.span)?;
                 } else if let Some(else_) = else_ {
-                    Self::eval_stmt(env, &else_.item, else_.span)?;
+                    Self::eval_stmt(ctx, &else_.item, else_.span)?;
                 }
             }
             Stmt::Print { expr } => {
-                let val = Self::eval_expr(env, expr)?.value;
-                println!("{val}");
+                let val = Self::eval_expr(ctx, expr)?.value;
+                writeln!(ctx.out, "{val}").unwrap();
             }
             Stmt::Return { expr } => {
                 return Err(InterpreterError::Return(
                     expr.as_ref()
-                        .map(|e| Self::eval_expr(env, e).map(|v| v.value))
+                        .map(|e| Self::eval_expr(ctx, e).map(|v| v.value))
                         .transpose()?
                         .unwrap_or(Value::Nil),
                 ))
@@ -67,18 +69,19 @@ impl<'a> Interpreter<'a> {
             Stmt::Var { name, initializer } => {
                 let value = initializer
                     .as_ref()
-                    .map(|e| Self::eval_expr(env, e))
+                    .map(|e| Self::eval_expr(ctx, e))
                     .transpose()?
                     .map(|v| v.value);
-                env.define(name.item, value);
+                ctx.env.define(name.item, value);
             }
             Stmt::While { condition, body } => {
-                while Self::eval_expr(env, condition)?.value.as_bool() {
-                    Self::eval_stmt(env, &body.item, body.span)?;
+                while Self::eval_expr(ctx, condition)?.value.as_bool() {
+                    Self::eval_stmt(ctx, &body.item, body.span)?;
                 }
             }
             Stmt::Block { stmts } => {
-                env.run_with_new_scope(|env| Self::eval_stmts_in_scope(env, stmts))?;
+                let _scope = ctx.env.new_scope();
+                Self::eval_stmts_in_scope(ctx, stmts)?;
             }
         }
 
@@ -89,7 +92,7 @@ impl<'a> Interpreter<'a> {
     }
 
     pub fn eval_expr(
-        env: &Environment<'a>,
+        ctx: &mut Context<'a, 'o>,
         expr: &ExprNode<'a>,
     ) -> crate::Result<Valued<'a, ExprNode<'a>>> {
         let span = expr.span;
@@ -100,10 +103,11 @@ impl<'a> Interpreter<'a> {
                 resolved_scope,
             }) => {
                 let scope = resolved_scope.get().expect("No resolver pass");
-                env.get_from_scope_ref(name, scope)
+                ctx.env
+                    .get_from_scope_ref(name, scope)
                     .map_err(|e| CroxErrorKind::from(e).at(span))?
             }
-            Expr::Fun(func) => Function::new("<anon>", func.clone(), env.clone()).to_value(),
+            Expr::Fun(func) => Function::new("<anon>", func.clone(), ctx.env.clone()).to_value(),
             Expr::Assignment {
                 var:
                     Var {
@@ -112,29 +116,30 @@ impl<'a> Interpreter<'a> {
                     },
                 value,
             } => {
-                let value = Self::eval_expr(env, value)?.value;
+                let value = Self::eval_expr(ctx, value)?.value;
                 let scope = resolved_scope.get().expect("No resolver pass");
-                env.assign_at_scope_ref(name, scope, value)
+                ctx.env
+                    .assign_at_scope_ref(name, scope, value)
                     .map_err(|e| CroxErrorKind::from(e).at(span))?
             }
             Expr::Unary { op, expr } => {
-                let value = Self::eval_expr(env, expr)?.value;
+                let value = Self::eval_expr(ctx, expr)?.value;
                 match op {
                     UnaryOp::Neg => value.neg().map_err(|e| e.at(expr.span))?,
                     UnaryOp::Not => value.not(),
                 }
             }
             Expr::Logical { lhs, op, rhs } => {
-                let lhs = Self::eval_expr(env, lhs)?.value;
+                let lhs = Self::eval_expr(ctx, lhs)?.value;
                 match op {
                     LogicalOp::And if !lhs.as_bool() => lhs,
                     LogicalOp::Or if lhs.as_bool() => lhs,
-                    LogicalOp::And | LogicalOp::Or => Self::eval_expr(env, rhs)?.value,
+                    LogicalOp::And | LogicalOp::Or => Self::eval_expr(ctx, rhs)?.value,
                 }
             }
             Expr::Binary { lhs, op, rhs } => {
-                let lhs = Self::eval_expr(env, lhs)?;
-                let rhs = Self::eval_expr(env, rhs)?;
+                let lhs = Self::eval_expr(ctx, lhs)?;
+                let rhs = Self::eval_expr(ctx, rhs)?;
                 let to_error = |e: crate::Result<CroxErrorKind, CroxErrorKind>| match e {
                     Ok(e) => e.at(lhs.item.span),
                     Err(e) => e.at(rhs.item.span),
@@ -155,7 +160,7 @@ impl<'a> Interpreter<'a> {
                 }
             }
             Expr::Call { callee, arguments } => {
-                let callee = Self::eval_expr(env, callee)?;
+                let callee = Self::eval_expr(ctx, callee)?;
                 let span = callee.item.span;
 
                 let callee = match &callee.value {
@@ -172,7 +177,7 @@ impl<'a> Interpreter<'a> {
 
                 let arguments = arguments
                     .iter()
-                    .map(|arg| Self::eval_expr(env, arg).map(|v| v.value))
+                    .map(|arg| Self::eval_expr(ctx, arg).map(|v| v.value))
                     .collect::<crate::Result<Vec<_>>>()?;
 
                 if callee.arity() != arguments.len() {
@@ -183,9 +188,9 @@ impl<'a> Interpreter<'a> {
                     .at(span));
                 }
 
-                callee.call(env, &arguments)?
+                callee.call(ctx, &arguments)?
             }
-            Expr::Group { expr } => Self::eval_expr(env, expr)?.value,
+            Expr::Group { expr } => Self::eval_expr(ctx, expr)?.value,
         };
 
         Ok(Valued {
@@ -194,21 +199,24 @@ impl<'a> Interpreter<'a> {
         })
     }
 }
-impl<'a> Interpreter<'a> {
-    pub fn eval_own_stmts_in_scope(&self, stmts: &[StmtNode<'a>]) -> Result<'a, ()> {
-        Self::eval_stmts_in_scope(&self.env, stmts)
+impl<'a, 'o> Interpreter<'a, 'o> {
+    pub fn eval_own_stmts_in_scope(&mut self, stmts: &[StmtNode<'a>]) -> Result<'a, ()> {
+        Self::eval_stmts_in_scope(&mut self.context, stmts)
     }
 
     pub fn eval_own_stmt(
-        &self,
+        &mut self,
         stmt: &Stmt<'a>,
         span: Span,
     ) -> Result<'a, Valued<'a, StmtNode<'a>>> {
-        Self::eval_stmt(&self.env, stmt, span)
+        Self::eval_stmt(&mut self.context, stmt, span)
     }
 
-    pub fn eval_own_expr(&self, expr: &ExprNode<'a>) -> crate::Result<Valued<'a, ExprNode<'a>>> {
-        Self::eval_expr(&self.env, expr)
+    pub fn eval_own_expr(
+        &mut self,
+        expr: &ExprNode<'a>,
+    ) -> crate::Result<Valued<'a, ExprNode<'a>>> {
+        Self::eval_expr(&mut self.context, expr)
     }
 }
 
@@ -232,42 +240,43 @@ impl<'a> From<Value<'a>> for InterpreterError<'a> {
 
 pub type Result<'a, T, E = InterpreterError<'a>> = std::result::Result<T, E>;
 
-#[derive(Clone, Debug, Default)]
-pub struct StreamInterpreter<'a, R, I> {
-    interpreter: Interpreter<'a>,
+pub struct StreamInterpreter<'a, 'o, R, I> {
+    interpreter: Interpreter<'a, 'o>,
     input: I,
     _rule: PhantomData<R>,
 }
 
-impl<'a, R, I> StreamInterpreter<'a, R, I> {
-    pub fn new(tokens: I) -> Self {
+impl<'a, 'o, R, I> StreamInterpreter<'a, 'o, R, I> {
+    pub fn new(out: &'o mut dyn Write, tokens: I) -> Self {
         Self {
-            interpreter: Interpreter::new(),
+            interpreter: Interpreter::new(out),
             input: tokens,
             _rule: PhantomData,
         }
     }
 }
 
-pub fn stmt_interpreter<'a, I>(
+pub fn stmt_interpreter<'a: 'o, 'o, I>(
+    out: &'o mut dyn Write,
     tokens: I,
-) -> impl Iterator<Item = crate::Result<Valued<'a, StmtNode<'a>>>>
+) -> impl Iterator<Item = crate::Result<Valued<'a, StmtNode<'a>>>> + 'o
 where
-    I: IntoIterator<Item = StmtNode<'a>>,
+    I: IntoIterator<Item = StmtNode<'a>> + 'o,
 {
-    StreamInterpreter::<StatementRule, _>::new(tokens.into_iter())
+    StreamInterpreter::<StatementRule, _>::new(out, tokens.into_iter())
 }
 
-pub fn expr_interpreter<'a, I>(
+pub fn expr_interpreter<'a: 'o, 'o, I>(
+    out: &'o mut dyn Write,
     tokens: I,
-) -> impl Iterator<Item = crate::Result<Valued<'a, ExprNode<'a>>>>
+) -> impl Iterator<Item = crate::Result<Valued<'a, ExprNode<'a>>>> + 'o
 where
-    I: IntoIterator<Item = ExprNode<'a>>,
+    I: IntoIterator<Item = ExprNode<'a>> + 'o,
 {
-    StreamInterpreter::<ExpressionRule, _>::new(tokens.into_iter())
+    StreamInterpreter::<ExpressionRule, _>::new(out, tokens.into_iter())
 }
 
-impl<'a, R, I> Iterator for StreamInterpreter<'a, R, I>
+impl<'a, 'o, R, I> Iterator for StreamInterpreter<'a, 'o, R, I>
 where
     R: InterpreterRule,
     I: Iterator<Item = R::Input<'a>>,
@@ -284,8 +293,8 @@ pub trait InterpreterRule: Sized {
     type Input<'a>;
     type Interpreted<'a>;
 
-    fn interpret<'a>(
-        interpreter: &mut Interpreter<'a>,
+    fn interpret<'a, 'o>(
+        interpreter: &mut Interpreter<'a, 'o>,
         input: Self::Input<'a>,
     ) -> crate::Result<Self::Interpreted<'a>>;
 }
@@ -294,8 +303,8 @@ impl InterpreterRule for ExpressionRule {
     type Input<'a> = ExprNode<'a>;
     type Interpreted<'a> = Valued<'a, ExprNode<'a>>;
 
-    fn interpret<'a>(
-        interpreter: &mut Interpreter<'a>,
+    fn interpret<'a, 'o>(
+        interpreter: &mut Interpreter<'a, 'o>,
         input: Self::Input<'a>,
     ) -> crate::Result<Self::Interpreted<'a>> {
         interpreter.eval_own_expr(&input)
@@ -306,8 +315,8 @@ impl InterpreterRule for StatementRule {
     type Input<'a> = StmtNode<'a>;
     type Interpreted<'a> = Valued<'a, StmtNode<'a>>;
 
-    fn interpret<'a>(
-        interpreter: &mut Interpreter<'a>,
+    fn interpret<'a, 'o>(
+        interpreter: &mut Interpreter<'a, 'o>,
         input: Self::Input<'a>,
     ) -> crate::Result<Self::Interpreted<'a>> {
         match interpreter.eval_own_stmt(&input.item, input.span) {
