@@ -1,1 +1,1 @@
-nil(); // expect runtime error: Can only call functions and classes.
+nil(); // [offset 0] Invalid type: expected one of [Function, Class], got 'Nil'

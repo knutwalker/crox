@@ -1,1 +1,1 @@
--"s"; // [line 1, offset 2] Error: Invalid type: expected [Number], got String
+-"s"; // [line 1, offset 2] Error: Invalid type: expected [Number], got 'String'

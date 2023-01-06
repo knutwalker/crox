@@ -1,1 +1,1 @@
-true + 123; // [line 1, offset 0] Error: Invalid type: expected [Number], got Bool
+true + 123; // [line 1, offset 0] Error: Invalid type: expected [Number], got 'Bool'

@@ -1,1 +1,1 @@
-1 * "1"; // [line 1, offset 5] Error: Invalid type: expected [Number], got String
+1 * "1"; // [line 1, offset 5] Error: Invalid type: expected [Number], got 'String'

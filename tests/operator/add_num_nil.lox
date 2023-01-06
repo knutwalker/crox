@@ -1,1 +1,1 @@
-1 + nil; // [line 1, offset 4] Error: Invalid type: expected [Number], got Nil
+1 + nil; // [line 1, offset 4] Error: Invalid type: expected [Number], got 'Nil'
