@@ -105,16 +105,18 @@ pub fn print_ast<T: std::fmt::Debug>(verbose: bool, ast: Ast<'_, Node<T>>) {
 }
 
 #[cfg(feature = "fancy")]
-pub fn report_error(fancy: bool, mut w: impl Write, err: CroxErrors) {
+pub fn report_error(fancy: bool, mut w: impl Write, mut err: CroxErrors) {
     if fancy {
         let err = miette::Report::new(err);
         writeln!(w, "{err:?}").unwrap();
     } else {
+        err.set_fancy(false);
         writeln!(w, "{err:#}").unwrap();
     }
 }
 
 #[cfg(not(feature = "fancy"))]
-pub fn report_error(_fancy: bool, mut w: impl Write, err: CroxErrors) {
+pub fn report_error(_fancy: bool, mut w: impl Write, mut err: CroxErrors) {
+    err.set_fancy(false);
     writeln!(w, "{err:#}").unwrap();
 }

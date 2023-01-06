@@ -128,7 +128,7 @@ fn handle(verbose: bool, line: &str) {
     }
 }
 
-fn report_error(err: CroxErrors) {
-    let stderr = std::io::stderr().lock();
-    crox::report_error(true, stderr, err);
+fn report_error(err: impl Write, errors: CroxErrors) {
+    let fancy = !cfg!(test);
+    crox::report_error(fancy, err, errors);
 }

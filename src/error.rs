@@ -19,6 +19,7 @@ pub struct CroxErrors {
     src: String,
     #[cfg_attr(feature = "fancy", related)]
     errors: Vec<CroxError>,
+    fancy: bool,
 }
 
 impl From<(&str, Vec<CroxError>)> for CroxErrors {
@@ -26,6 +27,7 @@ impl From<(&str, Vec<CroxError>)> for CroxErrors {
         Self {
             src: String::from(source),
             errors,
+            fancy: true,
         }
     }
 }
@@ -42,15 +44,22 @@ impl CroxErrors {
     pub fn errors(&self) -> &[CroxError] {
         &self.errors
     }
+
+    pub fn set_fancy(&mut self, fancy: bool) {
+        self.fancy = fancy;
+        for err in &mut self.errors {
+            err.fancy = fancy;
+        }
+    }
 }
 
 impl Display for CroxErrors {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if cfg!(feature = "fancy") {
+        if self.fancy && cfg!(feature = "fancy") {
             writeln!(f, "Errors while running in crox")?;
         } else {
             for err in &self.errors {
-                let err = SourceScanError::new(&self.src, err.span.clone(), &err.kind);
+                let err = SourceScanError::new(&self.src, err.span.clone(), &err.kind, self.fancy);
                 Display::fmt(&err, f)?;
             }
         }
@@ -106,6 +115,7 @@ pub struct CroxError {
     #[cfg_attr(feature = "fancy", label("{}", kind))]
     pub span: Range,
     pub payload: Option<Arc<dyn Display + Send + Sync + 'static>>,
+    pub fancy: bool,
 }
 
 impl CroxError {
@@ -114,6 +124,7 @@ impl CroxError {
             kind,
             span: span.into(),
             payload: None,
+            fancy: true,
         }
     }
 
@@ -125,7 +136,7 @@ impl CroxError {
 
 impl Display for CroxError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if cfg!(feature = "fancy") {
+        if self.fancy && cfg!(feature = "fancy") {
             if let Some(payload) = self.payload.as_deref() {
                 write!(f, "{payload} ")?;
             }
@@ -135,14 +146,14 @@ impl Display for CroxError {
             if let Some(payload) = self.payload.as_deref() {
                 write!(f, "{payload} ")?;
             }
-            write!(f, "{}", self.kind)
+            write!(f, "{}", FancyCroxErrorKind::new(&self.kind, false))
         }
     }
 }
 
 impl StdError for CroxError {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        cfg!(not(feature = "fancy")).then_some(&self.kind)
+        (!self.fancy || cfg!(not(feature = "fancy"))).then_some(&self.kind)
     }
 }
 
@@ -286,57 +297,76 @@ impl CroxErrorKind {
 
 impl Display for CroxErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if !cfg!(feature = "fancy") {
-            f.write_str(self.prefix())?;
+        FancyCroxErrorKind::new(self, true).fmt(f)
+    }
+}
+
+impl StdError for CroxErrorKind {}
+
+struct FancyCroxErrorKind<'a> {
+    kind: &'a CroxErrorKind,
+    fancy: bool,
+}
+
+impl<'a> FancyCroxErrorKind<'a> {
+    fn new(kind: &'a CroxErrorKind, fancy: bool) -> Self {
+        Self { kind, fancy }
+    }
+}
+
+impl Display for FancyCroxErrorKind<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if !self.fancy || !cfg!(feature = "fancy") {
+            f.write_str(self.kind.prefix())?;
         }
 
-        match self {
-            Self::UnexpectedInput { input } => {
+        match self.kind {
+            CroxErrorKind::UnexpectedInput { input } => {
                 write!(f, "{input}")?;
             }
-            Self::UnexpectedEndOfInput { expected: Some(e) } if e.len() > 1 => {
+            CroxErrorKind::UnexpectedEndOfInput { expected: Some(e) } if e.len() > 1 => {
                 write!(f, "expected one of: {e:?}")?;
             }
-            Self::UnexpectedEndOfInput { expected: Some(e) } => {
+            CroxErrorKind::UnexpectedEndOfInput { expected: Some(e) } => {
                 write!(f, "expected {e:?}")?;
             }
-            Self::UnexpectedEndOfInput { expected: None } => {}
-            Self::UnclosedStringLiteral => {}
-            Self::UnexpectedToken { expected, actual } if expected.len() > 1 => {
+            CroxErrorKind::UnexpectedEndOfInput { expected: None } => {}
+            CroxErrorKind::UnclosedStringLiteral => {}
+            CroxErrorKind::UnexpectedToken { expected, actual } if expected.len() > 1 => {
                 write!(f, "expected one of {expected:?}, got `{actual:?}`")?;
             }
-            Self::UnexpectedToken { expected, actual } => {
+            CroxErrorKind::UnexpectedToken { expected, actual } => {
                 write!(f, "expected {expected:?}, got `{actual:?}`")?;
             }
-            Self::UnclosedDelimiter { unclosed } => {
+            CroxErrorKind::UnclosedDelimiter { unclosed } => {
                 write!(f, "{unclosed:?}")?;
             }
-            Self::InvalidNumberLiteral { reason: None } => {}
-            Self::InvalidNumberLiteral { reason: Some(r) } => {
+            CroxErrorKind::InvalidNumberLiteral { reason: None } => {}
+            CroxErrorKind::InvalidNumberLiteral { reason: Some(r) } => {
                 write!(f, "{r}")?;
             }
-            Self::InvalidAssignmentTarget => {
+            CroxErrorKind::InvalidAssignmentTarget => {
                 write!(f, "expected an identifier")?;
             }
-            Self::TooManyArguments => {
+            CroxErrorKind::TooManyArguments => {
                 f.write_str("expected at most 255 arguments")?;
             }
-            Self::InvalidType { expected, actual } if expected.len() > 1 => {
+            CroxErrorKind::InvalidType { expected, actual } if expected.len() > 1 => {
                 write!(f, "expected one of {expected:?}, got {actual:?}")?;
             }
-            Self::InvalidType { expected, actual } => {
+            CroxErrorKind::InvalidType { expected, actual } => {
                 write!(f, "expected {expected:?}, got {actual:?}")?;
             }
-            Self::UndefinedVariable { name } => {
+            CroxErrorKind::UndefinedVariable { name } => {
                 f.write_str(name)?;
             }
-            Self::UninitializedVariable { name } => {
+            CroxErrorKind::UninitializedVariable { name } => {
                 f.write_str(name)?;
             }
-            Self::ArityMismatch { expected, actual } => {
+            CroxErrorKind::ArityMismatch { expected, actual } => {
                 write!(f, "Expected {expected} arguments but got {actual}")?;
             }
-            Self::Other(msg) => {
+            CroxErrorKind::Other(msg) => {
                 write!(f, "{msg}")?;
             }
         }
@@ -344,8 +374,6 @@ impl Display for CroxErrorKind {
         Ok(())
     }
 }
-
-impl StdError for CroxErrorKind {}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CroxErrorScope {
@@ -383,10 +411,11 @@ struct SourceScanError<'a> {
     offset: usize,
     line_number: usize,
     kind: &'a CroxErrorKind,
+    fancy: bool,
 }
 
 impl<'a> SourceScanError<'a> {
-    fn new(source: &'a str, span: Range, kind: &'a CroxErrorKind) -> Self {
+    fn new(source: &'a str, span: Range, kind: &'a CroxErrorKind, fancy: bool) -> Self {
         let offset = span.start;
         let offset = offset.min(source.len() - 1);
 
@@ -411,6 +440,7 @@ impl<'a> SourceScanError<'a> {
             line,
             offset,
             line_number,
+            fancy,
         }
     }
 }
@@ -420,7 +450,9 @@ impl Display for SourceScanError<'_> {
         writeln!(
             f,
             "[line {}, offset {}] Error: {}",
-            self.line_number, self.offset, self.kind
+            self.line_number,
+            self.offset,
+            FancyCroxErrorKind::new(self.kind, self.fancy)
         )?;
 
         if f.alternate() {
