@@ -389,7 +389,7 @@ impl ExpectedError {
 }
 
 #[cfg(test)]
-mod units {
+mod test_runner {
     use super::*;
 
     #[test]
