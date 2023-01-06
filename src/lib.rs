@@ -91,15 +91,15 @@ pub fn run_as_script(
     })
 }
 
-pub fn print_ast<T: std::fmt::Debug>(verbose: bool, ast: Ast<'_, Node<T>>) {
+pub fn print_ast<T: std::fmt::Debug>(mut out: impl Write, verbose: bool, ast: Ast<'_, Node<T>>) {
     for node in ast.iter() {
         let value = &node.value;
         if verbose {
-            println!("{:#?}", node.item);
-            println!("{value:#?}");
+            writeln!(out, "{:#?}", node.item).unwrap();
+            writeln!(out, "{value:#?}").unwrap();
         }
         if value != &Value::Nil {
-            println!("{value}");
+            writeln!(out, "{value}").unwrap();
         }
     }
 }

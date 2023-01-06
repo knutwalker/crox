@@ -72,7 +72,7 @@ fn open_script(file: Option<impl AsRef<Path>>) -> io::Result<Option<String>> {
 
 fn run_script(content: &str) -> crox::Result<(), i32> {
     let ast = crox::run_as_script(true, std::io::stdout(), std::io::stderr(), content)?;
-    crox::print_ast(false, ast);
+    crox::print_ast(std::io::stdout(), false, ast);
     Ok(())
 }
 
@@ -92,13 +92,13 @@ fn repl() -> io::Result<()> {
             break;
         }
 
-        handle(verbose, line.trim());
+        handle(io::stdout(), io::stderr(), verbose, line.trim());
     }
 
     Ok(())
 }
 
-fn handle(verbose: bool, line: &str) {
+fn handle(mut out: impl Write, err: impl Write, verbose: bool, line: &str) {
     fn is_semicolon_instead_of_eof(error: &CroxError) -> bool {
         if let CroxErrorKind::UnexpectedEndOfInput {
             expected: Some(expected),
@@ -112,15 +112,14 @@ fn handle(verbose: bool, line: &str) {
         false
     }
 
-    match crox::run(std::io::stdout(), line) {
-        Ok(res) => crox::print_ast(verbose, res),
+    match crox::run(&mut out, line) {
+        Ok(res) => crox::print_ast(out, verbose, res),
         Err(e) => match e.errors() {
-            [e] if is_semicolon_instead_of_eof(e) => match crox::eval(std::io::stdout(), line) {
-                    Ok(res) => crox::print_ast(verbose, res),
-                    Err(e) => report_error(e),
-                }
-            }
-            _ => report_error(e),
+            [e] if is_semicolon_instead_of_eof(e) => match crox::eval(&mut out, line) {
+                Ok(res) => crox::print_ast(out, verbose, res),
+                Err(e) => report_error(err, e),
+            },
+            _ => report_error(err, e),
         },
     }
 }
