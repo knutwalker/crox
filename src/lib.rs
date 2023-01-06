@@ -79,6 +79,13 @@ pub fn run_as_script(
     })
 }
 
+pub fn run_as_evaluator(fancy: bool, mut out: impl Write, err: impl Write, content: &str) {
+    match eval(&mut out, content) {
+        Ok(ast) => print_ast(out, false, ast),
+        Err(e) => report_error(fancy, err, e),
+    }
+}
+
 pub fn print_ast<T: std::fmt::Debug>(mut out: impl Write, verbose: bool, ast: Ast<'_, Node<T>>) {
     for node in ast.iter() {
         let value = &node.value;

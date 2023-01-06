@@ -1,9 +1,10 @@
 use std::{
     collections::HashSet,
+    io::Write,
     path::{Path, PathBuf},
 };
 
-use crate::suites::{State, Suite};
+use crate::suites::{LangLevel, State, Suite, SuiteResult};
 
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -16,9 +17,11 @@ macro_rules! re {
 
 static EXPECTED_OUTPUT: Lazy<Regex> = re!(r#"// expect: ?(.*)"#);
 static EXPECTED_ERROR: Lazy<Regex> = re!(r#"// (Error.*)"#);
-static ERROR_LINE: Lazy<Regex> = re!(r#"// \[((java|c) )?line (\d+)\] (Error.*)"#);
+static ERROR_LINE: Lazy<Regex> =
+    re!(r#"// \[(?:(java|c) )?(?:line (\d+), )?offset (\d+)\](?: Error:)? (.*)"#);
 static EXPECTED_RUNTIME_ERROR: Lazy<Regex> = re!(r#"// expect runtime error: (.+)"#);
-static SYNTAX_ERROR: Lazy<Regex> = re!(r#"\[.*line (\d+)\] (Error.+)"#);
+static _CARET: Lazy<Regex> = re!(r#"// caret: (.+)"#);
+static SYNTAX_ERROR: Lazy<Regex> = re!(r#"\[.*line (\d+), offset (\d+)\] Error: (.+)"#);
 static _STACK_TRACE: Lazy<Regex> = re!(r#"\[line (\d+)\]"#);
 static NON_TEST: Lazy<Regex> = re!(r#"// nontest"#);
 
@@ -30,7 +33,60 @@ pub struct Test {
 }
 
 impl Test {
-    pub fn parse(path: PathBuf, suite: &Suite) -> Result<Test, TestResult> {
+    pub(super) fn run_from(path: PathBuf, suite: &Suite, result: &mut SuiteResult) {
+        if path.iter().any(|p| p == "benchmark") {
+            return;
+        }
+
+        // filter subtest
+
+        let test = Test::parse(path, suite);
+        let test = match test {
+            Ok(test) => {
+                result.expectations += test.expectations();
+                test
+            }
+            Err(e) => {
+                match e {
+                    TestResult::Unknown(p) => panic!("Unknown test for {}", p.display()),
+                    TestResult::Missing(p) => panic!("No test file for {}", p.display()),
+                    TestResult::MixedErrorAssertions(p, (a, b)) => panic!(
+                        "Test {} has mixed error assertions with exit codes {} and {}",
+                        p.display(),
+                        a,
+                        b
+                    ),
+                    TestResult::Skipped => {
+                        result.skipped += 1;
+                    }
+                    TestResult::NotATest => {}
+                };
+                return;
+            }
+        };
+
+        print!("Testing {}{:>20}\r", test.path().display(), " ");
+        std::io::stdout().flush().unwrap();
+
+        let failures = test.run(suite.lang);
+        if failures.is_empty() {
+            result.passed += 1;
+        } else {
+            result.failed += 1;
+            eprintln!("\nFAIL: {}", test.path().display());
+            for failure in failures {
+                eprintln!("     {}", failure);
+            }
+        }
+
+        print!(
+            "Passed: {} Failed: {} Skipped: {}{:>20}\r",
+            result.passed, result.failed, result.skipped, " "
+        );
+        std::io::stdout().flush().unwrap();
+    }
+
+    fn parse(path: PathBuf, suite: &Suite) -> Result<Test, TestResult> {
         let state = path
             .ancestors()
             .filter_map(|p| p.to_str())
@@ -50,27 +106,21 @@ impl Test {
         let mut expected_outputs = Vec::new();
         let mut expected_errors = HashSet::new();
 
-        for (line_no, line) in content.lines().enumerate() {
-            let line_no = line_no + 1;
-
-            if NON_TEST.is_match(line) {
-                return Err(TestResult::NotATest);
-            }
-
-            if let Some(output) = EXPECTED_OUTPUT.captures(line) {
-                expected_outputs.push(ExpectedOutput::new(line_no, output[1].to_owned()));
-            } else if let Some(error) = EXPECTED_ERROR.captures(line) {
-                expected_errors.insert(ExpectedError::new(error[1].to_owned(), line_no, 65));
-            } else if let Some(error) = ERROR_LINE.captures(line) {
-                if error.get(2).map_or(true, |l| suite.lang == *l.as_str()) {
-                    expected_errors.insert(ExpectedError::new(
-                        error[4].to_owned(),
-                        error[3].parse().unwrap(),
-                        65,
-                    ));
+        for (line_no, line) in content
+            .lines()
+            .enumerate()
+            .map(|(line_no, line)| (line_no + 1, line))
+            .peekable()
+        {
+            match Self::parse_line(line, line_no, suite.lang) {
+                Some(Ok(Ok(output))) => {
+                    expected_outputs.push(output);
                 }
-            } else if let Some(error) = EXPECTED_RUNTIME_ERROR.captures(line) {
-                expected_errors.insert(ExpectedError::new(error[1].to_owned(), line_no, 70));
+                Some(Ok(Err(error))) => {
+                    expected_errors.insert(error);
+                }
+                Some(Err(e)) => return Err(e),
+                None => {}
             }
         }
 
@@ -95,6 +145,53 @@ impl Test {
         })
     }
 
+    fn parse_line(
+        line: &str,
+        line_no: usize,
+        lang: LangLevel,
+    ) -> Option<Result<Result<ExpectedOutput, ExpectedError>, TestResult>> {
+        if NON_TEST.is_match(line) {
+            return Some(Err(TestResult::NotATest));
+        }
+
+        if let Some(output) = EXPECTED_OUTPUT.captures(line) {
+            return Some(Ok(Ok(ExpectedOutput::new(line_no, output[1].to_owned()))));
+        }
+
+        if let Some(error) = ERROR_LINE.captures(line) {
+            if error.get(1).map_or(true, |l| lang == *l.as_str()) {
+                return Some(Ok(Err(ExpectedError::new(
+                    error[4].to_owned(),
+                    error
+                        .get(2)
+                        .map_or(line_no, |l| l.as_str().parse().unwrap()),
+                    error[3].parse().unwrap(),
+                    65,
+                ))));
+            }
+        }
+
+        if let Some(error) = EXPECTED_ERROR.captures(line) {
+            return Some(Ok(Err(ExpectedError::new(
+                error[1].to_owned(),
+                line_no,
+                usize::MAX - 1,
+                65,
+            ))));
+        }
+
+        if let Some(error) = EXPECTED_RUNTIME_ERROR.captures(line) {
+            return Some(Ok(Err(ExpectedError::new(
+                error[1].to_owned(),
+                line_no,
+                usize::MAX - 1,
+                70,
+            ))));
+        }
+
+        None
+    }
+
     pub fn expectations(&self) -> usize {
         self.expected_outputs.len() + self.expected_errors.len()
     }
@@ -103,8 +200,8 @@ impl Test {
         &self.path
     }
 
-    pub fn run(&self) -> Vec<String> {
-        let (stdout, stderr) = self.run_script();
+    pub fn run(&self, lang: LangLevel) -> Vec<String> {
+        let (stdout, stderr) = self.run_script(lang);
 
         let mut failures = Vec::new();
 
@@ -114,10 +211,30 @@ impl Test {
         failures
     }
 
-    fn run_script(&self) -> (String, String) {
+    fn run_script(&self, lang: LangLevel) -> (String, String) {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        let _res = crox::run_as_script(false, &mut stdout, &mut stderr, &self.content);
+
+        match lang {
+            LangLevel::Scanned => {
+                let source = crox::scan(&self.content);
+                for token in source {
+                    match token {
+                        Ok(t) => {
+                            writeln!(&mut stdout, "{:?} {}", t.typ, source.slice(t.span)).unwrap();
+                        }
+                        Err(e) => unimplemented!("no negative tests: {e:?}"),
+                    }
+                }
+            }
+            LangLevel::Evaluated => {
+                crox::run_as_evaluator(false, &mut stdout, &mut stderr, &self.content);
+            }
+            LangLevel::Interpreted | LangLevel::Compiled => {
+                let _res = crox::run_as_script(false, &mut stdout, &mut stderr, &self.content);
+            }
+        };
+
         let stdout = String::from_utf8(stdout).unwrap();
         let stderr = String::from_utf8(stderr).unwrap();
         (stdout, stderr)
@@ -126,27 +243,54 @@ impl Test {
     fn validate_errors(&self, stderr: String, failures: &mut Vec<String>) {
         let mut found_errors = HashSet::new();
         let mut unexpected_errors = Vec::new();
-        for line in stderr
-            .trim()
+        let mut err_lines = stderr
+            .trim_end_matches('\n')
             .lines()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        {
+            .filter(|s| !s.is_empty());
+        while let Some(line) = err_lines.next() {
             if let Some(m) = SYNTAX_ERROR.captures(line) {
                 let line_no = m[1].parse().unwrap();
-                let msg = &m[2];
+                let offset = m[2].parse().unwrap();
+                let actual = &m[3];
 
-                if let Some(e) = self
-                    .expected_errors
-                    .iter()
-                    .find(|e| e.line == line_no && e.error == msg)
-                {
+                if let Some(e) = self.expected_errors.iter().find(|e| e.line == line_no) {
                     found_errors.insert(e.clone());
+
+                    if e.error != actual {
+                        let cmp = pretty_assertions::StrComparison::new(&e.error, actual);
+                        failures.push(format!(
+                            "Different error on line {}: (expected, actual): {}",
+                            line_no, cmp
+                        ));
+                    }
+
+                    if e.offset != offset {
+                        failures.push(format!(
+                            "Different offset on line {}: expected = {}, actual = {}",
+                            line_no, e.offset, offset
+                        ));
+                    }
+
+                    if err_lines.next().is_none() {
+                        failures
+                            .push("Missing error line describing the original source".to_owned());
+                    }
+
+                    let error_msg = match err_lines.next() {
+                        Some(line) => match line.chars().position(|c| c == '^') {
+                            Some(idx) if idx == e.offset => continue,
+                            Some(idx) => format!("Wrong caret position, expected it at index {} but got it at index {}", e.offset, idx),
+                            None => "Caret line has not caret".to_owned(),
+                        },
+                        None => "Missing caret line".to_owned(),
+                    };
+                    failures.push(error_msg);
                     continue;
                 }
             }
             unexpected_errors.push(line);
         }
+
         for unexpected in unexpected_errors.iter().take(10) {
             failures.push(format!("Unexpected error: {unexpected}"));
         }
@@ -165,16 +309,16 @@ impl Test {
 
     fn validate_output(&self, stdout: String, failures: &mut Vec<String>) {
         let mut output = stdout
-            .trim()
+            .trim_end_matches('\n')
             .lines()
-            .map(str::trim)
             .filter(|s| !s.is_empty());
         let mut expected = self.expected_outputs.iter();
         for (line, expected) in output.by_ref().zip(expected.by_ref()) {
             if expected.output != line {
+                let cmp = pretty_assertions::StrComparison::new(&expected.output, line);
                 failures.push(format!(
-                    "Expected output '{}' on line {}, but got '{}'",
-                    expected.output, expected.line, line
+                    "Different output on line {}: (expected, actual): {}",
+                    expected.line, cmp,
                 ));
             }
         }
@@ -206,8 +350,11 @@ pub struct ExpectedOutput {
 }
 
 impl ExpectedOutput {
-    pub fn new(line: usize, output: String) -> Self {
-        Self { line, output }
+    pub fn new(line: usize, output: impl Into<String>) -> Self {
+        Self {
+            line,
+            output: output.into(),
+        }
     }
 }
 
@@ -215,15 +362,72 @@ impl ExpectedOutput {
 pub struct ExpectedError {
     error: String,
     line: usize,
+    offset: usize,
     exit_code: u32,
 }
 
 impl ExpectedError {
-    pub fn new(error: String, line: usize, exit_code: u32) -> Self {
+    pub fn new(error: impl Into<String>, line: usize, offset: usize, exit_code: u32) -> Self {
         Self {
-            error,
+            error: error.into(),
             line,
+            offset,
             exit_code,
         }
+    }
+}
+
+#[cfg(test)]
+mod units {
+    use super::*;
+
+    #[test]
+    fn test_parse_expected_output() {
+        let line = "// expect: foo";
+        let actual = Test::parse_line(line, 1, LangLevel::Interpreted)
+            .expect("An expectation")
+            .expect("A valid expectation")
+            .expect("An output expectation");
+        assert_eq!(actual, ExpectedOutput::new(1, "foo".to_owned()));
+    }
+
+    #[test]
+    fn test_parse_expected_error() {
+        let line = "// [line 13, offset 37] Error: foo";
+        let actual = Test::parse_line(line, 42, LangLevel::Interpreted)
+            .expect("An expectation")
+            .expect("A valid expectation")
+            .expect_err("An error expectation");
+        assert_eq!(actual, ExpectedError::new("foo".to_owned(), 13, 37, 65));
+    }
+
+    #[test]
+    fn test_parse_expected_error_qualifier_is_optional() {
+        let line = "// [line 13, offset 37] foo";
+        let actual = Test::parse_line(line, 42, LangLevel::Interpreted)
+            .expect("An expectation")
+            .expect("A valid expectation")
+            .expect_err("An error expectation");
+        assert_eq!(actual, ExpectedError::new("foo".to_owned(), 13, 37, 65));
+    }
+
+    #[test]
+    fn test_parse_expected_line_is_optional() {
+        let line = "// [offset 37] Error: foo";
+        let actual = Test::parse_line(line, 42, LangLevel::Interpreted)
+            .expect("An expectation")
+            .expect("A valid expectation")
+            .expect_err("An error expectation");
+        assert_eq!(actual, ExpectedError::new("foo".to_owned(), 42, 37, 65));
+    }
+
+    #[test]
+    fn test_parse_expected_line_and_error_qualifier_are_optional() {
+        let line = "// [offset 37] foo";
+        let actual = Test::parse_line(line, 42, LangLevel::Interpreted)
+            .expect("An expectation")
+            .expect("A valid expectation")
+            .expect_err("An error expectation");
+        assert_eq!(actual, ExpectedError::new("foo".to_owned(), 42, 37, 65));
     }
 }

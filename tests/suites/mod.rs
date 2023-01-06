@@ -1,30 +1,13 @@
-use std::{
-    collections::HashMap,
-    ops::{Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive},
-};
+use std::collections::HashMap;
 
 mod tests;
 pub use tests::{ExpectedError, ExpectedOutput, Test, TestResult};
-
-#[derive(Clone, Debug)]
-pub struct Suite {
-    pub chapter: Chapter,
-    pub lang: LangLevel,
-    pub tests: HashMap<&'static str, State>,
-}
-
-impl Suite {
-    fn new(chapter: Chapter, lang: LangLevel, tests: HashMap<&'static str, State>) -> Self {
-        Self {
-            chapter,
-            lang,
-            tests,
-        }
-    }
-}
+use walkdir::WalkDir;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum LangLevel {
+    Scanned,
+    Evaluated,
     Interpreted,
     Compiled,
 }
@@ -32,179 +15,162 @@ pub enum LangLevel {
 impl PartialEq<str> for LangLevel {
     fn eq(&self, other: &str) -> bool {
         match self {
+            LangLevel::Evaluated | LangLevel::Scanned => false,
             LangLevel::Interpreted => other == "java",
             LangLevel::Compiled => other == "c",
         }
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(u8)]
+pub enum Run {
+    Chapter4Scanning = 4,
+    Chapter6Parsing = 6,
+    Chapter7Evaluating = 7,
+    Chapter8Statements = 8,
+    Chapter9Control = 9,
+    Chapter10Functions = 10,
+    Chapter11Resolving = 11,
+    Chapter12Classes = 12,
+    Chapter13Inheritance = 13,
+    AllInterpreted = 14,
+    Chapter17Compiling = 17,
+    Chapter18Types = 18,
+    Chapter19Strings = 19,
+    Chapter20Hash = 20,
+    Chapter21Global = 21,
+    Chapter22Local = 22,
+    Chapter23Jumping = 23,
+    Chapter24Calls = 24,
+    Chapter25Closures = 25,
+    Chapter26Garbage = 26,
+    Chapter27Classes = 27,
+    Chapter28Methods = 28,
+    Chapter29Superclasses = 29,
+    Chapter30Optimization = 30,
+    AllCompiled = 31,
+    // Chapter32All = 32,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct AllSuites {
+    all: Vec<Option<Suite>>,
+}
+
+impl AllSuites {
+    pub fn run(&self, select: Run) {
+        let idx = usize::from(select as u8);
+
+        let suite = self.all[idx]
+            .as_ref()
+            .expect("No suite defined for this chapter");
+
+        println!(
+            "=== Chapter {} {:?} ===",
+            suite.chapter as u8, suite.chapter
+        );
+
+        if !suite.run() {
+            panic!("There were test failures (see stderr)");
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum State {
+enum State {
     Skip,
     Pass,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(u8)]
-pub enum Chapter {
-    Scanning = 4,
-    Parsing = 6,
-    Evaluating = 7,
-    Statements = 8,
-    Control = 9,
-    Functions = 10,
-    Resolving = 11,
-    Classes = 12,
-    Inheritance = 13,
-    AllInterpreted = 14,
-    Compiling = 17,
-    Types = 18,
-    Strings = 19,
-    Hash = 20,
-    Global = 21,
-    Local = 22,
-    Jumping = 23,
-    Calls = 24,
-    Closures = 25,
-    Garbage = 26,
-    Classes2 = 27,
-    Methods = 28,
-    Superclasses = 29,
-    Optimization = 30,
-    AllCompiled = 31,
-    All = 32,
+#[derive(Clone, Debug)]
+struct Suite {
+    chapter: Run,
+    lang: LangLevel,
+    tests: HashMap<&'static str, State>,
 }
 
-impl TryFrom<i32> for Chapter {
-    type Error = ();
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        Ok(match value {
-            4 => Self::Scanning,
-            6 => Self::Parsing,
-            7 => Self::Evaluating,
-            8 => Self::Statements,
-            9 => Self::Control,
-            10 => Self::Functions,
-            11 => Self::Resolving,
-            12 => Self::Classes,
-            13 => Self::Inheritance,
-            14 => Self::AllInterpreted,
-            17 => Self::Compiling,
-            18 => Self::Types,
-            19 => Self::Strings,
-            20 => Self::Hash,
-            21 => Self::Global,
-            22 => Self::Local,
-            23 => Self::Jumping,
-            24 => Self::Calls,
-            25 => Self::Closures,
-            26 => Self::Garbage,
-            27 => Self::Classes2,
-            28 => Self::Methods,
-            29 => Self::Superclasses,
-            30 => Self::Optimization,
-            31 => Self::AllCompiled,
-            32 => Self::All,
-            _ => return Err(()),
-        })
+impl Suite {
+    fn new(chapter: Run, lang: LangLevel, tests: HashMap<&'static str, State>) -> Self {
+        Self {
+            chapter,
+            lang,
+            tests,
+        }
     }
-}
 
-pub trait ChapterSelect {
-    fn select(&self, suite: &Suite) -> bool;
-}
+    fn run(&self) -> bool {
+        let mut result = SuiteResult::default();
 
-impl ChapterSelect for Chapter {
-    fn select(&self, suite: &Suite) -> bool {
-        self == &suite.chapter
-    }
-}
+        let walker = WalkDir::new("tests").into_iter();
+        let walker = walker
+            .filter_entry(|e| {
+                e.file_type().is_dir()
+                    || e.path().extension().and_then(|e| e.to_str()) == Some("lox")
+            })
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file());
+        for entry in walker {
+            Test::run_from(entry.path().to_path_buf(), self, &mut result);
+        }
 
-impl<const N: usize> ChapterSelect for [Chapter; N] {
-    fn select(&self, suite: &Suite) -> bool {
-        self.iter().any(|c| c.select(suite))
-    }
-}
-
-impl ChapterSelect for LangLevel {
-    fn select(&self, suite: &Suite) -> bool {
-        self == &suite.lang
-    }
-}
-
-impl ChapterSelect for i32 {
-    fn select(&self, suite: &Suite) -> bool {
-        if let Ok(chapter) = Chapter::try_from(*self) {
-            chapter.select(suite)
+        if result.failed == 0 {
+            println!(
+                "\nAll {} tests passed ({} expectations).",
+                result.passed, result.expectations
+            );
+            true
         } else {
+            println!(
+                "\n{} test passed. {} tests failed.",
+                result.passed, result.failed
+            );
             false
         }
     }
 }
 
-impl ChapterSelect for RangeFull {
-    fn select(&self, _suite: &Suite) -> bool {
-        true
-    }
-}
-
-impl ChapterSelect for Range<i32> {
-    fn select(&self, suite: &Suite) -> bool {
-        self.contains(&i32::from(suite.chapter as u8))
-    }
-}
-
-impl ChapterSelect for RangeInclusive<i32> {
-    fn select(&self, suite: &Suite) -> bool {
-        self.contains(&i32::from(suite.chapter as u8))
-    }
-}
-
-impl ChapterSelect for RangeFrom<i32> {
-    fn select(&self, suite: &Suite) -> bool {
-        self.contains(&i32::from(suite.chapter as u8))
-    }
-}
-
-impl ChapterSelect for RangeTo<i32> {
-    fn select(&self, suite: &Suite) -> bool {
-        self.contains(&i32::from(suite.chapter as u8))
-    }
-}
-
-impl ChapterSelect for RangeToInclusive<i32> {
-    fn select(&self, suite: &Suite) -> bool {
-        self.contains(&i32::from(suite.chapter as u8))
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct AllSuites {
-    all: Vec<Suite>,
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+struct SuiteResult {
+    passed: usize,
+    failed: usize,
+    skipped: usize,
+    expectations: usize,
 }
 
 impl AllSuites {
-    pub fn get(&self, select: impl ChapterSelect) -> Vec<&Suite> {
-        self.all.iter().filter(|s| select.select(s)).collect()
-    }
-
-    fn compiled(
+    fn insert(
         &mut self,
-        chapter: Chapter,
+        chapter: Run,
+        lang: LangLevel,
         tests: impl IntoIterator<Item = (&'static str, State)>,
     ) {
-        let suite = Suite::new(chapter, LangLevel::Compiled, tests.into_iter().collect());
-        self.all.push(suite);
+        let suite = Suite::new(chapter, lang, tests.into_iter().collect());
+        let idx = usize::from(chapter as u8);
+        if self.all.len() <= idx {
+            self.all.resize(idx + 1, None);
+        }
+        self.all[idx] = Some(suite);
+    }
+
+    fn compiled(&mut self, chapter: Run, tests: impl IntoIterator<Item = (&'static str, State)>) {
+        self.insert(chapter, LangLevel::Compiled, tests);
     }
 
     fn interpreted(
         &mut self,
-        chapter: Chapter,
+        chapter: Run,
         tests: impl IntoIterator<Item = (&'static str, State)>,
     ) {
-        let suite = Suite::new(chapter, LangLevel::Interpreted, tests.into_iter().collect());
-        self.all.push(suite);
+        self.insert(chapter, LangLevel::Interpreted, tests);
+    }
+
+    fn evaluated(&mut self, chapter: Run, tests: impl IntoIterator<Item = (&'static str, State)>) {
+        self.insert(chapter, LangLevel::Evaluated, tests);
+    }
+
+    fn scanned(&mut self, chapter: Run, tests: impl IntoIterator<Item = (&'static str, State)>) {
+        self.insert(chapter, LangLevel::Scanned, tests);
     }
 
     pub fn define() -> Self {
@@ -219,7 +185,7 @@ impl AllSuites {
 
         // JVM doesn't correctly implement IEEE equality on boxed doubles.
         fn java_nan_equality() -> Tests<1> {
-            [("tests/number/nan_equality.lox", State::Skip)]
+            [("tests/number/nan_equality.lox", State::Pass)]
         }
 
         // No hardcoded limits in jlox.
@@ -374,17 +340,8 @@ impl AllSuites {
 
         let mut suites = AllSuites::default();
 
-        suites.interpreted(
-            Chapter::AllInterpreted,
-            [("tests", State::Pass)]
-                .into_iter()
-                .chain(early_chapters())
-                .chain(java_nan_equality())
-                .chain(no_java_limits()),
-        );
-
-        suites.interpreted(
-            Chapter::Scanning,
+        suites.scanned(
+            Run::Chapter4Scanning,
             [
                 // No interpreter yet.
                 ("tests", State::Skip),
@@ -393,10 +350,8 @@ impl AllSuites {
             .into_iter(),
         );
 
-        // No test for chapter 5. It just has a hardcoded main() in AstPrinter.
-
-        suites.interpreted(
-            Chapter::Parsing,
+        suites.evaluated(
+            Run::Chapter6Parsing,
             [
                 // No real interpreter yet.
                 ("tests", State::Skip),
@@ -404,8 +359,8 @@ impl AllSuites {
             ],
         );
 
-        suites.interpreted(
-            Chapter::Evaluating,
+        suites.evaluated(
+            Run::Chapter7Evaluating,
             [
                 // No real interpreter yet.
                 ("tests", State::Skip),
@@ -414,7 +369,7 @@ impl AllSuites {
         );
 
         suites.interpreted(
-            Chapter::Statements,
+            Run::Chapter8Statements,
             [("tests", State::Pass)]
                 .into_iter()
                 .chain(early_chapters())
@@ -435,7 +390,7 @@ impl AllSuites {
         );
 
         suites.interpreted(
-            Chapter::Control,
+            Run::Chapter9Control,
             [("tests", State::Pass)]
                 .into_iter()
                 .chain(early_chapters())
@@ -447,7 +402,7 @@ impl AllSuites {
         );
 
         suites.interpreted(
-            Chapter::Functions,
+            Run::Chapter10Functions,
             [("tests", State::Pass)]
                 .into_iter()
                 .chain(early_chapters())
@@ -458,7 +413,7 @@ impl AllSuites {
         );
 
         suites.interpreted(
-            Chapter::Compiling,
+            Run::Chapter11Resolving,
             [("tests", State::Pass)]
                 .into_iter()
                 .chain(early_chapters())
@@ -468,7 +423,7 @@ impl AllSuites {
         );
 
         suites.interpreted(
-            Chapter::Classes,
+            Run::Chapter12Classes,
             [("tests", State::Pass)]
                 .into_iter()
                 .chain(early_chapters())
@@ -487,7 +442,16 @@ impl AllSuites {
         );
 
         suites.interpreted(
-            Chapter::Inheritance,
+            Run::Chapter13Inheritance,
+            [("tests", State::Pass)]
+                .into_iter()
+                .chain(early_chapters())
+                .chain(java_nan_equality())
+                .chain(no_java_limits()),
+        );
+
+        suites.interpreted(
+            Run::AllInterpreted,
             [("tests", State::Pass)]
                 .into_iter()
                 .chain(early_chapters())
@@ -496,12 +460,7 @@ impl AllSuites {
         );
 
         suites.compiled(
-            Chapter::AllCompiled,
-            [("tests", State::Pass)].into_iter().chain(early_chapters()),
-        );
-
-        suites.compiled(
-            Chapter::Compiling,
+            Run::Chapter17Compiling,
             [
                 // No real interpreter yet.
                 ("tests", State::Skip),
@@ -510,7 +469,7 @@ impl AllSuites {
         );
 
         suites.compiled(
-            Chapter::Types,
+            Run::Chapter18Types,
             [
                 // No real interpreter yet.
                 ("tests", State::Skip),
@@ -519,7 +478,7 @@ impl AllSuites {
         );
 
         suites.compiled(
-            Chapter::Strings,
+            Run::Chapter19Strings,
             [
                 // No real interpreter yet.
                 ("tests", State::Skip),
@@ -528,7 +487,7 @@ impl AllSuites {
         );
 
         suites.compiled(
-            Chapter::Hash,
+            Run::Chapter20Hash,
             [
                 // No real interpreter yet.
                 ("tests", State::Skip),
@@ -537,7 +496,7 @@ impl AllSuites {
         );
 
         suites.compiled(
-            Chapter::Global,
+            Run::Chapter21Global,
             [("tests", State::Pass)]
                 .into_iter()
                 .chain(early_chapters())
@@ -565,7 +524,7 @@ impl AllSuites {
         );
 
         suites.compiled(
-            Chapter::Local,
+            Run::Chapter22Local,
             [("tests", State::Pass)]
                 .into_iter()
                 .chain(early_chapters())
@@ -575,7 +534,7 @@ impl AllSuites {
         );
 
         suites.compiled(
-            Chapter::Jumping,
+            Run::Chapter23Jumping,
             [("tests", State::Pass)]
                 .into_iter()
                 .chain(early_chapters())
@@ -584,7 +543,7 @@ impl AllSuites {
         );
 
         suites.compiled(
-            Chapter::Calls,
+            Run::Chapter24Calls,
             [("tests", State::Pass)]
                 .into_iter()
                 .chain(early_chapters())
@@ -603,7 +562,7 @@ impl AllSuites {
         );
 
         suites.compiled(
-            Chapter::Closures,
+            Run::Chapter25Closures,
             [("tests", State::Pass)]
                 .into_iter()
                 .chain(early_chapters())
@@ -611,7 +570,7 @@ impl AllSuites {
         );
 
         suites.compiled(
-            Chapter::Garbage,
+            Run::Chapter26Garbage,
             [("tests", State::Pass)]
                 .into_iter()
                 .chain(early_chapters())
@@ -619,7 +578,7 @@ impl AllSuites {
         );
 
         suites.compiled(
-            Chapter::Classes2,
+            Run::Chapter27Classes,
             [("tests", State::Pass)]
                 .into_iter()
                 .chain(early_chapters())
@@ -644,7 +603,7 @@ impl AllSuites {
         );
 
         suites.compiled(
-            Chapter::Methods,
+            Run::Chapter28Methods,
             [("tests", State::Pass)]
                 .into_iter()
                 .chain(early_chapters())
@@ -652,14 +611,20 @@ impl AllSuites {
         );
 
         suites.compiled(
-            Chapter::Superclasses,
+            Run::Chapter29Superclasses,
             [("tests", State::Pass)].into_iter().chain(early_chapters()),
         );
 
         suites.compiled(
-            Chapter::Optimization,
+            Run::Chapter30Optimization,
             [("tests", State::Pass)].into_iter().chain(early_chapters()),
         );
+
+        suites.compiled(
+            Run::AllCompiled,
+            [("tests", State::Pass)].into_iter().chain(early_chapters()),
+        );
+
         suites
     }
 }
