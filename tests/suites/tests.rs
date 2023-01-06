@@ -253,7 +253,18 @@ impl Test {
                 let offset = m[2].parse().unwrap();
                 let actual = &m[3];
 
-                if let Some(e) = self.expected_errors.iter().find(|e| e.line == line_no) {
+                let expected = self
+                    .expected_errors
+                    .iter()
+                    .find(|e| e.line == line_no && e.offset == offset)
+                    .or_else(|| {
+                        self.expected_errors
+                            .iter()
+                            .filter(|e| e.line == line_no)
+                            .min_by_key(|e| e.offset.abs_diff(offset))
+                    });
+
+                if let Some(e) = expected {
                     found_errors.insert(e.clone());
 
                     if e.error != actual {
