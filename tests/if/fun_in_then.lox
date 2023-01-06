@@ -1,2 +1,2 @@
-// [line 2] Error at 'fun': Expect expression.
+// [line 2, offset 14] Unexpected token: expected [LeftParen], got 'Identifier'
 if (true) fun foo() {}

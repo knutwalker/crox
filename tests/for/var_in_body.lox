@@ -1,2 +1,2 @@
-// [line 2] Error at 'var': Expect expression.
+// [line 2, offset 9] Unexpected token: expected one of [LeftParen, Identifier, String, Number, False, Fun, Nil, True], got 'Var'
 for (;;) var foo;

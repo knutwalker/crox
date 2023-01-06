@@ -1,2 +1,2 @@
-// [line 2] Error at 'class': Expect expression.
+// [line 2, offset 13] Unexpected token: expected one of [LeftParen, Identifier, String, Number, False, Fun, Nil, True], got 'Class'
 while (true) class Foo {}
