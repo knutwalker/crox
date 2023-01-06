@@ -1,2 +1,2 @@
 var a;
-print a; // expect: nil
+print a; // [offset 6] Uninitialized variable: 'a'

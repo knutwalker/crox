@@ -1,21 +1,20 @@
 (){};,+-*!===<=>=!=<>/.
 
-// expect: LEFT_PAREN ( null
-// expect: RIGHT_PAREN ) null
-// expect: LEFT_BRACE { null
-// expect: RIGHT_BRACE } null
-// expect: SEMICOLON ; null
-// expect: COMMA , null
-// expect: PLUS + null
-// expect: MINUS - null
-// expect: STAR * null
-// expect: BANG_EQUAL != null
-// expect: EQUAL_EQUAL == null
-// expect: LESS_EQUAL <= null
-// expect: GREATER_EQUAL >= null
-// expect: BANG_EQUAL != null
-// expect: LESS < null
-// expect: GREATER > null
-// expect: SLASH / null
-// expect: DOT . null
-// expect: EOF  null
+// expect: LeftParen (
+// expect: RightParen )
+// expect: LeftBrace {
+// expect: RightBrace }
+// expect: Semicolon ;
+// expect: Comma ,
+// expect: Plus +
+// expect: Minus -
+// expect: Star *
+// expect: BangEqual !=
+// expect: EqualEqual ==
+// expect: LessEqual <=
+// expect: GreaterEqual >=
+// expect: BangEqual !=
+// expect: Less <
+// expect: Greater >
+// expect: Slash /
+// expect: Dot .

@@ -1,2 +1,2 @@
-// [line 2] Error at 'nil': Expect variable name.
+// [line 2, offset 4] Unexpected token: expected [Identifier], got 'Nil'
 var nil = "value";

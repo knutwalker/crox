@@ -1,1 +1,1 @@
-true + nil; // expect runtime error: Operands must be two numbers or two strings.
+true + nil; // [line 1, offset 0] Error: Invalid type: expected one of [Number, String], got Bool
