@@ -31,19 +31,10 @@ pub struct Test {
 
 impl Test {
     pub fn parse(path: PathBuf, suite: &Suite) -> Result<Test, TestResult> {
-        let mut subpaths = path
+        let state = path
             .ancestors()
             .filter_map(|p| p.to_str())
-            .filter(|p| !p.is_empty() && *p != "/")
-            .collect::<Vec<_>>();
-        subpaths.reverse();
-
-        let mut state = None;
-        for part in &subpaths {
-            if let Some(s) = suite.tests.get(part) {
-                state = Some(*s);
-            }
-        }
+            .find_map(|p| suite.tests.get(&p));
 
         match state {
             None => return Err(TestResult::Unknown(path)),
@@ -71,7 +62,7 @@ impl Test {
             } else if let Some(error) = EXPECTED_ERROR.captures(line) {
                 expected_errors.insert(ExpectedError::new(error[1].to_owned(), line_no, 65));
             } else if let Some(error) = ERROR_LINE.captures(line) {
-                if error.get(2).map_or(true, |l| l.as_str() == suite.lang) {
+                if error.get(2).map_or(true, |l| suite.lang == *l.as_str()) {
                     expected_errors.insert(ExpectedError::new(
                         error[4].to_owned(),
                         error[3].parse().unwrap(),

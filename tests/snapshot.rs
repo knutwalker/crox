@@ -3,21 +3,21 @@ use std::path::PathBuf;
 use suites::Suite;
 use walkdir::WalkDir;
 
-use crate::suites::{AllSuites, Test, TestResult};
+use crate::suites::{AllSuites, Chapter, Test, TestResult};
 
 mod suites;
 
 #[test]
 fn test_implementation() {
     let suites = AllSuites::define();
-    let suites = suites.get("chap08_statements");
+    let suites = suites.get(8);
     run_suites(suites);
 }
 
 fn run_suites<'a>(suites: impl IntoIterator<Item = &'a Suite>) {
     let all_successful = suites
         .into_iter()
-        .inspect(|s| println!("=== {} ===", s.name))
+        .inspect(|s| println!("=== Chapter {} {:?} ===", s.chapter as u8, s.chapter))
         .map(run_suite)
         .reduce(|a, b| a && b)
         .unwrap_or(true);
