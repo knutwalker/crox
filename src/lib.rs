@@ -106,3 +106,44 @@ pub fn report_error(_fancy: bool, mut w: impl Write, mut err: CroxErrors) {
     err.set_fancy(false);
     writeln!(w, "{err:#}").unwrap();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_unreached_undefined_does_not_trigger_error() {
+        let mut out = Vec::new();
+        let res = run(
+            &mut out,
+            r#"
+if (false) {
+  print notDefined;
+}
+
+print "ok";
+        "#,
+        );
+
+        assert!(res.is_ok());
+        assert_eq!(String::from_utf8(out).unwrap().trim(), "ok");
+    }
+
+    #[test]
+    fn test_loop_var_shadowing_does_not_affect_loop_var() {
+        let mut out = Vec::new();
+        let res = run(
+            &mut out,
+            r#"
+for (var i = 0; i < 1; i = i + 1) {
+  print i;
+  var i = -1;
+  print i;
+}
+        "#,
+        );
+
+        assert!(res.is_ok());
+        assert_eq!(String::from_utf8(out).unwrap().trim(), "0\n-1");
+    }
+}

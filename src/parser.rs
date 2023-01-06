@@ -264,15 +264,13 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
         if let Some(increment) = increment {
             let increment = Stmt::expression(increment).at(inc_span);
-            let item = match body.item {
-                Stmt::Block { stmts } => {
-                    let mut stmts = stmts.to_vec();
-                    stmts.push(increment);
-                    Stmt::block(stmts)
-                }
-                _ => Stmt::block(vec![body, increment]),
-            };
-            body = item.at(body_span);
+            // the increment must happen in a separate, outer scope of the body
+            // so we need to wrap the body in a block if it isn't already
+            // and then wrap the body and the increment in their own block
+            if !matches!(&body.item, Stmt::Block { .. }) {
+                body = Stmt::block(vec![body]).at(body_span);
+            }
+            body = Stmt::block(vec![body, increment]).at(body_span);
         };
 
         let body = Stmt::while_(condition, body).at(body_span);
@@ -863,6 +861,7 @@ mod tests {
         // body
         let i = Expr::var("i").at(41..42);
         let body = Stmt::print(i).at(35..43);
+        let body = Stmt::block(vec![body]).at(35..43);
 
         // desugar body
         let body = Stmt::block(vec![body, Stmt::expression(incr).at(24..33)]).at(35..43);
@@ -899,9 +898,10 @@ mod tests {
         let print1 = Stmt::print(i).at(37..45);
         let i = Expr::var("i").at(52..53);
         let print2 = Stmt::print(i).at(46..54);
+        let body = Stmt::block(vec![print1, print2]).at(35..56);
 
         // desugar body
-        let body = Stmt::block(vec![print1, print2, Stmt::expression(incr).at(24..33)]).at(35..56);
+        let body = Stmt::block(vec![body, Stmt::expression(incr).at(24..33)]).at(35..56);
         let body = Stmt::while_(cond, body).at(35..56);
         let body = Stmt::block(vec![init, body]).at(0..56);
 
@@ -953,6 +953,7 @@ mod tests {
         // body
         let i = Expr::var("i").at(35..36);
         let body = Stmt::print(i).at(29..37);
+        let body = Stmt::block(vec![body]).at(29..37);
 
         // desugar body
         let body = Stmt::block(vec![body, Stmt::expression(incr).at(18..27)]).at(29..37);
@@ -982,10 +983,48 @@ mod tests {
         // body
         let i = Expr::var("i").at(32..33);
         let body = Stmt::print(i).at(26..34);
+        let body = Stmt::block(vec![body]).at(26..34);
 
         // desugar body
         let body = Stmt::block(vec![body, Stmt::expression(incr).at(15..24)]).at(26..34);
         let body = Stmt::while_(cond, body).at(0..34);
+
+        assert_eq!(actual, vec![body]);
+    }
+
+    #[test]
+    fn test_for_desugar_block_shadow() {
+        let actual =
+            parse::<StatementRule>("for (var i = 0; i < 10; i = i + 1) { print i; var i = -1; }");
+
+        // constants
+        let zero = Expr::number(0.0).at(13..14);
+        let ten = Expr::number(10.0).at(20..22);
+        let one1 = Expr::number(1.0).at(32..33);
+        let one2 = Expr::number(1.0).at(55..56);
+
+        // initializer
+        let init = Stmt::var("i".at(9..10), Some(zero)).at(5..15);
+
+        // condition
+        let i = Expr::var("i").at(16..17);
+        let cond = Expr::less_than(i, ten).at(16..22);
+
+        // increment
+        let i = Expr::var("i").at(28..29);
+        let add = Expr::add(i, one1).at(28..33);
+        let incr = Expr::assign("i", add).at(24..33);
+
+        // body
+        let i = Expr::var("i").at(43..44);
+        let print = Stmt::print(i).at(37..45);
+        let assign = Stmt::var(Node::new("i", 50..51), Expr::neg(one2).at(54..56)).at(46..57);
+        let body = Stmt::block(vec![print, assign]).at(35..59);
+
+        // desugar body
+        let body = Stmt::block(vec![body, Stmt::expression(incr).at(24..33)]).at(35..59);
+        let body = Stmt::while_(cond, body).at(35..59);
+        let body = Stmt::block(vec![init, body]).at(0..59);
 
         assert_eq!(actual, vec![body]);
     }
