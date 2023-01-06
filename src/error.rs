@@ -221,6 +221,9 @@ pub enum CroxErrorKind {
     UninitializedVariable { name: String },
 
     #[cfg_attr(feature = "fancy", diagnostic())]
+    DuplicateBinding { name: String },
+
+    #[cfg_attr(feature = "fancy", diagnostic())]
     ArityMismatch { expected: usize, actual: usize },
 
     #[cfg_attr(feature = "fancy", diagnostic())]
@@ -294,6 +297,7 @@ impl CroxErrorKind {
             Self::InvalidType { .. } => "Invalid type: ",
             Self::UndefinedVariable { .. } => "Undefined variable: ",
             Self::UninitializedVariable { .. } => "Uninitialized variable: ",
+            Self::DuplicateBinding { .. } => "Multiple bindings: ",
             Self::ArityMismatch { .. } => "Arity mismatch: ",
             Self::Other(_) => "Error: ",
         }
@@ -368,6 +372,12 @@ impl Display for FancyCroxErrorKind<'_> {
             CroxErrorKind::UninitializedVariable { name } => {
                 write!(f, "'{name}'")?;
             }
+            CroxErrorKind::DuplicateBinding { name } => {
+                write!(
+                    f,
+                    "Identifier '{name}' is bound more than once in this parameter list"
+                )?;
+            }
             CroxErrorKind::ArityMismatch { expected, actual } => {
                 write!(f, "Expected {expected} arguments but got {actual}")?;
             }
@@ -404,6 +414,7 @@ impl From<&CroxErrorKind> for CroxErrorScope {
             InvalidType { .. }
             | UndefinedVariable { .. }
             | UninitializedVariable { .. }
+            | DuplicateBinding { .. }
             | ArityMismatch { .. } => Self::Interpreter,
             Other(_) => Self::Custom,
         }

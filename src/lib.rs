@@ -44,7 +44,7 @@ pub fn run(mut out: impl Write, content: &str) -> Result<Ast<'_, StmtNode<'_>>, 
     let source = scan(content);
     let tokens = source.collect_all(source)?;
     let statements = stmt_parser(source, tokens).collect_all(source)?;
-    let resolved = stmt_resolver(statements).map(Ok).collect_all(source)?;
+    let resolved = stmt_resolver(statements).collect_all(source)?;
     let values = stmt_interpreter(&mut out, env, resolved).collect_all(source)?;
     Ok(Ast::new(values))
 }
@@ -54,7 +54,7 @@ pub fn eval(mut out: impl Write, content: &str) -> Result<Ast<'_, ExprNode<'_>>,
     let source = scan(content);
     let tokens = source.collect_all(source)?;
     let statements = expr_parser(source, tokens).collect_all(source)?;
-    let resolved = expr_resolver(statements).map(Ok).collect_all(source)?;
+    let resolved = expr_resolver(statements).collect_all(source)?;
     let values = expr_interpreter(&mut out, env, resolved).collect_all(source)?;
     Ok(Ast::new(values))
 }
@@ -147,5 +147,24 @@ for (var i = 0; i < 1; i = i + 1) {
 
         assert!(res.is_ok());
         assert_eq!(String::from_utf8(out).unwrap().trim(), "0\n-1");
+    }
+
+    #[test]
+    fn allow_shadowing_parameters() {
+        let source = r#"
+fun foo(a) {
+    print a; // expect foo
+    var a = "bar";
+    print a; // expect: bar
+}
+
+foo("foo");
+       "#;
+
+        let mut out = Vec::new();
+        let res = run(&mut out, source);
+
+        assert!(res.is_ok());
+        assert_eq!(String::from_utf8(out).unwrap().trim(), "foo\nbar");
     }
 }

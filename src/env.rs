@@ -45,6 +45,14 @@ impl<'a, V> Environment<'a, V> {
         self.inner.define(name, value);
     }
 
+    pub fn define_local_unique(
+        &self,
+        name: &'a str,
+        value: impl Into<Option<V>>,
+    ) -> Result<(), Error<'a>> {
+        self.inner.define_local_unique(name, value)
+    }
+
     pub fn scope_of<'x>(&self, name: &'x str) -> Result<ScopeRef, Error<'x>> {
         self.inner.scope_of(name)
     }
@@ -75,6 +83,7 @@ impl<'a> Environment<'a> {
 pub enum Error<'a> {
     Undefined(&'a str),
     Uninitialized(&'a str),
+    Duplicate(&'a str),
 }
 
 impl<'a> From<Error<'a>> for CroxErrorKind {
@@ -84,6 +93,9 @@ impl<'a> From<Error<'a>> for CroxErrorKind {
                 name: name.to_owned(),
             },
             Error::Uninitialized(name) => CroxErrorKind::UninitializedVariable {
+                name: name.to_owned(),
+            },
+            Error::Duplicate(name) => CroxErrorKind::DuplicateBinding {
                 name: name.to_owned(),
             },
         }
@@ -137,6 +149,14 @@ impl<'a, V> InnerEnv<'a, V> {
 
     fn define(&self, name: &'a str, value: impl Into<Option<V>>) {
         self.values.borrow_mut().define(name, value);
+    }
+
+    fn define_local_unique(
+        &self,
+        name: &'a str,
+        value: impl Into<Option<V>>,
+    ) -> Result<(), Error<'a>> {
+        self.values.borrow_mut().define_local_unique(name, value)
     }
 
     fn scope_of<'x>(&self, name: &'x str) -> Result<ScopeRef, Error<'x>> {
@@ -240,6 +260,18 @@ impl<'a, V> EnvValues<'a, V> {
     fn define(&mut self, name: &'a str, value: impl Into<Option<V>>) {
         self.names.push(name);
         self.values.push(value.into());
+    }
+
+    fn define_local_unique(
+        &mut self,
+        name: &'a str,
+        value: impl Into<Option<V>>,
+    ) -> Result<(), Error<'a>> {
+        if self.find(name).is_ok() {
+            return Err(Error::Duplicate(name));
+        }
+        self.define(name, value);
+        Ok(())
     }
 
     fn get<'x>(&self, name: &'x str) -> Result<&V, Error<'x>> {

@@ -132,6 +132,7 @@ fn report_error(err: impl Write, errors: CroxErrors) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_handle_fallback_to_expr() {
@@ -152,9 +153,9 @@ mod tests {
         assert_eq!(String::from_utf8(out).unwrap(), "");
         assert_eq!(
             String::from_utf8(err).unwrap(),
-            r#"[line 1, offset 0] Error: Invalid type: expected [Number], got String
+            r#"[line 1, offset 5] Error: Invalid type: expected [Number], got 'String'
 1 < "2"
-^
+~~~~~^
 
 "#
         );
