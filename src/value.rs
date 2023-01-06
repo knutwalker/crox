@@ -75,33 +75,23 @@ impl<'a> Value<'a> {
         Self::num_op(self, rhs, |lhs, rhs| lhs / rhs)
     }
 
-    pub fn eq(&self, other: &Self) -> BinOpResult<'a> {
+    pub fn eq(&self, other: &Self) -> Self {
         self.partial_cmp(other)
-            .map(|ord| Self::from(ord == Ordering::Equal))
-            .ok_or_else(|| {
-                Ok(CroxErrorKind::InvalidType {
-                    expected: self.typ().into(),
-                    actual: other.typ(),
-                })
-            })
+            .map_or(false, |ord| ord == Ordering::Equal)
+            .into()
     }
 
-    pub fn not_eq(&self, other: &Self) -> BinOpResult<'a> {
+    pub fn not_eq(&self, other: &Self) -> Self {
         self.partial_cmp(other)
-            .map(|ord| Self::from(ord != Ordering::Equal))
-            .ok_or_else(|| {
-                Ok(CroxErrorKind::InvalidType {
-                    expected: self.typ().into(),
-                    actual: other.typ(),
-                })
-            })
+            .map_or(true, |ord| ord != Ordering::Equal)
+            .into()
     }
 
     pub fn lt(&self, other: &Self) -> BinOpResult<'a> {
         self.partial_cmp(other)
             .map(|ord| Self::from(ord == Ordering::Less))
             .ok_or_else(|| {
-                Ok(CroxErrorKind::InvalidType {
+                Err(CroxErrorKind::InvalidType {
                     expected: self.typ().into(),
                     actual: other.typ(),
                 })
@@ -112,7 +102,7 @@ impl<'a> Value<'a> {
         self.partial_cmp(other)
             .map(|ord| Self::from(ord == Ordering::Greater))
             .ok_or_else(|| {
-                Ok(CroxErrorKind::InvalidType {
+                Err(CroxErrorKind::InvalidType {
                     expected: self.typ().into(),
                     actual: other.typ(),
                 })
@@ -123,7 +113,7 @@ impl<'a> Value<'a> {
         self.partial_cmp(other)
             .map(|ord| Self::from(ord != Ordering::Greater))
             .ok_or_else(|| {
-                Ok(CroxErrorKind::InvalidType {
+                Err(CroxErrorKind::InvalidType {
                     expected: self.typ().into(),
                     actual: other.typ(),
                 })
@@ -134,7 +124,7 @@ impl<'a> Value<'a> {
         self.partial_cmp(other)
             .map(|ord| Self::from(ord != Ordering::Less))
             .ok_or_else(|| {
-                Ok(CroxErrorKind::InvalidType {
+                Err(CroxErrorKind::InvalidType {
                     expected: self.typ().into(),
                     actual: other.typ(),
                 })

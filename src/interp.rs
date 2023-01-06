@@ -147,8 +147,8 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 let lhs = lhs.value;
                 let rhs = rhs.value;
                 match op {
-                    BinaryOp::Equals => lhs.eq(&rhs).map_err(to_error)?,
-                    BinaryOp::NotEquals => lhs.not_eq(&rhs).map_err(to_error)?,
+                    BinaryOp::Equals => lhs.eq(&rhs),
+                    BinaryOp::NotEquals => lhs.not_eq(&rhs),
                     BinaryOp::LessThan => lhs.lt(&rhs).map_err(to_error)?,
                     BinaryOp::LessThanOrEqual => lhs.lte(&rhs).map_err(to_error)?,
                     BinaryOp::GreaterThan => lhs.gt(&rhs).map_err(to_error)?,
