@@ -12,7 +12,9 @@ pub enum Value<'a> {
     Fn(Rc<dyn Callable<'a>>),
 }
 
-impl Value<'_> {
+type BinOpResult<'a> = Result<Value<'a>, Result<CroxErrorKind, CroxErrorKind>>;
+
+impl<'a> Value<'a> {
     pub fn as_num(&self) -> Result<f64, CroxErrorKind> {
         match self {
             Self::Number(n) => Ok(*n),
@@ -41,7 +43,7 @@ impl Value<'_> {
         (!b).into()
     }
 
-    pub fn add(&self, rhs: &Self) -> Result<Self, Result<CroxErrorKind, CroxErrorKind>> {
+    pub fn add(&self, rhs: &Self) -> BinOpResult<'a> {
         match (self, rhs) {
             (lhs, rhs @ Self::Str(_)) | (lhs @ Self::Str(_), rhs) => {
                 Ok(format!("{lhs}{rhs}").into())
@@ -61,59 +63,85 @@ impl Value<'_> {
         }
     }
 
-    pub fn sub(&self, rhs: &Self) -> Result<Self, Result<CroxErrorKind, CroxErrorKind>> {
+    pub fn sub(&self, rhs: &Self) -> BinOpResult<'a> {
         Self::num_op(self, rhs, |lhs, rhs| lhs - rhs)
     }
 
-    pub fn mul(&self, rhs: &Self) -> Result<Self, Result<CroxErrorKind, CroxErrorKind>> {
+    pub fn mul(&self, rhs: &Self) -> BinOpResult<'a> {
         Self::num_op(self, rhs, |lhs, rhs| lhs * rhs)
     }
 
-    pub fn div(&self, rhs: &Self) -> Result<Self, Result<CroxErrorKind, CroxErrorKind>> {
+    pub fn div(&self, rhs: &Self) -> BinOpResult<'a> {
         Self::num_op(self, rhs, |lhs, rhs| lhs / rhs)
     }
 
-    pub fn eq(&self, other: &Self) -> Self {
+    pub fn eq(&self, other: &Self) -> BinOpResult<'a> {
         self.partial_cmp(other)
-            .map_or(false, |ord| ord == Ordering::Equal)
-            .into()
+            .map(|ord| Self::from(ord == Ordering::Equal))
+            .ok_or_else(|| {
+                Ok(CroxErrorKind::InvalidType {
+                    expected: self.typ().into(),
+                    actual: other.typ(),
+                })
+            })
     }
 
-    pub fn not_eq(&self, other: &Self) -> Self {
+    pub fn not_eq(&self, other: &Self) -> BinOpResult<'a> {
         self.partial_cmp(other)
-            .map_or(false, |ord| ord != Ordering::Equal)
-            .into()
+            .map(|ord| Self::from(ord != Ordering::Equal))
+            .ok_or_else(|| {
+                Ok(CroxErrorKind::InvalidType {
+                    expected: self.typ().into(),
+                    actual: other.typ(),
+                })
+            })
     }
 
-    pub fn lt(&self, other: &Self) -> Self {
+    pub fn lt(&self, other: &Self) -> BinOpResult<'a> {
         self.partial_cmp(other)
-            .map_or(false, |ord| ord == Ordering::Less)
-            .into()
+            .map(|ord| Self::from(ord == Ordering::Less))
+            .ok_or_else(|| {
+                Ok(CroxErrorKind::InvalidType {
+                    expected: self.typ().into(),
+                    actual: other.typ(),
+                })
+            })
     }
 
-    pub fn gt(&self, other: &Self) -> Self {
+    pub fn gt(&self, other: &Self) -> BinOpResult<'a> {
         self.partial_cmp(other)
-            .map_or(false, |ord| ord == Ordering::Greater)
-            .into()
+            .map(|ord| Self::from(ord == Ordering::Greater))
+            .ok_or_else(|| {
+                Ok(CroxErrorKind::InvalidType {
+                    expected: self.typ().into(),
+                    actual: other.typ(),
+                })
+            })
     }
 
-    pub fn lte(&self, other: &Self) -> Self {
+    pub fn lte(&self, other: &Self) -> BinOpResult<'a> {
         self.partial_cmp(other)
-            .map_or(false, |ord| ord != Ordering::Greater)
-            .into()
+            .map(|ord| Self::from(ord != Ordering::Greater))
+            .ok_or_else(|| {
+                Ok(CroxErrorKind::InvalidType {
+                    expected: self.typ().into(),
+                    actual: other.typ(),
+                })
+            })
     }
 
-    pub fn gte(&self, other: &Self) -> Self {
+    pub fn gte(&self, other: &Self) -> BinOpResult<'a> {
         self.partial_cmp(other)
-            .map_or(false, |ord| ord != Ordering::Less)
-            .into()
+            .map(|ord| Self::from(ord != Ordering::Less))
+            .ok_or_else(|| {
+                Ok(CroxErrorKind::InvalidType {
+                    expected: self.typ().into(),
+                    actual: other.typ(),
+                })
+            })
     }
 
-    fn num_op(
-        lhs: &Self,
-        rhs: &Self,
-        num_op: impl FnOnce(f64, f64) -> f64,
-    ) -> Result<Self, Result<CroxErrorKind, CroxErrorKind>> {
+    fn num_op(lhs: &Self, rhs: &Self, num_op: impl FnOnce(f64, f64) -> f64) -> BinOpResult<'a> {
         let lhs = lhs.as_num().map_err(Ok)?;
         let rhs = rhs.as_num().map_err(Err)?;
         Ok(num_op(lhs, rhs).into())

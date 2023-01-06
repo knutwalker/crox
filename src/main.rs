@@ -128,3 +128,35 @@ fn report_error(err: impl Write, errors: CroxErrors) {
     let fancy = !cfg!(test);
     crox::report_error(fancy, err, errors);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_handle_fallback_to_expr() {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        handle(&mut out, &mut err, false, "1 + 2");
+
+        assert_eq!(String::from_utf8(out).unwrap(), "3\n");
+        assert_eq!(String::from_utf8(err).unwrap(), "");
+    }
+
+    #[test]
+    fn test_handle_fallback_to_expr_if_other_errors() {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        handle(&mut out, &mut err, false, r#"1 < "2""#);
+
+        assert_eq!(String::from_utf8(out).unwrap(), "");
+        assert_eq!(
+            String::from_utf8(err).unwrap(),
+            r#"[line 1, offset 0] Error: Invalid type: expected [Number], got String
+1 < "2"
+^
+
+"#
+        );
+    }
+}
