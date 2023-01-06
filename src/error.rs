@@ -338,10 +338,10 @@ impl Display for FancyCroxErrorKind<'_> {
             CroxErrorKind::UnexpectedEndOfInput { expected: None } => {}
             CroxErrorKind::UnclosedStringLiteral => {}
             CroxErrorKind::UnexpectedToken { expected, actual } if expected.len() > 1 => {
-                write!(f, "expected one of {expected:?}, got `{actual:?}`")?;
+                write!(f, "expected one of {expected:?}, got '{actual:?}'")?;
             }
             CroxErrorKind::UnexpectedToken { expected, actual } => {
-                write!(f, "expected {expected:?}, got `{actual:?}`")?;
+                write!(f, "expected {expected:?}, got '{actual:?}'")?;
             }
             CroxErrorKind::UnclosedDelimiter { unclosed } => {
                 write!(f, "{unclosed:?}")?;
@@ -357,16 +357,16 @@ impl Display for FancyCroxErrorKind<'_> {
                 f.write_str("expected at most 255 arguments")?;
             }
             CroxErrorKind::InvalidType { expected, actual } if expected.len() > 1 => {
-                write!(f, "expected one of {expected:?}, got {actual:?}")?;
+                write!(f, "expected one of {expected:?}, got '{actual:?}'")?;
             }
             CroxErrorKind::InvalidType { expected, actual } => {
-                write!(f, "expected {expected:?}, got {actual:?}")?;
+                write!(f, "expected {expected:?}, got '{actual:?}'")?;
             }
             CroxErrorKind::UndefinedVariable { name } => {
-                f.write_str(name)?;
+                write!(f, "'{name}'")?;
             }
             CroxErrorKind::UninitializedVariable { name } => {
-                f.write_str(name)?;
+                write!(f, "'{name}'")?;
             }
             CroxErrorKind::ArityMismatch { expected, actual } => {
                 write!(f, "Expected {expected} arguments but got {actual}")?;
