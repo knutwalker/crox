@@ -37,38 +37,24 @@ pub use typer::{Type, TypeSet};
 pub use util::{EnumSet, ValueEnum};
 pub use value::{Ast, Value, Valued};
 
-use crate::error::CroxErrorsBuilder;
+use crate::error::ErrorsCollector;
 
 pub fn run(mut out: impl Write, content: &str) -> Result<Ast<'_, StmtNode<'_>>, CroxErrors> {
-    let errs = CroxErrorsBuilder::new();
-
     let source = scan(content);
-    let tokens = source.into_iter().filter_map(|t| errs.ok(t));
-    let statements = stmt_parser(source, tokens).filter_map(|e| errs.ok(e));
-    let resolved = stmt_resolver(statements).filter_map(|e| errs.ok(e));
-    let values = stmt_interpreter(&mut out, resolved).filter_map(|e| errs.ok(e));
-    let ast = values.collect();
-
-    match errs.finish(source.source) {
-        Some(errs) => Err(errs),
-        None => Ok(ast),
-    }
+    let tokens = source.collect_all(source)?;
+    let statements = stmt_parser(source, tokens).collect_all(source)?;
+    let resolved = stmt_resolver(statements).map(Ok).collect_all(source)?;
+    let values = stmt_interpreter(&mut out, resolved).collect_all(source)?;
+    Ok(Ast::new(values))
 }
 
 pub fn eval(mut out: impl Write, content: &str) -> Result<Ast<'_, ExprNode<'_>>, CroxErrors> {
-    let errs = CroxErrorsBuilder::new();
-
     let source = scan(content);
-    let tokens = source.into_iter().filter_map(|t| errs.ok(t));
-    let statements = expr_parser(source, tokens).filter_map(|e| errs.ok(e));
-    let resolved = expr_resolver(statements).filter_map(|e| errs.ok(e));
-    let values = expr_interpreter(&mut out, resolved).filter_map(|e| errs.ok(e));
-    let ast = values.collect();
-
-    match errs.finish(source.source) {
-        Some(errs) => Err(errs),
-        None => Ok(ast),
-    }
+    let tokens = source.collect_all(source)?;
+    let statements = expr_parser(source, tokens).collect_all(source)?;
+    let resolved = expr_resolver(statements).map(Ok).collect_all(source)?;
+    let values = expr_interpreter(&mut out, resolved).collect_all(source)?;
+    Ok(Ast::new(values))
 }
 
 pub fn scan(content: &str) -> Source<'_> {

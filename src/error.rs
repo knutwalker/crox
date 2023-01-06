@@ -1,6 +1,5 @@
-use crate::{Range, TokenSet, TokenType, Type, TypeSet};
+use crate::{Range, Source, TokenSet, TokenType, Type, TypeSet};
 use std::{
-    cell::Cell,
     error::Error as StdError,
     fmt::{Debug, Display},
     sync::Arc,
@@ -70,40 +69,46 @@ impl Display for CroxErrors {
 
 impl StdError for CroxErrors {}
 
-pub struct CroxErrorsBuilder {
-    errors: Cell<Vec<CroxError>>,
+struct CollectErrors<T> {
+    values: Vec<T>,
+    errors: Vec<CroxError>,
 }
 
-impl CroxErrorsBuilder {
-    pub fn new() -> Self {
-        Self {
-            errors: Cell::new(Vec::new()),
+impl<T> CollectErrors<T> {
+    pub fn into_result(self, src: Source<'_>) -> Result<Vec<T>, CroxErrors> {
+        if self.errors.is_empty() {
+            Ok(self.values)
+        } else {
+            Err(CroxErrors::from((src.source, self.errors)))
         }
     }
+}
 
-    pub fn report(&self, err: CroxError) {
-        let mut es = self.errors.take();
-        es.push(err);
-        self.errors.set(es);
-    }
-
-    pub fn ok<T>(&self, res: Result<T>) -> Option<T> {
-        match res {
-            Ok(v) => Some(v),
-            Err(e) => {
-                self.report(e);
-                None
+impl<T> FromIterator<Result<T>> for CollectErrors<T> {
+    fn from_iter<I: IntoIterator<Item = Result<T>>>(iter: I) -> Self {
+        let mut this = Self {
+            values: Vec::new(),
+            errors: Vec::new(),
+        };
+        for item in iter {
+            match item {
+                Ok(item) => this.values.push(item),
+                Err(err) => this.errors.push(err),
             }
         }
+        this
     }
+}
 
-    pub fn finish(self, src: &str) -> Option<CroxErrors> {
-        let errs = self.errors.into_inner();
-        if errs.is_empty() {
-            None
-        } else {
-            Some(CroxErrors::from((src, errs)))
-        }
+pub trait ErrorsCollector<T> {
+    fn collect_all(self, source: Source<'_>) -> Result<Vec<T>, CroxErrors>;
+}
+
+impl<T, I: IntoIterator<Item = Result<T>>> ErrorsCollector<T> for I {
+    fn collect_all(self, source: Source<'_>) -> Result<Vec<T>, CroxErrors> {
+        self.into_iter()
+            .collect::<CollectErrors<_>>()
+            .into_result(source)
     }
 }
 
