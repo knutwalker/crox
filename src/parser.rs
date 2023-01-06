@@ -127,24 +127,24 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 }
 
 impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
+    fn sync_declaration(&mut self) -> Result<StmtNode<'a>> {
+        match self.declaration() {
+            Ok(stmt) => Ok(stmt),
+            Err(e) => {
+                self.synchronize();
+                Err(e)
+            }
+        }
+    }
+
     /// declaration := funDecl | varDecl | statement ;
     fn declaration(&mut self) -> Result<StmtNode<'a>> {
-        let stmt = peek!(self, {
+        peek!(self, {
             (Var, span) => self.var_decl(span),
             (Fun, span) => self.fun_decl(FnKind::Function, span),
         })
-        .transpose()?;
-
-        match stmt {
-            Some(stmt) => Ok(stmt),
-            None => match self.statement() {
-                Ok(stmt) => Ok(stmt),
-                Err(e) => {
-                    self.synchronize();
-                    Err(e)
-                }
-            },
-        }
+        .transpose()?
+        .map_or_else(|| self.statement(), Ok)
     }
 
     ///     funDecl := "fun" function ;
@@ -352,7 +352,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
                     break end;
                 }
                 Some(_) => {
-                    stmts.push(self.declaration()?);
+                    stmts.push(self.sync_declaration()?);
                 }
                 _ => Err(EndOfInput::Unclosed(LeftBrace, start))?,
             };
@@ -635,7 +635,7 @@ impl ParserRule for StatementRule {
     where
         T: Iterator<Item = Tok>,
     {
-        parser.declaration()
+        parser.sync_declaration()
     }
 }
 
@@ -988,5 +988,23 @@ mod tests {
         let body = Stmt::while_(cond, body).at(0..34);
 
         assert_eq!(actual, vec![body]);
+    }
+
+    #[test]
+    fn test_invalid_var_target_synchronizes() {
+        let source = Source::new("var nil = 42;");
+        let tokens = source.scan_all().unwrap();
+
+        let parser = any_parser::<StatementRule, _>(source, tokens);
+        let actual = parser.collect::<Vec<_>>();
+
+        assert_eq!(
+            actual,
+            &[Err(CroxErrorKind::from((
+                TokenType::Nil,
+                TokenType::Identifier
+            ))
+            .at(4..7))]
+        );
     }
 }
