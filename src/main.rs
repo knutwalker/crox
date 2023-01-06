@@ -99,15 +99,13 @@ fn repl() -> io::Result<()> {
 }
 
 fn handle(verbose: bool, line: &str) {
-    fn is_semicolon_instead_of_eof(error: &CroxError, line: &str) -> bool {
-        if error.span == (0..line.len()) {
-            if let CroxErrorKind::UnexpectedEndOfInput {
-                expected: Some(expected),
-            } = &error.kind
-            {
-                if expected.len() == 1 && expected.contains(TokenType::Semicolon) {
-                    return true;
-                }
+    fn is_semicolon_instead_of_eof(error: &CroxError) -> bool {
+        if let CroxErrorKind::UnexpectedEndOfInput {
+            expected: Some(expected),
+        } = &error.kind
+        {
+            if expected.len() == 1 && expected.contains(TokenType::Semicolon) {
+                return true;
             }
         }
 
@@ -117,8 +115,7 @@ fn handle(verbose: bool, line: &str) {
     match crox::run(std::io::stdout(), line) {
         Ok(res) => crox::print_ast(verbose, res),
         Err(e) => match e.errors() {
-            [e] if is_semicolon_instead_of_eof(e, line) => {
-                match crox::eval(std::io::stdout(), line) {
+            [e] if is_semicolon_instead_of_eof(e) => match crox::eval(std::io::stdout(), line) {
                     Ok(res) => crox::print_ast(verbose, res),
                     Err(e) => report_error(e),
                 }
