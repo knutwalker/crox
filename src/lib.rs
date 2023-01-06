@@ -25,7 +25,7 @@ pub use context::Context;
 pub use env::Environment;
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
 pub use expr::{BinaryOp, Expr, ExprNode, FunctionDef, Literal, LogicalOp, UnaryOp, Var};
-pub use interp::{expr_interpreter, stmt_interpreter, Interpreter};
+pub use interp::{expr_interpreter, stmt_interpreter, Interpreter, InterpreterError};
 pub use node::{Ident, Node, Spannable};
 pub use parser::{expr_parser, stmt_parser, Parser};
 pub use resolver::{expr_resolver, stmt_resolver, Resolver};
@@ -40,20 +40,22 @@ pub use value::{Ast, Value, Valued};
 use crate::error::ErrorsCollector;
 
 pub fn run(mut out: impl Write, content: &str) -> Result<Ast<'_, StmtNode<'_>>, CroxErrors> {
+    let env = Environment::global();
     let source = scan(content);
     let tokens = source.collect_all(source)?;
     let statements = stmt_parser(source, tokens).collect_all(source)?;
     let resolved = stmt_resolver(statements).map(Ok).collect_all(source)?;
-    let values = stmt_interpreter(&mut out, resolved).collect_all(source)?;
+    let values = stmt_interpreter(&mut out, env, resolved).collect_all(source)?;
     Ok(Ast::new(values))
 }
 
 pub fn eval(mut out: impl Write, content: &str) -> Result<Ast<'_, ExprNode<'_>>, CroxErrors> {
+    let env = Environment::global();
     let source = scan(content);
     let tokens = source.collect_all(source)?;
     let statements = expr_parser(source, tokens).collect_all(source)?;
     let resolved = expr_resolver(statements).map(Ok).collect_all(source)?;
-    let values = expr_interpreter(&mut out, resolved).collect_all(source)?;
+    let values = expr_interpreter(&mut out, env, resolved).collect_all(source)?;
     Ok(Ast::new(values))
 }
 

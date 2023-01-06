@@ -10,9 +10,9 @@ pub struct Interpreter<'a, 'o> {
 }
 
 impl<'a, 'o> Interpreter<'a, 'o> {
-    pub fn new(out: &'o mut dyn Write) -> Self {
+    pub fn new(out: &'o mut dyn Write, env: Environment<'a>) -> Self {
         Self {
-            context: Context::new(Environment::default(), out),
+            context: Context::new(env, out),
         }
     }
 }
@@ -80,8 +80,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 }
             }
             Stmt::Block { stmts } => {
-                let _scope = ctx.env.new_scope();
-                Self::eval_stmts_in_scope(ctx, stmts)?;
+                ctx.run_with_new_scope(|ctx| Self::eval_stmts_in_scope(ctx, stmts))?
             }
         }
 
@@ -102,10 +101,11 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 name,
                 resolved_scope,
             }) => {
-                let scope = resolved_scope.get().expect("No resolver pass");
-                ctx.env
-                    .get_from_scope_ref(name, scope)
-                    .map_err(|e| CroxErrorKind::from(e).at(span))?
+                let var = match resolved_scope.get() {
+                    Some(scope) => ctx.env.get_from_scope_ref(name, scope),
+                    None => ctx.env.get(name),
+                };
+                var.map_err(|e| CroxErrorKind::from(e).at(span))?
             }
             Expr::Fun(func) => Function::new("<anon>", func.clone(), ctx.env.clone()).to_value(),
             Expr::Assignment {
@@ -117,10 +117,11 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 value,
             } => {
                 let value = Self::eval_expr(ctx, value)?.value;
-                let scope = resolved_scope.get().expect("No resolver pass");
-                ctx.env
-                    .assign_at_scope_ref(name, scope, value)
-                    .map_err(|e| CroxErrorKind::from(e).at(span))?
+                let var = match resolved_scope.get() {
+                    Some(scope) => ctx.env.assign_at_scope_ref(name, scope, value),
+                    None => ctx.env.assign(name, value),
+                };
+                var.map_err(|e| CroxErrorKind::from(e).at(span))?
             }
             Expr::Unary { op, expr } => {
                 let value = Self::eval_expr(ctx, expr)?.value;
@@ -199,7 +200,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
         })
     }
 }
-impl<'a, 'o> Interpreter<'a, 'o> {
+impl<'a, 'e> Interpreter<'a, 'e> {
     pub fn eval_own_stmts_in_scope(&mut self, stmts: &[StmtNode<'a>]) -> Result<'a, ()> {
         Self::eval_stmts_in_scope(&mut self.context, stmts)
     }
@@ -240,16 +241,16 @@ impl<'a> From<Value<'a>> for InterpreterError<'a> {
 
 pub type Result<'a, T, E = InterpreterError<'a>> = std::result::Result<T, E>;
 
-pub struct StreamInterpreter<'a, 'o, R, I> {
-    interpreter: Interpreter<'a, 'o>,
+pub struct StreamInterpreter<'a, 'e, R, I> {
+    interpreter: Interpreter<'a, 'e>,
     input: I,
     _rule: PhantomData<R>,
 }
 
 impl<'a, 'o, R, I> StreamInterpreter<'a, 'o, R, I> {
-    pub fn new(out: &'o mut dyn Write, tokens: I) -> Self {
+    pub fn new(out: &'o mut dyn Write, env: Environment<'a>, tokens: I) -> Self {
         Self {
-            interpreter: Interpreter::new(out),
+            interpreter: Interpreter::new(out, env),
             input: tokens,
             _rule: PhantomData,
         }
@@ -258,25 +259,27 @@ impl<'a, 'o, R, I> StreamInterpreter<'a, 'o, R, I> {
 
 pub fn stmt_interpreter<'a: 'o, 'o, I>(
     out: &'o mut dyn Write,
+    env: Environment<'a>,
     tokens: I,
 ) -> impl Iterator<Item = crate::Result<Valued<'a, StmtNode<'a>>>> + 'o
 where
     I: IntoIterator<Item = StmtNode<'a>> + 'o,
 {
-    StreamInterpreter::<StatementRule, _>::new(out, tokens.into_iter())
+    StreamInterpreter::<StatementRule, _>::new(out, env, tokens.into_iter())
 }
 
 pub fn expr_interpreter<'a: 'o, 'o, I>(
     out: &'o mut dyn Write,
+    env: Environment<'a>,
     tokens: I,
 ) -> impl Iterator<Item = crate::Result<Valued<'a, ExprNode<'a>>>> + 'o
 where
     I: IntoIterator<Item = ExprNode<'a>> + 'o,
 {
-    StreamInterpreter::<ExpressionRule, _>::new(out, tokens.into_iter())
+    StreamInterpreter::<ExpressionRule, _>::new(out, env, tokens.into_iter())
 }
 
-impl<'a, 'o, R, I> Iterator for StreamInterpreter<'a, 'o, R, I>
+impl<'a, 'e, R, I> Iterator for StreamInterpreter<'a, 'e, R, I>
 where
     R: InterpreterRule,
     I: Iterator<Item = R::Input<'a>>,
@@ -293,8 +296,8 @@ pub trait InterpreterRule: Sized {
     type Input<'a>;
     type Interpreted<'a>;
 
-    fn interpret<'a, 'o>(
-        interpreter: &mut Interpreter<'a, 'o>,
+    fn interpret<'a, 'e>(
+        interpreter: &mut Interpreter<'a, 'e>,
         input: Self::Input<'a>,
     ) -> crate::Result<Self::Interpreted<'a>>;
 }
@@ -303,8 +306,8 @@ impl InterpreterRule for ExpressionRule {
     type Input<'a> = ExprNode<'a>;
     type Interpreted<'a> = Valued<'a, ExprNode<'a>>;
 
-    fn interpret<'a, 'o>(
-        interpreter: &mut Interpreter<'a, 'o>,
+    fn interpret<'a, 'e>(
+        interpreter: &mut Interpreter<'a, 'e>,
         input: Self::Input<'a>,
     ) -> crate::Result<Self::Interpreted<'a>> {
         interpreter.eval_own_expr(&input)
@@ -315,8 +318,8 @@ impl InterpreterRule for StatementRule {
     type Input<'a> = StmtNode<'a>;
     type Interpreted<'a> = Valued<'a, StmtNode<'a>>;
 
-    fn interpret<'a, 'o>(
-        interpreter: &mut Interpreter<'a, 'o>,
+    fn interpret<'a, 'e>(
+        interpreter: &mut Interpreter<'a, 'e>,
         input: Self::Input<'a>,
     ) -> crate::Result<Self::Interpreted<'a>> {
         match interpreter.eval_own_stmt(&input.item, input.span) {

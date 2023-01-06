@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{Context, Environment, FunctionDef, Interpreter, Result, Value};
+use crate::{Context, Environment, FunctionDef, Interpreter, InterpreterError, Result, Value};
 pub use builtin::Clock;
 
 pub trait Callable<'a>: std::fmt::Debug + 'a {
@@ -34,16 +34,18 @@ impl<'a> Callable<'a> for Function<'a> {
     }
 
     fn call(&self, ctx: &mut Context<'a, '_>, args: &[Value<'a>]) -> Result<Value<'a>> {
-        match self.closure.run_with_new_scope(|env| {
+        ctx.run_with_scope(self.closure.new_scope(), |ctx| {
             for (param, arg) in self.fun.params.iter().zip(args) {
-                env.define(param.item, arg.clone());
+                ctx.env.define(param.item, arg.clone());
             }
-            Interpreter::eval_stmts_in_scope(ctx, &self.fun.body)
-        }) {
-            Ok(()) => Ok(Value::Nil),
-            Err(crate::interp::InterpreterError::Return(value)) => Ok(value),
-            Err(crate::interp::InterpreterError::Err(err)) => Err(err),
-        }
+
+            let res = Interpreter::eval_stmts_in_scope(ctx, &self.fun.body);
+            match res {
+                Ok(()) => Ok(Value::Nil),
+                Err(InterpreterError::Return(value)) => Ok(value),
+                Err(InterpreterError::Err(err)) => Err(err),
+            }
+        })
     }
 }
 
