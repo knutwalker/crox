@@ -1,25 +1,25 @@
 use crate::{
-    BinaryOp, Callable, Context, CroxError, CroxErrorKind, Environment, Expr, ExprNode,
-    ExpressionRule, Function, LogicalOp, Span, StatementRule, Stmt, StmtNode, Type, TypeSet,
+    BinaryOp, Callable, CroxError, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule,
+    Function, InterpreterContext, LogicalOp, Span, StatementRule, Stmt, StmtNode, Type, TypeSet,
     UnaryOp, Value, Valued, Var,
 };
 use std::{io::Write, marker::PhantomData};
 
 pub struct Interpreter<'a, 'o> {
-    context: Context<'a, 'o>,
+    context: InterpreterContext<'a, 'o>,
 }
 
 impl<'a, 'o> Interpreter<'a, 'o> {
     pub fn new(out: &'o mut dyn Write, env: Environment<'a>) -> Self {
         Self {
-            context: Context::new(env, out),
+            context: InterpreterContext::new(env, out),
         }
     }
 }
 
 impl<'a, 'o> Interpreter<'a, 'o> {
     pub fn eval_stmts_in_scope(
-        ctx: &mut Context<'a, 'o>,
+        ctx: &mut InterpreterContext<'a, 'o>,
         stmts: &[StmtNode<'a>],
     ) -> Result<'a, ()> {
         stmts.iter().try_for_each(|stmt| -> Result<'a, ()> {
@@ -29,7 +29,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
     }
 
     pub fn eval_stmt(
-        ctx: &mut Context<'a, 'o>,
+        ctx: &mut InterpreterContext<'a, 'o>,
         stmt: &Stmt<'a>,
         span: Span,
     ) -> Result<'a, Valued<'a, StmtNode<'a>>> {
@@ -56,7 +56,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
             }
             Stmt::Print { expr } => {
                 let val = Self::eval_expr(ctx, expr)?.value;
-                writeln!(ctx.out, "{val}").unwrap();
+                writeln!(ctx.data, "{val}").unwrap();
             }
             Stmt::Return { expr } => {
                 return Err(InterpreterError::Return(
@@ -91,7 +91,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
     }
 
     pub fn eval_expr(
-        ctx: &mut Context<'a, 'o>,
+        ctx: &mut InterpreterContext<'a, 'o>,
         expr: &ExprNode<'a>,
     ) -> crate::Result<Valued<'a, ExprNode<'a>>> {
         let span = expr.span;
@@ -100,13 +100,10 @@ impl<'a, 'o> Interpreter<'a, 'o> {
             Expr::Var(Var {
                 name,
                 resolved_scope,
-            }) => {
-                let var = match resolved_scope.get() {
-                    Some(scope) => ctx.env.get_from_scope_ref(name, scope),
-                    None => ctx.env.get(name),
-                };
-                var.map_err(|e| CroxErrorKind::from(e).at(span))?
-            }
+            }) => ctx
+                .env
+                .get(name, resolved_scope.get())
+                .map_err(|e| CroxErrorKind::from(e).at(span))?,
             Expr::Fun(func) => Function::new("<anon>", func.clone(), ctx.env.clone()).to_value(),
             Expr::Assignment {
                 var:
@@ -117,11 +114,9 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 value,
             } => {
                 let value = Self::eval_expr(ctx, value)?.value;
-                let var = match resolved_scope.get() {
-                    Some(scope) => ctx.env.assign_at_scope_ref(name, scope, value),
-                    None => ctx.env.assign(name, value),
-                };
-                var.map_err(|e| CroxErrorKind::from(e).at(span))?
+                ctx.env
+                    .assign(name, value, resolved_scope.get())
+                    .map_err(|e| CroxErrorKind::from(e).at(span))?
             }
             Expr::Unary { op, expr } => {
                 let value = Self::eval_expr(ctx, expr)?.value;

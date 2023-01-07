@@ -227,6 +227,9 @@ pub enum CroxErrorKind {
     ArityMismatch { expected: usize, actual: usize },
 
     #[cfg_attr(feature = "fancy", diagnostic())]
+    ReturnFromTopLevel,
+
+    #[cfg_attr(feature = "fancy", diagnostic())]
     Other(String),
 }
 
@@ -299,6 +302,7 @@ impl CroxErrorKind {
             Self::UninitializedVariable { .. } => "Uninitialized variable: ",
             Self::DuplicateBinding { .. } => "Multiple bindings: ",
             Self::ArityMismatch { .. } => "Arity mismatch: ",
+            Self::ReturnFromTopLevel => "Invalid statement: ",
             Self::Other(_) => "Error: ",
         }
     }
@@ -381,6 +385,9 @@ impl Display for FancyCroxErrorKind<'_> {
             CroxErrorKind::ArityMismatch { expected, actual } => {
                 write!(f, "Expected {expected} arguments but got {actual}")?;
             }
+            CroxErrorKind::ReturnFromTopLevel => {
+                f.write_str("Can't return from top-level code")?;
+            }
             CroxErrorKind::Other(msg) => {
                 write!(f, "{msg}")?;
             }
@@ -415,7 +422,8 @@ impl From<&CroxErrorKind> for CroxErrorScope {
             | UndefinedVariable { .. }
             | UninitializedVariable { .. }
             | DuplicateBinding { .. }
-            | ArityMismatch { .. } => Self::Interpreter,
+            | ArityMismatch { .. }
+            | ReturnFromTopLevel => Self::Interpreter,
             Other(_) => Self::Custom,
         }
     }

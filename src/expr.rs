@@ -1,4 +1,4 @@
-use crate::{env::ScopeRef, Node, Span, StmtNode};
+use crate::{env::Scope, Node, Span, StmtNode};
 use std::{
     cell::Cell,
     fmt::{Debug, Display},
@@ -225,19 +225,19 @@ pub enum Literal<'a> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Var<'a> {
     pub name: &'a str,
-    pub resolved_scope: Cell<Option<ScopeRef>>,
+    pub resolved_scope: Cell<Scope>,
 }
 
 impl<'a> Var<'a> {
     pub fn new(name: &'a str) -> Self {
         Self {
             name,
-            resolved_scope: Cell::new(None),
+            resolved_scope: Cell::new(Scope::Global),
         }
     }
 
-    pub fn resolve(&self, scope_ref: ScopeRef) {
-        self.resolved_scope.set(Some(scope_ref));
+    pub fn resolve(&self, scope_ref: Scope) {
+        self.resolved_scope.set(scope_ref);
     }
 }
 

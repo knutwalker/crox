@@ -1,6 +1,7 @@
 #![warn(clippy::all, rust_2018_idioms)]
 #![warn(clippy::uninlined_format_args)]
 
+mod builtin;
 mod call;
 mod context;
 mod env;
@@ -20,8 +21,9 @@ mod value;
 
 use std::io::Write;
 
-pub use call::{Callable, Clock, Function};
-pub use context::Context;
+pub use builtin::{Builtins, Clock};
+pub use call::{Callable, Function};
+pub use context::{Context, InterpreterContext};
 pub use env::Environment;
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
 pub use expr::{BinaryOp, Expr, ExprNode, FunctionDef, Literal, LogicalOp, UnaryOp, Var};
@@ -31,7 +33,7 @@ pub use parser::{expr_parser, stmt_parser, Parser};
 pub use resolver::{expr_resolver, stmt_resolver, Resolver};
 pub use rule::{ExpressionRule, StatementRule};
 pub use scanner::{Scanner, Source};
-pub use stmt::{FunctionDecl, Stmt, StmtNode};
+pub use stmt::{FunctionDecl, Stmt, StmtArg, StmtNode};
 pub use token::{Range, Span, Spanned, Token, TokenSet, TokenType};
 pub use typer::{Type, TypeSet};
 pub use util::{EnumSet, ValueEnum};
@@ -40,7 +42,7 @@ pub use value::{Ast, Value, Valued};
 use crate::error::ErrorsCollector;
 
 pub fn run(mut out: impl Write, content: &str) -> Result<Ast<'_, StmtNode<'_>>, CroxErrors> {
-    let env = Environment::global();
+    let env = Environment::default();
     let source = scan(content);
     let tokens = source.collect_all(source)?;
     let statements = stmt_parser(source, tokens).collect_all(source)?;
@@ -50,7 +52,7 @@ pub fn run(mut out: impl Write, content: &str) -> Result<Ast<'_, StmtNode<'_>>, 
 }
 
 pub fn eval(mut out: impl Write, content: &str) -> Result<Ast<'_, ExprNode<'_>>, CroxErrors> {
-    let env = Environment::global();
+    let env = Environment::default();
     let source = scan(content);
     let tokens = source.collect_all(source)?;
     let statements = expr_parser(source, tokens).collect_all(source)?;

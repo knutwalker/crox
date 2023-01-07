@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{Callable, Clock, CroxErrorKind, Value};
+use crate::{Builtins, CroxErrorKind, Value};
 
 #[derive(Clone, Debug)]
 pub struct Environment<'a, V = Value<'a>> {
@@ -8,29 +8,12 @@ pub struct Environment<'a, V = Value<'a>> {
 }
 
 impl<'a, V: Clone> Environment<'a, V> {
-    pub fn get<'x>(&self, name: &'x str) -> Result<V, Error<'x>> {
-        self.inner.get(name)
+    pub fn get<'x>(&self, name: &'x str, scope: Scope) -> Result<V, Error<'x>> {
+        self.inner.get(name, scope)
     }
 
-    pub fn get_from_scope_ref<'x>(
-        &self,
-        name: &'x str,
-        scope_ref: ScopeRef,
-    ) -> Result<V, Error<'x>> {
-        self.inner.get_from_scope_ref(name, scope_ref)
-    }
-
-    pub fn assign<'x>(&self, name: &'x str, value: V) -> Result<V, Error<'x>> {
-        self.inner.assign(name, value)
-    }
-
-    pub fn assign_at_scope_ref<'x>(
-        &self,
-        name: &'x str,
-        scope_ref: ScopeRef,
-        value: V,
-    ) -> Result<V, Error<'x>> {
-        self.inner.assign_at_scope_ref(name, scope_ref, value)
+    pub fn assign<'x>(&self, name: &'x str, value: V, scope: Scope) -> Result<V, Error<'x>> {
+        self.inner.assign(name, value, scope)
     }
 }
 
@@ -45,15 +28,19 @@ impl<'a, V> Environment<'a, V> {
         self.inner.define(name, value);
     }
 
+    pub fn define_local(&self, name: &'a str, value: impl Into<Option<V>>) -> bool {
+        self.inner.define_local(name, value)
+    }
+
     pub fn define_local_unique(
         &self,
         name: &'a str,
         value: impl Into<Option<V>>,
-    ) -> Result<(), Error<'a>> {
+    ) -> Result<bool, Error<'a>> {
         self.inner.define_local_unique(name, value)
     }
 
-    pub fn scope_of<'x>(&self, name: &'x str) -> Result<ScopeRef, Error<'x>> {
+    pub fn scope_of<'x>(&self, name: &'x str) -> Result<Scope, Error<'x>> {
         self.inner.scope_of(name)
     }
 
@@ -71,10 +58,18 @@ impl<'a, V> Environment<'a, V> {
     }
 }
 
-impl<'a> Environment<'a> {
-    pub fn global() -> Self {
+impl<'a> Default for Environment<'a> {
+    fn default() -> Self {
         Self {
-            inner: Rc::new(InnerEnv::global()),
+            inner: Rc::new(InnerEnv::global(|b| b.to_value())),
+        }
+    }
+}
+
+impl<'a, V> Environment<'a, V> {
+    pub fn global(globals: impl Fn(Builtins) -> V) -> Self {
+        Self {
+            inner: Rc::new(InnerEnv::global(globals)),
         }
     }
 }
@@ -103,19 +98,25 @@ impl<'a> From<Error<'a>> for CroxErrorKind {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct ScopeRef {
-    scope: u32,
+pub enum Scope {
+    Global,
+    Local,
+    Enclosing { distance: u32 },
 }
 
-impl ScopeRef {
+impl Scope {
     fn new(scope: usize) -> Self {
-        Self {
-            scope: u32::try_from(scope).expect("Too many nested scopes"),
+        Self::Enclosing {
+            distance: u32::try_from(scope).expect("Too many nested scopes"),
         }
     }
 
-    fn scope(self) -> usize {
-        usize::try_from(self.scope).unwrap()
+    fn scope(self) -> Option<usize> {
+        match self {
+            Scope::Global => None,
+            Scope::Local => Some(0),
+            Scope::Enclosing { distance } => Some(usize::try_from(distance).unwrap()),
+        }
     }
 }
 
@@ -127,18 +128,6 @@ struct InnerEnv<'a, V> {
     values: RefCell<EnvValues<'a, V>>,
 }
 
-impl<'a> InnerEnv<'a, Value<'a>> {
-    fn global() -> Self {
-        Self {
-            enclosing: None,
-            values: RefCell::new(EnvValues::new(|name| match name {
-                "clock" => Clock.to_value(),
-                _ => unimplemented!("builtin function {}", name),
-            })),
-        }
-    }
-}
-
 impl<'a, V> InnerEnv<'a, V> {
     fn empty() -> Self {
         Self {
@@ -147,23 +136,42 @@ impl<'a, V> InnerEnv<'a, V> {
         }
     }
 
+    fn global(globals: impl Fn(Builtins) -> V) -> Self {
+        Self {
+            enclosing: None,
+            values: RefCell::new(EnvValues::new(globals)),
+        }
+    }
+
     fn define(&self, name: &'a str, value: impl Into<Option<V>>) {
         self.values.borrow_mut().define(name, value);
+    }
+
+    fn define_local(&self, name: &'a str, value: impl Into<Option<V>>) -> bool {
+        if self.enclosing.is_none() {
+            return false;
+        }
+        self.define(name, value);
+        true
     }
 
     fn define_local_unique(
         &self,
         name: &'a str,
         value: impl Into<Option<V>>,
-    ) -> Result<(), Error<'a>> {
-        self.values.borrow_mut().define_local_unique(name, value)
+    ) -> Result<bool, Error<'a>> {
+        if self.enclosing.is_none() {
+            return Ok(false);
+        }
+        self.values.borrow_mut().define_unique(name, value)?;
+        Ok(true)
     }
 
-    fn scope_of<'x>(&self, name: &'x str) -> Result<ScopeRef, Error<'x>> {
+    fn scope_of<'x>(&self, name: &'x str) -> Result<Scope, Error<'x>> {
         self.ancestors()
             .enumerate()
             .find_map(|(scope, this)| this.values.borrow().find(name).is_ok().then_some(scope))
-            .map(ScopeRef::new)
+            .map(Scope::new)
             .ok_or(Error::Undefined(name))
     }
 
@@ -174,8 +182,8 @@ impl<'a, V> InnerEnv<'a, V> {
         }
     }
 
-    fn resolve(&self, scope: ScopeRef) -> Option<&Self> {
-        self.ancestors().nth(scope.scope())
+    fn resolve(&self, scope: usize) -> Option<&Self> {
+        self.ancestors().nth(scope)
     }
 
     fn ancestors(&self) -> impl Iterator<Item = &InnerEnv<'a, V>> + '_ {
@@ -184,55 +192,34 @@ impl<'a, V> InnerEnv<'a, V> {
 }
 
 impl<'a, V: Clone> InnerEnv<'a, V> {
-    fn get<'x>(&self, name: &'x str) -> Result<V, Error<'x>> {
-        let mut this = self;
-        loop {
-            let values = this.values.borrow();
-            match values.get(name) {
-                Ok(val) => return Ok(val.clone()),
-                Err(e @ Error::Undefined(_)) => match &this.enclosing {
-                    Some(parent) => this = parent,
-                    None => return Err(e),
-                },
-                Err(e) => return Err(e),
-            }
+    fn get<'x>(&self, name: &'x str, scope: Scope) -> Result<V, Error<'x>> {
+        match scope.scope() {
+            Some(scope) => match self.resolve(scope) {
+                Some(this) => this.get_local(name),
+                None => Err(Error::Undefined(name)),
+            },
+            None => self.ancestors().last().unwrap().get_local(name),
         }
     }
 
-    fn get_from_scope_ref<'x>(&self, name: &'x str, scope_ref: ScopeRef) -> Result<V, Error<'x>> {
-        match self.resolve(scope_ref) {
-            Some(this) => this.get(name),
-            None => Err(Error::Undefined(name)),
+    fn get_local<'x>(&self, name: &'x str) -> Result<V, Error<'x>> {
+        let values = self.values.borrow();
+        values.get(name).cloned()
+    }
+
+    fn assign<'x>(&self, name: &'x str, value: V, scope: Scope) -> Result<V, Error<'x>> {
+        match scope.scope() {
+            Some(scope) => match self.resolve(scope) {
+                Some(this) => this.assign_local(name, value),
+                None => Err(Error::Undefined(name)),
+            },
+            None => self.ancestors().last().unwrap().assign_local(name, value),
         }
     }
 
-    fn assign<'x>(&self, name: &'x str, mut value: V) -> Result<V, Error<'x>> {
-        let mut this = self;
-        loop {
-            let mut values = this.values.borrow_mut();
-            match values.assign(name, value) {
-                Ok(assigned) => return Ok(assigned.clone()),
-                Err(v) => {
-                    value = v;
-                    match &this.enclosing {
-                        Some(parent) => this = parent,
-                        None => return Err(Error::Undefined(name)),
-                    }
-                }
-            }
-        }
-    }
-
-    fn assign_at_scope_ref<'x>(
-        &self,
-        name: &'x str,
-        scope_ref: ScopeRef,
-        value: V,
-    ) -> Result<V, Error<'x>> {
-        match self.resolve(scope_ref) {
-            Some(this) => this.assign(name, value),
-            None => Err(Error::Undefined(name)),
-        }
+    fn assign_local<'x>(&self, name: &'x str, value: V) -> Result<V, Error<'x>> {
+        let mut values = self.values.borrow_mut();
+        values.assign(name, value).cloned()
     }
 }
 
@@ -250,10 +237,10 @@ impl<'a, V> EnvValues<'a, V> {
         }
     }
 
-    fn new(globals: impl Fn(&'static str) -> V) -> Self {
+    fn new(globals: impl Fn(Builtins) -> V) -> Self {
         Self {
-            names: vec!["clock"],
-            values: vec![Some(globals("clock"))],
+            names: vec![Builtins::Clock.name()],
+            values: vec![Some(globals(Builtins::Clock))],
         }
     }
 
@@ -262,7 +249,7 @@ impl<'a, V> EnvValues<'a, V> {
         self.values.push(value.into());
     }
 
-    fn define_local_unique(
+    fn define_unique(
         &mut self,
         name: &'a str,
         value: impl Into<Option<V>>,
@@ -279,11 +266,8 @@ impl<'a, V> EnvValues<'a, V> {
             .and_then(|idx| self.values[idx].as_ref().ok_or(Error::Uninitialized(name)))
     }
 
-    fn assign<'x>(&mut self, name: &'x str, value: V) -> Result<&V, V> {
-        match self.find(name) {
-            Ok(idx) => Ok(&*self.values[idx].insert(value)),
-            Err(_) => Err(value),
-        }
+    fn assign<'x>(&mut self, name: &'x str, value: V) -> Result<&V, Error<'x>> {
+        self.find(name).map(|idx| &*self.values[idx].insert(value))
     }
 
     fn find<'x>(&self, name: &'x str) -> Result<usize, Error<'x>> {
@@ -298,35 +282,36 @@ impl<'a, V> EnvValues<'a, V> {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+    use Scope::*;
 
     #[test]
     fn test_get_on_empty() {
         let env = Environment::<()>::empty();
-        assert_eq!(env.get("foo"), Err(Error::Undefined("foo")));
+        assert_eq!(env.get("foo", Local), Err(Error::Undefined("foo")));
     }
 
     #[test]
     fn test_get_after_define() {
         let env = Environment::empty();
         env.define("foo", Value::Number(42.0));
-        assert_eq!(env.get("foo"), Ok(Value::Number(42.0)));
+        assert_eq!(env.get("foo", Local), Ok(Value::Number(42.0)));
     }
 
     #[test]
     fn test_get_on_uninitialized() {
         let env = Environment::<()>::empty();
         env.define("foo", None);
-        assert_eq!(env.get("foo"), Err(Error::Uninitialized("foo")));
+        assert_eq!(env.get("foo", Local), Err(Error::Uninitialized("foo")));
     }
 
     #[test]
     fn test_assign_on_empty() {
         let env = Environment::empty();
         assert_eq!(
-            env.assign("foo", Value::Number(42.0)),
+            env.assign("foo", Value::Number(42.0), Local),
             Err(Error::Undefined("foo"))
         );
-        assert_eq!(env.get("foo"), Err(Error::Undefined("foo")));
+        assert_eq!(env.get("foo", Local), Err(Error::Undefined("foo")));
     }
 
     #[test]
@@ -334,10 +319,10 @@ mod tests {
         let env = Environment::empty();
         env.define("foo", Value::Number(42.0));
         assert_eq!(
-            env.assign("foo", Value::Number(24.0)),
+            env.assign("foo", Value::Number(24.0), Local),
             Ok(Value::Number(24.0))
         );
-        assert_eq!(env.get("foo"), Ok(Value::Number(24.0)));
+        assert_eq!(env.get("foo", Local), Ok(Value::Number(24.0)));
     }
 
     #[test]
@@ -345,34 +330,35 @@ mod tests {
         let env = Environment::empty();
         env.define("foo", None);
         assert_eq!(
-            env.assign("foo", Value::Number(24.0)),
+            env.assign("foo", Value::Number(24.0), Local),
             Ok(Value::Number(24.0))
         );
-        assert_eq!(env.get("foo"), Ok(Value::Number(24.0)));
+        assert_eq!(env.get("foo", Local), Ok(Value::Number(24.0)));
     }
 
     #[rustfmt::skip]
     #[test]
     fn test_scope() {
         let env = Environment::empty();
-        env.define("foo", Value::Number(42.0));                   // var foo = 42;
-                                                                  //
-        let scope = env.new_scope();                              // {
-                                                                  //
-        assert_eq!(scope.get("foo"), Ok(Value::Number(42.0)));    //     foo; // 42
-                                                                  //
-        scope.define("foo", Value::Number(24.0));                 //     var foo = 24;
-        assert_eq!(scope.get("foo"), Ok(Value::Number(24.0)));    //     foo; // 24
-                                                                  //
-        let _ = scope.assign("foo", Value::Number(12.0));         //     foo = 12;
-        assert_eq!(scope.get("foo"), Ok(Value::Number(12.0)));    //     foo; // 12
-                                                                  //
-        scope.define("bar", Value::Number(42.0));                 //     var bar = 42;
-        assert_eq!(scope.get("bar"), Ok(Value::Number(42.0)));    //     bar; // 42
-                                                                  //
-        drop(scope);                                              // }
-                                                                  //
-        assert_eq!(env.get("foo"), Ok(Value::Number(42.0)));      // foo; // 42
-        assert_eq!(env.get("bar"), Err(Error::Undefined("bar"))); // bar; // undefined
+        env.define("foo", Value::Number(42.0));                             // var foo = 42;
+                                                                            //
+        let scope = env.new_scope();                                        // {
+                                                                            //
+        assert_eq!(scope.get("foo", Local), Err(Error::Undefined("foo")));  //     foo; // 42
+        assert_eq!(scope.get("foo", Global), Ok(Value::Number(42.0)));      //     foo; // 42
+                                                                            //
+        scope.define("foo", Value::Number(24.0));                           //     var foo = 24;
+        assert_eq!(scope.get("foo", Local), Ok(Value::Number(24.0)));       //     foo; // 24
+                                                                            //
+        let _ = scope.assign("foo", Value::Number(12.0), Local);            //     foo = 12;
+        assert_eq!(scope.get("foo", Local), Ok(Value::Number(12.0)));       //     foo; // 12
+                                                                            //
+        scope.define("bar", Value::Number(42.0));                           //     var bar = 42;
+        assert_eq!(scope.get("bar", Local), Ok(Value::Number(42.0)));       //     bar; // 42
+                                                                            //
+        drop(scope);                                                        // }
+                                                                            //
+        assert_eq!(env.get("foo", Local), Ok(Value::Number(42.0)));         // foo; // 42
+        assert_eq!(env.get("bar", Local), Err(Error::Undefined("bar")));    // bar; // undefined
     }
 }
