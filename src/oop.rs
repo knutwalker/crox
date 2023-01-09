@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{Callable, InterpreterContext, Result, Value};
 
@@ -31,19 +31,23 @@ impl<'a> Callable<'a> for Class<'a> {
 #[derive(Clone)]
 pub struct Instance<'a> {
     pub name: &'a str,
-    fields: HashMap<&'a str, Value<'a>>,
+    fields: RefCell<HashMap<&'a str, Value<'a>>>,
 }
 
 impl<'a> Instance<'a> {
     pub fn new(name: &'a str) -> Self {
         Self {
             name,
-            fields: HashMap::new(),
+            fields: RefCell::new(HashMap::new()),
         }
     }
 
     pub fn get(&self, name: &'a str) -> Option<Value<'a>> {
-        self.fields.get(name).cloned()
+        self.fields.borrow().get(name).cloned()
+    }
+
+    pub fn set(&self, name: &'a str, value: Value<'a>) {
+        self.fields.borrow_mut().insert(name, value);
     }
 }
 

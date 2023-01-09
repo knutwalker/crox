@@ -1,4 +1,4 @@
-use crate::{Callable, CroxErrorKind, Instance, Literal, Node, Type, TypeSet};
+use crate::{Callable, CroxErrorKind, Instance, Literal, Node, Result, Span, Type, TypeSet};
 
 use std::{borrow::Cow, cmp::Ordering, fmt, ops::Deref, rc::Rc};
 
@@ -16,6 +16,18 @@ pub enum Value<'a> {
 type BinOpResult<'a> = Result<Value<'a>, Result<CroxErrorKind, CroxErrorKind>>;
 
 impl<'a> Value<'a> {
+    pub fn as_instance(&self, span: Span) -> Result<&Instance<'a>> {
+        match self {
+            Value::Instance(instance) => Ok(instance),
+            _ => Err(CroxErrorKind::InvalidType {
+                expected: TypeSet::from(Type::Instance),
+                actual: self.typ(),
+            }
+            .at(span)
+            .with_payload(format!("{self:?}"))),
+        }
+    }
+
     pub fn as_num(&self) -> Result<f64, CroxErrorKind> {
         match self {
             Self::Number(n) => Ok(*n),

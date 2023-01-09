@@ -192,20 +192,25 @@ impl<'a, 'o> Interpreter<'a, 'o> {
             }
             Expr::Get { object, name } => {
                 let object = Self::eval_expr(ctx, object)?;
-                match &object.item {
-                    Value::Instance(class) => class.get(name.item).ok_or_else(|| {
-                        CroxErrorKind::UndefinedProperty {
-                            name: name.item.to_owned(),
-                        }
-                        .at(name.span)
-                    }),
-                    _ => Err(CroxErrorKind::InvalidType {
-                        expected: TypeSet::from(Type::Instance),
-                        actual: object.item.typ(),
+                let instance = object.item.as_instance(span)?;
+                instance.get(name.item).ok_or_else(|| {
+                    CroxErrorKind::UndefinedProperty {
+                        name: name.item.to_owned(),
                     }
-                    .at(span)
-                    .with_payload(format!("{:?}", object.item))),
-                }?
+                    .at(name.span)
+                })?
+            }
+            Expr::Set {
+                object,
+                name,
+                value,
+            } => {
+                let object = Self::eval_expr(ctx, object)?;
+                let instance = object.item.as_instance(span)?;
+                let value = Self::eval_expr(ctx, value)?.item;
+                instance.set(name.item, value.clone());
+
+                value
             }
             Expr::Group { expr } => Self::eval_expr(ctx, expr)?.item,
         };

@@ -19,7 +19,7 @@
 //!       block := "{" declaration* "}" ;
 //!
 //!  expression := assignment ;
-//!  assignment := IDENTIFIER "=" assignment | logic_or ;
+//!  assignment := ( call "." )? IDENTIFIER "=" assignment | logic_or ;
 //!    logic_or := logic_and ( "or" logic_and )* ;
 //!   logic_and := equality ( "and" equality )* ;
 //!    eqaulity := comparison ( ( "==" | "!=" ) comparison )* ;
@@ -405,18 +405,22 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         self.assignment()
     }
 
-    ///  assignment := IDENTIFIER "=" assignment | logic_or ;
+    ///  assignment := ( call "." )? IDENTIFIER "=" assignment | logic_or ;
     fn assignment(&mut self) -> Result<ExprNode<'a>> {
         let expr = self.logic_or()?;
 
         if peek!(self, Equal) {
             let value = self.assignment()?;
-            let Expr::Var(Var { name, .. }) = &*expr.item else {
-                return Err(CroxErrorKind::InvalidAssignmentTarget.at(expr.span));
+            let span = expr.span.union(value.span);
+            let assign = match &*expr.item {
+                Expr::Var(Var { name, .. }) => Expr::assign(name, value),
+                Expr::Get { object, name } => Expr::set(object.clone(), *name, value),
+                _ => {
+                    return Err(CroxErrorKind::InvalidAssignmentTarget.at(expr.span));
+                }
             };
 
-            let span = expr.span.union(value.span);
-            return Ok(Expr::assign(name, value).at(span));
+            return Ok(assign.at(span));
         }
 
         Ok(expr)

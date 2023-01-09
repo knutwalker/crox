@@ -118,6 +118,14 @@ impl<'a> Resolver<'a> {
             Expr::Get { object, name: _ } => {
                 Self::eval_expr(ctx, object)?;
             }
+            Expr::Set {
+                object,
+                name: _,
+                value,
+            } => {
+                Self::eval_expr(ctx, value)?;
+                Self::eval_expr(ctx, object)?;
+            }
             Expr::Group { expr } => {
                 Self::eval_expr(ctx, expr)?;
             }
