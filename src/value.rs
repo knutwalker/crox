@@ -174,7 +174,6 @@ impl PartialEq for Value<'_> {
             (Self::Bool(lhs), Self::Bool(rhs)) => lhs == rhs,
             (Self::Number(lhs), Self::Number(rhs)) => lhs == rhs,
             (Self::Str(lhs), Self::Str(rhs)) => lhs == rhs,
-            (Self::Fn(_), Self::Fn(_)) => false,
             _ => false,
         }
     }
@@ -194,13 +193,7 @@ impl PartialOrd for Value<'_> {
 
 impl<'a> From<Literal<'a>> for Value<'a> {
     fn from(literal: Literal<'a>) -> Self {
-        match literal {
-            Literal::Nil => Value::Nil,
-            Literal::True => Value::Bool(true),
-            Literal::False => Value::Bool(false),
-            Literal::Number(num) => Value::Number(num),
-            Literal::String(s) => Value::from(s),
-        }
+        Value::from(&literal)
     }
 }
 
