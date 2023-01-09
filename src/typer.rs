@@ -6,8 +6,8 @@ pub enum Type {
     Bool,
     Number,
     String,
-    Class,
     Callable,
+    Instance,
     Nil,
 }
 
@@ -30,6 +30,7 @@ impl Value<'_> {
             Self::Number(_) => Type::Number,
             Self::Str(_) => Type::String,
             Self::Fn(_) => Type::Callable,
+            Self::Instance(_) => Type::Instance,
         }
     }
 }

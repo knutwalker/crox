@@ -2,8 +2,9 @@
 //!
 //! ```bnf
 //!     program := declaration* EOF ;
-//! declaration := funDecl | varDecl | statement ;
+//! declaration := classDecl | funDecl | varDecl | statement ;
 //!
+//!   classDecl := "class" IDENTIFIER "{" function* "}" ;
 //!     funDecl := "fun" function ;
 //!    function := IDENTIFIER "(" parameters? ")" block ;
 //!     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
@@ -138,14 +139,48 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         }
     }
 
-    /// declaration := funDecl | varDecl | statement ;
+    /// declaration := classDecl | funDecl | varDecl | statement ;
     fn declaration(&mut self) -> Result<StmtNode<'a>> {
         peek!(self, {
             (Var, span) => self.var_decl(span),
+            (Class, span) => self.class_decl(span),
             (Fun, span) => self.fun_decl(span),
         })
         .transpose()?
         .map_or_else(|| self.statement(), Ok)
+    }
+
+    ///   classDecl := "class" IDENTIFIER "{" function* "}" ;
+    fn class_decl(&mut self, start: Span) -> Result<StmtNode<'a>> {
+        let name = self
+            .ident(start)
+            .map_err(|c| c.with_payload(ExpectedFn(FnKind::Class)))?;
+
+        let open_brace = self.expect(LeftBrace, EndOfInput::expected(LeftBrace, name.span))?;
+
+        let mut methods = Vec::new();
+        let mut span = open_brace;
+
+        loop {
+            // not peek! because we don't want to consume the token
+            // if it's a RightBrace, we consume it after the loop
+            // otherwise it's consumed by function_decl
+            match self.tokens.peek() {
+                Some(&(RightBrace, _)) | None => {
+                    break;
+                }
+                Some(_) => {
+                    let method = self.function_decl(FnKind::Method, span)?;
+                    span = method.span;
+                    methods.push(method);
+                }
+            }
+        }
+
+        let close_brace = self.expect(RightBrace, EndOfInput::Unclosed(LeftBrace, open_brace))?;
+        let stmt = Stmt::class(name, methods);
+        let span = open_brace.union(close_brace);
+        Ok(stmt.at(span))
     }
 
     ///     funDecl := "fun" function ;
@@ -689,13 +724,17 @@ impl From<EndOfInput> for CroxError {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum FnKind {
+    Class,
     Function,
+    Method,
 }
 
 impl std::fmt::Display for FnKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            FnKind::Class => f.write_str("class"),
             FnKind::Function => f.write_str("function"),
+            FnKind::Method => f.write_str("method"),
         }
     }
 }

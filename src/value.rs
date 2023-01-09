@@ -1,4 +1,4 @@
-use crate::{Callable, CroxErrorKind, Literal, Node, Type, TypeSet};
+use crate::{Callable, CroxErrorKind, Instance, Literal, Node, Type, TypeSet};
 
 use std::{borrow::Cow, cmp::Ordering, fmt, ops::Deref, rc::Rc};
 
@@ -10,6 +10,7 @@ pub enum Value<'a> {
     Number(f64),
     Str(Cow<'a, str>),
     Fn(Rc<dyn Callable<'a>>),
+    Instance(Rc<Instance<'a>>),
 }
 
 type BinOpResult<'a> = Result<Value<'a>, Result<CroxErrorKind, CroxErrorKind>>;
@@ -241,6 +242,7 @@ impl fmt::Display for Value<'_> {
             Value::Number(n) => fmt::Display::fmt(n, f),
             Value::Str(s) => fmt::Display::fmt(s, f),
             Value::Fn(fun) => fmt::Debug::fmt(fun, f),
+            Value::Instance(inst) => fmt::Debug::fmt(inst, f),
         }
     }
 }

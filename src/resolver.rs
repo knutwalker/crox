@@ -41,6 +41,9 @@ impl<'a> Resolver<'a> {
             Stmt::Expression { expr } => {
                 Self::eval_expr(ctx, expr)?;
             }
+            Stmt::Class(class) => {
+                ctx.env.define(class.name.item, ());
+            }
             Stmt::Function(func) => {
                 ctx.env.define(func.name.item, ());
                 Self::resolve_function(ctx, &func.fun, ScopeKind::Function)?;

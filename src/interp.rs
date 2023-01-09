@@ -1,7 +1,7 @@
 use crate::{
-    BinaryOp, Callable, CroxError, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule,
-    Function, InterpreterContext, LogicalOp, Span, StatementRule, Stmt, StmtNode, Type, TypeSet,
-    UnaryOp, Value, Valued, Var,
+    BinaryOp, Callable, Class, CroxError, CroxErrorKind, Environment, Expr, ExprNode,
+    ExpressionRule, Function, InterpreterContext, LogicalOp, Span, StatementRule, Stmt, StmtNode,
+    Type, TypeSet, UnaryOp, Value, Valued, Var,
 };
 use std::{io::Write, marker::PhantomData};
 
@@ -37,11 +37,17 @@ impl<'a, 'o> Interpreter<'a, 'o> {
             Stmt::Expression { expr } => {
                 let _ = Self::eval_expr(ctx, expr)?;
             }
+            Stmt::Class(class) => {
+                let name = class.name.item;
+                let class = Class::new(name);
+                let class = class.to_value();
+                ctx.env.define(name, class);
+            }
             Stmt::Function(func) => {
                 let name = func.name.item;
                 let func = Function::new(name, func.fun.clone(), ctx.env.clone());
                 let func = func.to_value();
-                ctx.env.define(name, Some(func));
+                ctx.env.define(name, func);
             }
             Stmt::If {
                 condition,

@@ -9,6 +9,7 @@ pub enum Stmt<'a> {
     Expression {
         expr: ExprNode<'a>,
     },
+    Class(ClassDecl<'a>),
     Function(FunctionDecl<'a>),
     If {
         condition: ExprNode<'a>,
@@ -64,6 +65,13 @@ impl<'a> Stmt<'a> {
         Self::Expression { expr }
     }
 
+    pub fn class(name: Node<&'a str>, methods: impl Into<Rc<[Node<FunctionDecl<'a>>]>>) -> Self {
+        Self::Class(ClassDecl {
+            name,
+            methods: methods.into(),
+        })
+    }
+
     pub fn fun(name: Node<&'a str>, fun: FunctionDef<'a>) -> FunctionDecl<'a> {
         FunctionDecl { name, fun }
     }
@@ -115,6 +123,12 @@ impl<'a> Stmt<'a> {
     pub fn at(self, span: impl Into<Span>) -> StmtNode<'a> {
         Node::new(self, span)
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClassDecl<'a> {
+    pub name: Node<&'a str>,
+    pub methods: Rc<[Node<FunctionDecl<'a>>]>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
