@@ -161,7 +161,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                     Value::Fn(callee) => &**callee,
                     _ => {
                         return Err(CroxErrorKind::InvalidType {
-                            expected: TypeSet::from_iter([Type::Function, Type::Class]),
+                            expected: TypeSet::from(Type::Callable),
                             actual: callee.item.typ(),
                         }
                         .at(span)

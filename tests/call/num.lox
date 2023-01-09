@@ -1,1 +1,1 @@
-123(); // [offset 0] Invalid type: expected one of [Function, Class], got 'Number'
+123(); // [offset 0] Invalid type: expected [Callable], got 'Number'

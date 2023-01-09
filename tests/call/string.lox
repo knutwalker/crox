@@ -1,1 +1,1 @@
-"str"(); // [offset 1] Invalid type: expected one of [Function, Class], got 'String'
+"str"(); // [offset 1] Invalid type: expected [Callable], got 'String'

@@ -1,1 +1,1 @@
-nil(); // [offset 0] Invalid type: expected one of [Function, Class], got 'Nil'
+nil(); // [offset 0] Invalid type: expected [Callable], got 'Nil'

@@ -1,1 +1,1 @@
-true(); // [offset 0] Invalid type: expected one of [Function, Class], got 'Bool'
+true(); // [offset 0] Invalid type: expected [Callable], got 'Bool'
