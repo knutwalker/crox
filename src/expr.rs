@@ -34,6 +34,10 @@ pub enum Expr<'a> {
         callee: ExprNode<'a>,
         arguments: Rc<[ExprNode<'a>]>,
     },
+    Get {
+        object: ExprNode<'a>,
+        name: Node<&'a str>,
+    },
     Group {
         expr: ExprNode<'a>,
     },
@@ -202,6 +206,10 @@ impl<'a> Expr<'a> {
             callee,
             arguments: arguments.into(),
         }
+    }
+
+    pub fn get(object: ExprNode<'a>, name: Node<&'a str>) -> Self {
+        Self::Get { object, name }
     }
 
     pub fn group(expr: ExprNode<'a>) -> Self {

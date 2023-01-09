@@ -31,11 +31,19 @@ impl<'a> Callable<'a> for Class<'a> {
 #[derive(Clone)]
 pub struct Instance<'a> {
     pub name: &'a str,
+    fields: HashMap<&'a str, Value<'a>>,
 }
 
 impl<'a> Instance<'a> {
     pub fn new(name: &'a str) -> Self {
-        Self { name }
+        Self {
+            name,
+            fields: HashMap::new(),
+        }
+    }
+
+    pub fn get(&self, name: &'a str) -> Option<Value<'a>> {
+        self.fields.get(name).cloned()
     }
 }
 

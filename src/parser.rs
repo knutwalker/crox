@@ -27,7 +27,7 @@
 //!        term := factor ( ( "+" | "-" ) factor )* ;
 //!      factor := unary ( ( "*" | "/" ) unary )* ;
 //!       unary := ( "!" | "-" ) unary | call ;
-//!        call := primary ( "(" arguments? ")" )* ;
+//!        call := primary ( "(" arguments? ")" | "." IDENTIFIER )* ;
 //!     primary := NUMBER | STRING | IDENTIFIER | "true" | "false" | "nil" | "(" expression ")" ;
 //!
 //!   arguments := expression ( "," expression )* ;
@@ -497,14 +497,26 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         }
     }
 
-    ///        call := primary ( "(" arguments? ")" )* ;
+    ///        call := primary ( "(" arguments? ")" | "." IDENTIFIER )* ;
     fn call(&mut self) -> Result<ExprNode<'a>> {
         let mut expr = self.primary()?;
 
-        while let Some(span) = peek!(self, { (LeftParen, start) => start }) {
-            let (args, end) = self.arguments(span)?;
-            let span = expr.span.union(end);
-            expr = Expr::call(expr, args).at(span);
+        loop {
+            let next = peek!(self, {
+                (LeftParen, span) => {
+                    let (args, end) = self.arguments(span)?;
+                    let span = expr.span.union(end);
+                    expr = Expr::call(expr, args).at(span);
+                },
+                (Dot, span) => {
+                    let name = self.ident(span)?;
+                    let span = expr.span.union(name.span);
+                    expr = Expr::get(expr, name).at(span);
+                },
+            });
+            if next.is_none() {
+                break;
+            }
         }
 
         Ok(expr)

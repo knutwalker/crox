@@ -190,6 +190,23 @@ impl<'a, 'o> Interpreter<'a, 'o> {
 
                 callee.call(ctx, &arguments)?
             }
+            Expr::Get { object, name } => {
+                let object = Self::eval_expr(ctx, object)?;
+                match &object.item {
+                    Value::Instance(class) => class.get(name.item).ok_or_else(|| {
+                        CroxErrorKind::UndefinedProperty {
+                            name: name.item.to_owned(),
+                        }
+                        .at(name.span)
+                    }),
+                    _ => Err(CroxErrorKind::InvalidType {
+                        expected: TypeSet::from(Type::Instance),
+                        actual: object.item.typ(),
+                    }
+                    .at(span)
+                    .with_payload(format!("{:?}", object.item))),
+                }?
+            }
             Expr::Group { expr } => Self::eval_expr(ctx, expr)?.item,
         };
 

@@ -115,6 +115,9 @@ impl<'a> Resolver<'a> {
                     .iter()
                     .try_for_each(|arg| Self::eval_expr(ctx, arg))?;
             }
+            Expr::Get { object, name: _ } => {
+                Self::eval_expr(ctx, object)?;
+            }
             Expr::Group { expr } => {
                 Self::eval_expr(ctx, expr)?;
             }
