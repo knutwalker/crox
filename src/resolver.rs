@@ -9,12 +9,12 @@ pub struct Resolver<'a> {
     ctx: ResolveContext<'a>,
 }
 
-pub type ResolveContext<'a> = Context<'a, ScopeType, ()>;
+pub type ResolveContext<'a> = Context<'a, ScopeKind, ()>;
 
 impl<'a> Resolver<'a> {
     pub fn new() -> Self {
         Self {
-            ctx: ResolveContext::new(Environment::empty(), ScopeType::TopLevel),
+            ctx: ResolveContext::new(Environment::empty(), ScopeKind::TopLevel),
         }
     }
 }
@@ -26,7 +26,7 @@ impl<'a> Default for Resolver<'a> {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum ScopeType {
+pub enum ScopeKind {
     TopLevel,
     Function,
 }
@@ -43,7 +43,7 @@ impl<'a> Resolver<'a> {
             }
             Stmt::Function(func) => {
                 ctx.env.define(func.name.item, ());
-                Self::resolve_function(ctx, &func.fun, ScopeType::Function)?;
+                Self::resolve_function(ctx, &func.fun, ScopeKind::Function)?;
             }
             Stmt::If {
                 condition,
@@ -60,7 +60,7 @@ impl<'a> Resolver<'a> {
                 Self::eval_expr(ctx, expr)?;
             }
             Stmt::Return { expr } => {
-                if ctx.data == ScopeType::TopLevel {
+                if ctx.data == ScopeKind::TopLevel {
                     return Err(CroxErrorKind::ReturnFromTopLevel.at(stmt.span()));
                 }
                 if let Some(expr) = expr.as_ref() {
@@ -90,7 +90,7 @@ impl<'a> Resolver<'a> {
         match &*expr.item {
             Expr::Literal(_) => {}
             Expr::Var(var) => Self::resolve_local(ctx, var),
-            Expr::Fun(func) => Self::resolve_function(ctx, func, ScopeType::Function)?,
+            Expr::Fun(func) => Self::resolve_function(ctx, func, ScopeKind::Function)?,
             Expr::Assignment { var, value } => {
                 Self::eval_expr(ctx, value)?;
                 Self::resolve_local(ctx, var)
@@ -128,7 +128,7 @@ impl<'a> Resolver<'a> {
     fn resolve_function(
         ctx: &mut ResolveContext<'a>,
         func: &FunctionDef<'a>,
-        scope_type: ScopeType,
+        scope_type: ScopeKind,
     ) -> Result {
         ctx.run_with_new_scope(|ctx| {
             let mut guard = ctx.swap_data(scope_type);
