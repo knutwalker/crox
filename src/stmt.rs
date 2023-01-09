@@ -64,8 +64,8 @@ impl<'a> Stmt<'a> {
         Self::Expression { expr }
     }
 
-    pub fn fun(name: Node<&'a str>, fun: FunctionDef<'a>) -> Self {
-        Self::Function(FunctionDecl { name, fun })
+    pub fn fun(name: Node<&'a str>, fun: FunctionDef<'a>) -> FunctionDecl<'a> {
+        FunctionDecl { name, fun }
     }
 
     pub fn if_(condition: ExprNode<'a>, then_: StmtNode<'a>) -> Self {

@@ -33,8 +33,9 @@
 //!  parameters := IDENTIFIER ( "," IDENTIFIER )* ;
 //!```
 use crate::{
-    BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule, FunctionDef, Node, Range,
-    Result, Source, Span, StatementRule, Stmt, StmtNode, Token, TokenSet, TokenType, UnaryOp, Var,
+    BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule, FunctionDecl, FunctionDef,
+    Node, Range, Result, Source, Span, StatementRule, Stmt, StmtNode, Token, TokenSet, TokenType,
+    UnaryOp, Var,
 };
 use std::{iter::Peekable, marker::PhantomData};
 use TokenType::*;
@@ -141,7 +142,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     fn declaration(&mut self) -> Result<StmtNode<'a>> {
         peek!(self, {
             (Var, span) => self.var_decl(span),
-            (Fun, span) => self.fun_decl(FnKind::Function, span),
+            (Fun, span) => self.fun_decl(span),
         })
         .transpose()?
         .map_or_else(|| self.statement(), Ok)
@@ -150,7 +151,12 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     ///     funDecl := "fun" function ;
     ///    function := IDENTIFIER "(" parameters? ")" block ;
     ///  parameters := IDENTIFIER ( "," IDENTIFIER )* ;
-    fn fun_decl(&mut self, kind: FnKind, start: Span) -> Result<StmtNode<'a>> {
+    fn fun_decl(&mut self, start: Span) -> Result<StmtNode<'a>> {
+        self.function_decl(FnKind::Function, start)
+            .map(|f| f.map(Stmt::Function))
+    }
+
+    fn function_decl(&mut self, kind: FnKind, start: Span) -> Result<Node<FunctionDecl<'a>>> {
         let name = self
             .ident(start)
             .map_err(|c| c.with_payload(ExpectedFn(kind)))?;
@@ -158,7 +164,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let fn_def = self.function_def(name.span)?;
         let span = start.union(fn_def.span);
 
-        Ok(Stmt::fun(name, fn_def.item).at(span))
+        Ok(Node::new(Stmt::fun(name, fn_def.item), span))
     }
 
     fn function_def(&mut self, start: Span) -> Result<Node<FunctionDef<'a>>> {
