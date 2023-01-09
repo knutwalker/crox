@@ -230,6 +230,9 @@ pub enum CroxErrorKind {
     ReturnFromTopLevel,
 
     #[cfg_attr(feature = "fancy", diagnostic())]
+    UndefinedProperty { name: String },
+
+    #[cfg_attr(feature = "fancy", diagnostic())]
     Other(String),
 }
 
@@ -303,6 +306,7 @@ impl CroxErrorKind {
             Self::DuplicateBinding { .. } => "Multiple bindings: ",
             Self::ArityMismatch { .. } => "Arity mismatch: ",
             Self::ReturnFromTopLevel => "Invalid statement: ",
+            Self::UndefinedProperty { .. } => "Undefined property: ",
             Self::Other(_) => "Error: ",
         }
     }
@@ -388,6 +392,9 @@ impl Display for FancyCroxErrorKind<'_> {
             CroxErrorKind::ReturnFromTopLevel => {
                 f.write_str("Can't return from top-level code")?;
             }
+            CroxErrorKind::UndefinedProperty { name } => {
+                write!(f, "'{name}'")?;
+            }
             CroxErrorKind::Other(msg) => {
                 write!(f, "{msg}")?;
             }
@@ -423,7 +430,8 @@ impl From<&CroxErrorKind> for CroxErrorScope {
             | UninitializedVariable { .. }
             | DuplicateBinding { .. }
             | ArityMismatch { .. }
-            | ReturnFromTopLevel => Self::Interpreter,
+            | ReturnFromTopLevel
+            | UndefinedProperty { .. } => Self::Interpreter,
             Other(_) => Self::Custom,
         }
     }
