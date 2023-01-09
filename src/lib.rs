@@ -41,7 +41,7 @@ pub use value::{Ast, Value, Valued};
 
 use crate::error::ErrorsCollector;
 
-pub fn run(mut out: impl Write, content: &str) -> Result<Ast<'_, StmtNode<'_>>, CroxErrors> {
+pub fn run(mut out: impl Write, content: &str) -> Result<Ast<'_>, CroxErrors> {
     let env = Environment::default();
     let source = scan(content);
     let tokens = source.collect_all(source)?;
@@ -51,7 +51,7 @@ pub fn run(mut out: impl Write, content: &str) -> Result<Ast<'_, StmtNode<'_>>, 
     Ok(Ast::new(values))
 }
 
-pub fn eval(mut out: impl Write, content: &str) -> Result<Ast<'_, ExprNode<'_>>, CroxErrors> {
+pub fn eval(mut out: impl Write, content: &str) -> Result<Ast<'_>, CroxErrors> {
     let env = Environment::default();
     let source = scan(content);
     let tokens = source.collect_all(source)?;
@@ -70,7 +70,7 @@ pub fn run_as_script(
     out: impl Write,
     err: impl Write,
     content: &str,
-) -> Result<Ast<'_, StmtNode<'_>>, i32> {
+) -> Result<Ast<'_>, i32> {
     run(out, content).map_err(move |e| {
         let scope = e.scope();
         report_error(fancy, err, e);
@@ -88,9 +88,9 @@ pub fn run_as_evaluator(fancy: bool, mut out: impl Write, err: impl Write, conte
     }
 }
 
-pub fn print_ast<T: std::fmt::Debug>(mut out: impl Write, verbose: bool, ast: Ast<'_, Node<T>>) {
+pub fn print_ast(mut out: impl Write, verbose: bool, ast: Ast<'_>) {
     for node in ast.iter() {
-        let value = &node.value;
+        let value = &node.item;
         if verbose {
             writeln!(out, "{:#?}", node.item).unwrap();
             writeln!(out, "{value:#?}").unwrap();

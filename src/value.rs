@@ -1,4 +1,4 @@
-use crate::{Callable, CroxErrorKind, Literal, Type, TypeSet};
+use crate::{Callable, CroxErrorKind, Literal, Node, Type, TypeSet};
 
 use std::{borrow::Cow, cmp::Ordering, fmt, ops::Deref, rc::Rc};
 
@@ -138,33 +138,29 @@ impl<'a> Value<'a> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Valued<'a, T> {
-    pub item: T,
-    pub value: Value<'a>,
-}
+pub type Valued<'a> = Node<Value<'a>>;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Ast<'a, T> {
-    values: Vec<Valued<'a, T>>,
+pub struct Ast<'a> {
+    values: Vec<Valued<'a>>,
 }
 
-impl<'a, T> Ast<'a, T> {
-    pub fn new(values: Vec<Valued<'a, T>>) -> Self {
+impl<'a> Ast<'a> {
+    pub fn new(values: Vec<Valued<'a>>) -> Self {
         Self { values }
     }
 }
 
-impl<'a, T> Deref for Ast<'a, T> {
-    type Target = [Valued<'a, T>];
+impl<'a> Deref for Ast<'a> {
+    type Target = [Valued<'a>];
 
     fn deref(&self) -> &Self::Target {
         &self.values
     }
 }
 
-impl<'a, T> FromIterator<Valued<'a, T>> for Ast<'a, T> {
-    fn from_iter<I: IntoIterator<Item = Valued<'a, T>>>(iter: I) -> Self {
+impl<'a> FromIterator<Valued<'a>> for Ast<'a> {
+    fn from_iter<I: IntoIterator<Item = Valued<'a>>>(iter: I) -> Self {
         Self {
             values: iter.into_iter().collect(),
         }
