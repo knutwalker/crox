@@ -29,6 +29,7 @@ impl<'a> Default for Resolver<'a> {
 pub enum ScopeKind {
     TopLevel,
     Function,
+    Method,
 }
 
 impl<'a> Resolver<'a> {
@@ -43,6 +44,9 @@ impl<'a> Resolver<'a> {
             }
             Stmt::Class(class) => {
                 ctx.env.define(class.name.item, ());
+                for method in class.methods.iter() {
+                    Self::resolve_function(ctx, &method.item.fun, ScopeKind::Method)?;
+                }
             }
             Stmt::Function(func) => {
                 ctx.env.define(func.name.item, ());

@@ -39,7 +39,21 @@ impl<'a, 'o> Interpreter<'a, 'o> {
             }
             Stmt::Class(class) => {
                 let name = class.name.item;
-                let class = Class::new(name);
+                ctx.env.define(name, Value::Nil);
+
+                let methods = class
+                    .methods
+                    .iter()
+                    .map(|method| {
+                        let name = method.item.name.item;
+                        let fun = method.item.fun.clone();
+                        let fun = Function::new(name, fun, ctx.env.clone());
+                        let fun = fun.to_value();
+                        (name, fun)
+                    })
+                    .collect();
+
+                let class = Class::new(name, methods);
                 let class = class.to_value();
                 ctx.env.define(name, class);
             }
