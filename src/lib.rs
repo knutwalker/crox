@@ -115,7 +115,6 @@ pub fn print_ast(mut out: impl Write, verbose: bool, ast: Ast<'_>) {
     }
 }
 
-#[cfg(feature = "fancy")]
 pub fn report_error(fancy: bool, mut w: impl Write, mut err: CroxErrors) {
     if fancy {
         let err = miette::Report::new(err);
@@ -124,12 +123,6 @@ pub fn report_error(fancy: bool, mut w: impl Write, mut err: CroxErrors) {
         err.set_fancy(false);
         writeln!(w, "{err:#}").unwrap();
     }
-}
-
-#[cfg(not(feature = "fancy"))]
-pub fn report_error(_fancy: bool, mut w: impl Write, mut err: CroxErrors) {
-    err.set_fancy(false);
-    writeln!(w, "{err:#}").unwrap();
 }
 
 #[cfg(test)]

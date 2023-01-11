@@ -5,18 +5,16 @@ use std::{
     sync::Arc,
 };
 
-#[cfg(feature = "fancy")]
 use miette::Diagnostic;
 
 pub type Result<T = (), E = CroxError> = core::result::Result<T, E>;
 
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "fancy", derive(Diagnostic))]
-#[cfg_attr(feature = "fancy", diagnostic())]
+#[derive(Clone, Debug, Diagnostic)]
+#[diagnostic()]
 pub struct CroxErrors {
-    #[cfg_attr(feature = "fancy", source_code)]
+    #[source_code]
     src: String,
-    #[cfg_attr(feature = "fancy", related)]
+    #[related]
     errors: Vec<CroxError>,
     fancy: bool,
 }
@@ -54,7 +52,7 @@ impl CroxErrors {
 
 impl Display for CroxErrors {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.fancy && cfg!(feature = "fancy") {
+        if self.fancy {
             writeln!(f, "Errors while running in crox")?;
         } else {
             for err in &self.errors {
@@ -112,12 +110,11 @@ impl<T, I: IntoIterator<Item = Result<T>>> ErrorsCollector<T> for I {
     }
 }
 
-#[derive(Clone)]
-#[cfg_attr(feature = "fancy", derive(Diagnostic))]
-#[cfg_attr(feature = "fancy", diagnostic())]
+#[derive(Clone, Diagnostic)]
+#[diagnostic()]
 pub struct CroxError {
     pub kind: CroxErrorKind,
-    #[cfg_attr(feature = "fancy", label("{}", kind))]
+    #[label("{}", kind)]
     pub span: Range,
     pub payload: Option<Arc<dyn Display + Send + Sync + 'static>>,
     pub fancy: bool,
@@ -141,7 +138,7 @@ impl CroxError {
 
 impl Display for CroxError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.fancy && cfg!(feature = "fancy") {
+        if self.fancy {
             if let Some(payload) = self.payload.as_deref() {
                 write!(f, "{payload} ")?;
             }
@@ -158,7 +155,7 @@ impl Display for CroxError {
 
 impl StdError for CroxError {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        (!self.fancy || cfg!(not(feature = "fancy"))).then_some(&self.kind)
+        (!self.fancy).then_some(&self.kind)
     }
 }
 
@@ -179,60 +176,59 @@ impl Debug for CroxError {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "fancy", derive(Diagnostic))]
+#[derive(Clone, Debug, PartialEq, Eq, Diagnostic)]
 pub enum CroxErrorKind {
-    #[cfg_attr(feature = "fancy", diagnostic())]
+    #[diagnostic()]
     UnexpectedInput { input: char },
 
-    #[cfg_attr(feature = "fancy", diagnostic())]
+    #[diagnostic()]
     UnexpectedEndOfInput { expected: Option<TokenSet> },
 
-    #[cfg_attr(feature = "fancy", diagnostic())]
+    #[diagnostic()]
     UnclosedStringLiteral,
 
-    #[cfg_attr(feature = "fancy", diagnostic())]
+    #[diagnostic()]
     UnexpectedToken {
         expected: TokenSet,
         actual: TokenType,
     },
 
-    #[cfg_attr(feature = "fancy", diagnostic())]
+    #[diagnostic()]
     UnclosedDelimiter { unclosed: TokenType },
 
-    #[cfg_attr(feature = "fancy", diagnostic())]
+    #[diagnostic()]
     InvalidNumberLiteral {
         reason: Option<std::num::ParseFloatError>,
     },
 
-    #[cfg_attr(feature = "fancy", diagnostic())]
+    #[diagnostic()]
     InvalidAssignmentTarget,
 
-    #[cfg_attr(feature = "fancy", diagnostic())]
+    #[diagnostic()]
     TooManyArguments,
 
-    #[cfg_attr(feature = "fancy", diagnostic())]
+    #[diagnostic()]
     InvalidType { expected: TypeSet, actual: Type },
 
-    #[cfg_attr(feature = "fancy", diagnostic())]
+    #[diagnostic()]
     UndefinedVariable { name: String },
 
-    #[cfg_attr(feature = "fancy", diagnostic())]
+    #[diagnostic()]
     UninitializedVariable { name: String },
 
-    #[cfg_attr(feature = "fancy", diagnostic())]
+    #[diagnostic()]
     DuplicateBinding { name: String },
 
-    #[cfg_attr(feature = "fancy", diagnostic())]
+    #[diagnostic()]
     ArityMismatch { expected: usize, actual: usize },
 
-    #[cfg_attr(feature = "fancy", diagnostic())]
+    #[diagnostic()]
     ReturnFromTopLevel,
 
-    #[cfg_attr(feature = "fancy", diagnostic())]
+    #[diagnostic()]
     UndefinedProperty { name: String },
 
-    #[cfg_attr(feature = "fancy", diagnostic())]
+    #[diagnostic()]
     Other(String),
 }
 
@@ -333,7 +329,7 @@ impl<'a> FancyCroxErrorKind<'a> {
 
 impl Display for FancyCroxErrorKind<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if !self.fancy || !cfg!(feature = "fancy") {
+        if !self.fancy {
             f.write_str(self.kind.prefix())?;
         }
 
