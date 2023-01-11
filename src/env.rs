@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, fmt::Display, io::Write, rc::Rc};
 
 use crate::{Builtins, CroxErrorKind, Value};
 
@@ -55,6 +55,12 @@ impl<'a, V> Environment<'a, V> {
     pub fn run_with_new_scope<T>(&self, f: impl FnOnce(&Self) -> T) -> T {
         let scope = self.new_scope();
         f(&scope)
+    }
+}
+
+impl Environment<'_> {
+    pub fn print_vars(&self, out: impl Write) {
+        self.inner.print_vars(out)
     }
 }
 
@@ -223,6 +229,14 @@ impl<'a, V: Clone> InnerEnv<'a, V> {
     }
 }
 
+impl<'a, V: Display> InnerEnv<'a, V> {
+    fn print_vars(&self, mut out: impl Write) {
+        for this in self.ancestors() {
+            this.values.borrow().print_vars(&mut out);
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct EnvValues<'a, V> {
     names: Vec<&'a str>,
@@ -275,6 +289,16 @@ impl<'a, V> EnvValues<'a, V> {
             .iter()
             .rposition(|&n| n == name)
             .ok_or(Error::Undefined(name))
+    }
+}
+
+impl<'a, V: Display> EnvValues<'a, V> {
+    fn print_vars(&self, mut out: impl Write) {
+        for (name, value) in self.names.iter().zip(self.values.iter()) {
+            if let Some(value) = value {
+                writeln!(out, "{name} = {value}").unwrap();
+            }
+        }
     }
 }
 

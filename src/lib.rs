@@ -43,8 +43,16 @@ pub use value::{Ast, Value, Valued};
 
 use crate::error::ErrorsCollector;
 
-pub fn run(mut out: impl Write, content: &str) -> Result<Ast<'_>, CroxErrors> {
+pub fn run(out: impl Write, content: &str) -> Result<Ast<'_>, CroxErrors> {
     let env = Environment::default();
+    run_with_env(out, env, content)
+}
+
+pub fn run_with_env<'a>(
+    mut out: impl Write,
+    env: Environment<'a>,
+    content: &'a str,
+) -> Result<Ast<'a>, CroxErrors> {
     let source = scan(content);
     let tokens = source.collect_all(source)?;
     let statements = stmt_parser(source, tokens).collect_all(source)?;
@@ -53,8 +61,11 @@ pub fn run(mut out: impl Write, content: &str) -> Result<Ast<'_>, CroxErrors> {
     Ok(Ast::new(values))
 }
 
-pub fn eval(mut out: impl Write, content: &str) -> Result<Ast<'_>, CroxErrors> {
-    let env = Environment::default();
+pub fn eval_with_env<'a>(
+    mut out: impl Write,
+    env: Environment<'a>,
+    content: &'a str,
+) -> Result<Ast<'a>, CroxErrors> {
     let source = scan(content);
     let tokens = source.collect_all(source)?;
     let statements = expr_parser(source, tokens).collect_all(source)?;
@@ -84,7 +95,8 @@ pub fn run_as_script(
 }
 
 pub fn run_as_evaluator(fancy: bool, mut out: impl Write, err: impl Write, content: &str) {
-    match eval(&mut out, content) {
+    let env = Environment::default();
+    match eval_with_env(&mut out, env, content) {
         Ok(ast) => print_ast(out, false, ast),
         Err(e) => report_error(fancy, err, e),
     }

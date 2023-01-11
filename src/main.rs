@@ -1,4 +1,4 @@
-use crox::{CroxError, CroxErrorKind, CroxErrors, TokenType};
+use crox::{CroxError, CroxErrorKind, CroxErrors, Environment, TokenType};
 use std::{
     fs::{self, File},
     io::{self, Read, Seek, Write},
@@ -79,26 +79,39 @@ fn run_script(content: &str) -> crox::Result<(), i32> {
 fn repl() -> io::Result<()> {
     let verbose = std::env::var_os("CROX_VERBOSE").is_some();
 
-    let mut line = String::new();
+    let lines = bumpalo::Bump::new();
+    let env = Environment::default();
 
     loop {
         print!("> ");
         io::stdout().flush()?;
 
-        line.clear();
+        let mut line = String::new();
         io::stdin().read_line(&mut line)?;
 
         if line.is_empty() {
             break;
         }
 
-        handle(io::stdout(), io::stderr(), verbose, line.trim());
+        let line = lines.alloc_str(line.trim_end());
+        handle_with_env(io::stdout(), io::stderr(), verbose, &env, line);
     }
 
     Ok(())
 }
 
-fn handle(mut out: impl Write, err: impl Write, verbose: bool, line: &str) {
+#[cfg(test)]
+fn handle(out: impl Write, err: impl Write, verbose: bool, line: &str) {
+    handle_with_env(out, err, verbose, &Environment::default(), line)
+}
+
+fn handle_with_env<'a>(
+    mut out: impl Write,
+    err: impl Write,
+    verbose: bool,
+    env: &Environment<'a>,
+    line: &'a str,
+) {
     fn is_semicolon_instead_of_eof(error: &CroxError) -> bool {
         if let CroxErrorKind::UnexpectedEndOfInput {
             expected: Some(expected),
@@ -112,13 +125,20 @@ fn handle(mut out: impl Write, err: impl Write, verbose: bool, line: &str) {
         false
     }
 
-    match crox::run(&mut out, line) {
+    if line == ":vars" {
+        env.print_vars(out);
+        return;
+    }
+
+    match crox::run_with_env(&mut out, env.clone(), line) {
         Ok(res) => crox::print_ast(out, verbose, res),
         Err(e) => match e.errors() {
-            [e] if is_semicolon_instead_of_eof(e) => match crox::eval(&mut out, line) {
-                Ok(res) => crox::print_ast(out, verbose, res),
-                Err(e) => report_error(err, e),
-            },
+            [e] if is_semicolon_instead_of_eof(e) => {
+                match crox::eval_with_env(&mut out, env.clone(), line) {
+                    Ok(res) => crox::print_ast(out, verbose, res),
+                    Err(e) => report_error(err, e),
+                }
+            }
             _ => report_error(err, e),
         },
     }
