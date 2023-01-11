@@ -1,4 +1,4 @@
-use crate::{Range, Source, TokenSet, TokenType, Type, TypeSet};
+use crate::{Range, TokenSet, TokenType, Type, TypeSet};
 use std::{
     error::Error as StdError,
     fmt::{Debug, Display},
@@ -73,11 +73,11 @@ struct CollectErrors<T> {
 }
 
 impl<T> CollectErrors<T> {
-    pub fn into_result(self, src: Source<'_>) -> Result<Vec<T>, CroxErrors> {
+    pub fn into_result(self, src: &str) -> Result<Vec<T>, CroxErrors> {
         if self.errors.is_empty() {
             Ok(self.values)
         } else {
-            Err(CroxErrors::from((src.source, self.errors)))
+            Err(CroxErrors::from((src, self.errors)))
         }
     }
 }
@@ -99,11 +99,11 @@ impl<T> FromIterator<Result<T>> for CollectErrors<T> {
 }
 
 pub trait ErrorsCollector<T> {
-    fn collect_all(self, source: Source<'_>) -> Result<Vec<T>, CroxErrors>;
+    fn collect_all(self, source: &str) -> Result<Vec<T>, CroxErrors>;
 }
 
 impl<T, I: IntoIterator<Item = Result<T>>> ErrorsCollector<T> for I {
-    fn collect_all(self, source: Source<'_>) -> Result<Vec<T>, CroxErrors> {
+    fn collect_all(self, source: &str) -> Result<Vec<T>, CroxErrors> {
         self.into_iter()
             .collect::<CollectErrors<_>>()
             .into_result(source)

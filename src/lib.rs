@@ -53,11 +53,8 @@ pub fn run_with_env<'a>(
     env: Environment<'a>,
     content: &'a str,
 ) -> Result<Ast<'a>, CroxErrors> {
-    let source = scan(content);
-    let tokens = source.collect_all(source)?;
-    let statements = stmt_parser(source, tokens).collect_all(source)?;
-    let resolved = stmt_resolver(statements).collect_all(source)?;
-    let values = stmt_interpreter(&mut out, env, resolved).collect_all(source)?;
+    let resolved = parse(content)?;
+    let values = stmt_interpreter(&mut out, env, resolved).collect_all(content)?;
     Ok(Ast::new(values))
 }
 
@@ -67,11 +64,19 @@ pub fn eval_with_env<'a>(
     content: &'a str,
 ) -> Result<Ast<'a>, CroxErrors> {
     let source = scan(content);
-    let tokens = source.collect_all(source)?;
-    let statements = expr_parser(source, tokens).collect_all(source)?;
-    let resolved = expr_resolver(statements).collect_all(source)?;
-    let values = expr_interpreter(&mut out, env, resolved).collect_all(source)?;
+    let tokens = source.collect_all(content)?;
+    let statements = expr_parser(source, tokens).collect_all(content)?;
+    let resolved = expr_resolver(statements).collect_all(content)?;
+    let values = expr_interpreter(&mut out, env, resolved).collect_all(content)?;
     Ok(Ast::new(values))
+}
+
+pub fn parse(content: &str) -> Result<Vec<StmtNode<'_>>, CroxErrors> {
+    let source = scan(content);
+    let tokens = source.collect_all(content)?;
+    let statements = stmt_parser(source, tokens).collect_all(content)?;
+    let resolved = stmt_resolver(statements).collect_all(content)?;
+    Ok(resolved)
 }
 
 pub fn scan(content: &str) -> Source<'_> {
