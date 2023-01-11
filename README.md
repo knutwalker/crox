@@ -8,5 +8,5 @@ The crustacean's lox -- Following the book "Crafting interpreters" in Rust.
 To run scanner benchmarks:
 
 ```
-cargo +nightly bench --all-features -- scanner::benches
+cargo +nightly bench -- scanner::benches
 ```

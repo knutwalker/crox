@@ -9,18 +9,6 @@ fn run_test(content: &str, expected: Vec<Token>) -> Result<(), CroxErrors> {
 
     assert_eq!(actual, expected);
 
-    #[cfg(feature = "chumsky")]
-    {
-        let actual = source.scan_chumsky()?;
-        assert_eq!(actual, expected);
-    }
-
-    #[cfg(feature = "nom")]
-    {
-        let actual = source.scan_nom()?;
-        assert_eq!(actual, expected);
-    }
-
     Ok(())
 }
 
