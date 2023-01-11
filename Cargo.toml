@@ -7,7 +7,13 @@ edition = "2021"
 
 [dependencies]
 bumpalo = "3.11.1"
+chrono = "0.4.23"
+clap = { version = "4.0.32", default_features = false, features = ["std", "help"] }
+crossterm = "0.24"  # keep version in sync with reedline
+directories = "4.0.1"
 miette = { version = "5.5.0", features = ["fancy"] }
+nu-ansi-term = "0.46.0"
+reedline = { version = "0.14.0", features = ["system_clipboard", "sqlite-dynlib"] }
 
 [profile.release]
 codegen-units = 1

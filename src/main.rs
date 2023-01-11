@@ -1,23 +1,61 @@
-use crox::{CroxError, CroxErrorKind, CroxErrors, Environment, TokenType};
+#![warn(clippy::all, clippy::nursery)]
+#![warn(clippy::pedantic)]
+#![warn(
+    bad_style,
+    dead_code,
+    improper_ctypes,
+    missing_copy_implementations,
+    missing_debug_implementations,
+    // missing_docs,
+    no_mangle_generic_items,
+    non_shorthand_field_patterns,
+    overflowing_literals,
+    path_statements,
+    patterns_in_fns_without_body,
+    private_in_public,
+    rust_2018_idioms,
+    trivial_casts,
+    trivial_numeric_casts,
+    unconditional_recursion,
+    unsafe_op_in_unsafe_fn,
+    unused_allocation,
+    unused_comparisons,
+    unused_extern_crates,
+    unused_import_braces,
+    unused_parens,
+    unused_qualifications,
+    unused_results,
+    unused,
+    while_true
+)]
+
+mod frontend;
+mod repl;
+
 use std::{
     fs::{self, File},
-    io::{self, Read, Seek, Write},
+    io::{self, Read, Seek},
     path::Path,
 };
 
 fn main() {
-    if let Err(e) = run() {
-        eprintln!("{}", e);
-    }
+    let ec = match run() {
+        Ok(ec) => ec,
+        Err(e) => {
+            eprintln!("{e}");
+            1
+        }
+    };
+    std::process::exit(ec);
 }
 
-fn run() -> io::Result<()> {
+fn run() -> io::Result<i32> {
     let mut args = std::env::args_os().skip(1);
     let file = args.next();
 
     if args.next().is_some() {
         println!("Usage: crox [script]");
-        std::process::exit(64);
+        return Ok(64);
     }
 
     let res = match open_script(file)? {
@@ -26,47 +64,46 @@ fn run() -> io::Result<()> {
     };
 
     if let Err(e) = res {
-        std::process::exit(e)
+        return Ok(e);
     }
 
-    Ok(())
+    Ok(0)
 }
 
 fn open_script(file: Option<impl AsRef<Path>>) -> io::Result<Option<String>> {
-    match file {
-        Some(file) => fs::read_to_string(file).map(Some),
-        None => {
-            #[cfg(unix)]
-            let stdio_file = {
-                use std::os::unix::prelude::AsFd;
-                let stdin = io::stdin();
-                let stdin = stdin.as_fd().try_clone_to_owned();
-                stdin.map(File::from).ok()
-            };
+    if let Some(file) = file {
+        fs::read_to_string(file).map(Some)
+    } else {
+        #[cfg(unix)]
+        let stdio_file = {
+            use std::os::unix::prelude::AsFd;
+            let stdin = io::stdin();
+            let stdin = stdin.as_fd().try_clone_to_owned();
+            stdin.map(File::from).ok()
+        };
 
-            #[cfg(windows)]
-            let stdio_file = {
-                use std::os::windows::io::AsHandle;
-                let stdin = io::stdin();
-                let stdin = std.as_handle().try_clone_to_owned();
-                stdin.map(File::from).ok()
-            };
+        #[cfg(windows)]
+        let stdio_file = {
+            use std::os::windows::io::AsHandle;
+            let stdin = io::stdin();
+            let stdin = std.as_handle().try_clone_to_owned();
+            stdin.map(File::from).ok()
+        };
 
-            #[cfg(not(any(unix, windows)))]
-            let std_file = None;
+        #[cfg(not(any(unix, windows)))]
+        let std_file = None;
 
-            let has_stdin = stdio_file.map_or(false, |mut f| {
-                f.seek(io::SeekFrom::End(0)).map_or(true, |len| len > 0)
-            });
+        let has_stdin = stdio_file.map_or(false, |mut f| {
+            f.seek(io::SeekFrom::End(0)).map_or(true, |len| len > 0)
+        });
 
-            Ok(if has_stdin {
-                let mut content = String::new();
-                io::stdin().read_to_string(&mut content)?;
-                Some(content)
-            } else {
-                None
-            })
-        }
+        Ok(if has_stdin {
+            let mut content = String::new();
+            let _ = io::stdin().read_to_string(&mut content)?;
+            Some(content)
+        } else {
+            None
+        })
     }
 }
 
@@ -77,107 +114,5 @@ fn run_script(content: &str) -> crox::Result<(), i32> {
 }
 
 fn repl() -> io::Result<()> {
-    let verbose = std::env::var_os("CROX_VERBOSE").is_some();
-
-    let lines = bumpalo::Bump::new();
-    let env = Environment::default();
-
-    loop {
-        print!("> ");
-        io::stdout().flush()?;
-
-        let mut line = String::new();
-        io::stdin().read_line(&mut line)?;
-
-        if line.is_empty() {
-            break;
-        }
-
-        let line = lines.alloc_str(line.trim_end());
-        handle_with_env(io::stdout(), io::stderr(), verbose, &env, line);
-    }
-
-    Ok(())
-}
-
-#[cfg(test)]
-fn handle(out: impl Write, err: impl Write, verbose: bool, line: &str) {
-    handle_with_env(out, err, verbose, &Environment::default(), line)
-}
-
-fn handle_with_env<'a>(
-    mut out: impl Write,
-    err: impl Write,
-    verbose: bool,
-    env: &Environment<'a>,
-    line: &'a str,
-) {
-    fn is_semicolon_instead_of_eof(error: &CroxError) -> bool {
-        if let CroxErrorKind::UnexpectedEndOfInput {
-            expected: Some(expected),
-        } = &error.kind
-        {
-            if expected.len() == 1 && expected.contains(TokenType::Semicolon) {
-                return true;
-            }
-        }
-
-        false
-    }
-
-    if line == ":vars" {
-        env.print_vars(out);
-        return;
-    }
-
-    match crox::run_with_env(&mut out, env.clone(), line) {
-        Ok(res) => crox::print_ast(out, verbose, res),
-        Err(e) => match e.errors() {
-            [e] if is_semicolon_instead_of_eof(e) => {
-                match crox::eval_with_env(&mut out, env.clone(), line) {
-                    Ok(res) => crox::print_ast(out, verbose, res),
-                    Err(e) => report_error(err, e),
-                }
-            }
-            _ => report_error(err, e),
-        },
-    }
-}
-
-fn report_error(err: impl Write, errors: CroxErrors) {
-    let fancy = !cfg!(test);
-    crox::report_error(fancy, err, errors);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use pretty_assertions::assert_eq;
-
-    #[test]
-    fn test_handle_fallback_to_expr() {
-        let mut out = Vec::new();
-        let mut err = Vec::new();
-        handle(&mut out, &mut err, false, "1 + 2");
-
-        assert_eq!(String::from_utf8(out).unwrap(), "3\n");
-        assert_eq!(String::from_utf8(err).unwrap(), "");
-    }
-
-    #[test]
-    fn test_handle_fallback_to_expr_if_other_errors() {
-        let mut out = Vec::new();
-        let mut err = Vec::new();
-        handle(&mut out, &mut err, false, r#"1 < "2""#);
-
-        assert_eq!(String::from_utf8(out).unwrap(), "");
-        assert_eq!(
-            String::from_utf8(err).unwrap(),
-            r#"[line 1, offset 5] Error: Invalid type: expected [Number], got 'String'
-1 < "2"
-~~~~~^
-
-"#
-        );
-    }
+    repl::Repl::run()
 }

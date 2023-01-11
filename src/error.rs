@@ -53,7 +53,7 @@ impl CroxErrors {
 impl Display for CroxErrors {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.fancy {
-            writeln!(f, "Errors while running in crox")?;
+            writeln!(f, "Errors while running crox")?;
         } else {
             for err in &self.errors {
                 let err = SourceScanError::new(&self.src, err.span.clone(), &err.kind, self.fancy);
