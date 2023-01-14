@@ -1,5 +1,5 @@
 use crate::{
-    Callable, CroxErrorKind, Instance, Literal, Node, Result, Span, Timings, Type,
+    Callable, CroxErrorKind, Function, Instance, Literal, Node, Result, Span, Timings, Type,
     TypeSet,
 };
 
@@ -12,7 +12,8 @@ pub enum Value<'a> {
     Bool(bool),
     Number(f64),
     Str(Cow<'a, str>),
-    Fn(Rc<dyn Callable<'a>>),
+    Fn(Function<'a>),
+    Callable(Rc<dyn Callable<'a>>),
     Instance(Rc<Instance<'a>>),
 }
 
@@ -24,6 +25,19 @@ impl<'a> Value<'a> {
             Value::Instance(instance) => Ok(instance),
             _ => Err(CroxErrorKind::InvalidType {
                 expected: TypeSet::from(Type::Instance),
+                actual: self.typ(),
+            }
+            .at(span)
+            .with_payload(format!("{self:?}"))),
+        }
+    }
+
+    pub fn as_callable(&self, span: Span) -> Result<&dyn Callable<'a>> {
+        match self {
+            Value::Fn(fun) => Ok(fun),
+            Value::Callable(fun) => Ok(&**fun),
+            _ => Err(CroxErrorKind::InvalidType {
+                expected: TypeSet::from(Type::Callable),
                 actual: self.typ(),
             }
             .at(span)
@@ -243,6 +257,12 @@ impl From<String> for Value<'_> {
     }
 }
 
+impl<'a> From<Function<'a>> for Value<'a> {
+    fn from(value: Function<'a>) -> Self {
+        Self::Fn(value)
+    }
+}
+
 impl fmt::Display for Value<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -251,6 +271,7 @@ impl fmt::Display for Value<'_> {
             Value::Number(n) => fmt::Display::fmt(n, f),
             Value::Str(s) => fmt::Display::fmt(s, f),
             Value::Fn(fun) => fmt::Debug::fmt(fun, f),
+            Value::Callable(fun) => fmt::Debug::fmt(fun, f),
             Value::Instance(inst) => fmt::Debug::fmt(inst, f),
         }
     }

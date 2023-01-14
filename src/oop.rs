@@ -1,15 +1,15 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{Callable, InterpreterContext, Result, Value};
+use crate::{Callable, Function, InterpreterContext, Result, Value};
 
 #[derive(Clone)]
 pub struct Class<'a> {
     pub name: &'a str,
-    methods: Rc<HashMap<&'a str, Value<'a>>>,
+    methods: Rc<HashMap<&'a str, Function<'a>>>,
 }
 
 impl<'a> Class<'a> {
-    pub fn new(name: &'a str, methods: HashMap<&'a str, Value<'a>>) -> Self {
+    pub fn new(name: &'a str, methods: HashMap<&'a str, Function<'a>>) -> Self {
         Self {
             name,
             methods: methods.into(),
@@ -51,11 +51,12 @@ impl<'a> Instance<'a> {
     }
 
     pub fn get(&self, name: &'a str) -> Option<Value<'a>> {
-        self.fields
-            .borrow()
-            .get(name)
-            .or_else(|| self.class.methods.get(name))
-            .cloned()
+        self.fields.borrow().get(name).cloned().or_else(|| {
+            self.class
+                .methods
+                .get(name)
+                .map(|method| Value::Fn(method.clone()))
+        })
     }
 
     pub fn set(&self, name: &'a str, value: Value<'a>) {

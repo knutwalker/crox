@@ -29,7 +29,7 @@ impl Value<'_> {
             Self::Bool(_) => Type::Bool,
             Self::Number(_) => Type::Number,
             Self::Str(_) => Type::String,
-            Self::Fn(_) => Type::Callable,
+            Self::Fn(_) | Self::Callable(_) => Type::Callable,
             Self::Instance(_) => Type::Instance,
         }
     }

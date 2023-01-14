@@ -1,7 +1,7 @@
 use crate::{
     BinaryOp, Callable, Class, CroxError, CroxErrorKind, Environment, Expr, ExprNode,
     ExpressionRule, Function, InterpreterContext, LogicalOp, Span, StatementRule, Stmt, StmtNode,
-    Type, TypeSet, UnaryOp, Value, Valued, Var,
+    UnaryOp, Value, Valued,
 };
 use std::{io::Write, marker::PhantomData};
 
@@ -48,7 +48,6 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                         let name = method.item.name.item;
                         let fun = method.item.fun.clone();
                         let fun = Function::new(name, fun, ctx.env.clone());
-                        let fun = fun.to_value();
                         (name, fun)
                     })
                     .collect();
@@ -167,17 +166,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 let callee = Self::eval_expr(ctx, callee)?;
                 let span = callee.span;
 
-                let callee = match &callee.item {
-                    Value::Fn(callee) => &**callee,
-                    _ => {
-                        return Err(CroxErrorKind::InvalidType {
-                            expected: TypeSet::from(Type::Callable),
-                            actual: callee.item.typ(),
-                        }
-                        .at(span)
-                        .with_payload(format!("{:?}", callee.item)))
-                    }
-                };
+                let callee = callee.item.as_callable(callee.span)?;
 
                 let arguments = arguments
                     .iter()
@@ -347,6 +336,8 @@ impl InterpreterRule for StatementRule {
 
 #[cfg(test)]
 mod tests {
+    use crate::{Type, TypeSet};
+
     use super::*;
     use pretty_assertions::assert_eq;
 

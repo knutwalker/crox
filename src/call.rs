@@ -12,7 +12,7 @@ pub trait Callable<'a>: std::fmt::Debug + 'a {
     where
         Self: Sized,
     {
-        Value::Fn(Rc::new(self))
+        Value::Callable(Rc::new(self))
     }
 }
 
