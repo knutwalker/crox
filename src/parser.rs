@@ -36,7 +36,7 @@
 use crate::{
     BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule, FunctionDecl, FunctionDef,
     Node, Range, Result, Source, Span, StatementRule, Stmt, StmtNode, Token, TokenSet, TokenType,
-    UnaryOp, Var,
+    UnaryOp,
 };
 use std::{iter::Peekable, marker::PhantomData};
 use TokenType::*;
@@ -413,7 +413,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             let value = self.assignment()?;
             let span = expr.span.union(value.span);
             let assign = match &*expr.item {
-                Expr::Var(Var { name, .. }) => Expr::assign(name, value),
+                Expr::Var { name, .. } => Expr::assign(name, value),
                 Expr::Get { object, name } => Expr::set(object.clone(), *name, value),
                 _ => {
                     return Err(CroxErrorKind::InvalidAssignmentTarget.at(expr.span));

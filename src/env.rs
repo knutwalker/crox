@@ -1,4 +1,9 @@
-use std::{cell::RefCell, fmt::Display, io::Write, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    fmt::Display,
+    io::Write,
+    rc::Rc,
+};
 
 use crate::{Builtins, CroxErrorKind, Value};
 
@@ -123,6 +128,33 @@ impl Scope {
             Scope::Local => Some(0),
             Scope::Enclosing { distance } => Some(usize::try_from(distance).unwrap()),
         }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Scoped {
+    pub resolved: Cell<Scope>,
+}
+
+impl Scoped {
+    pub fn new() -> Self {
+        Self {
+            resolved: Cell::new(Scope::Global),
+        }
+    }
+
+    pub fn get(&self) -> Scope {
+        self.resolved.get()
+    }
+
+    pub fn resolve(&self, scope: Scope) {
+        self.resolved.set(scope);
+    }
+}
+
+impl Default for Scoped {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

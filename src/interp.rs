@@ -115,25 +115,15 @@ impl<'a, 'o> Interpreter<'a, 'o> {
         let span = expr.span;
         let value = match &*expr.item {
             Expr::Literal(literal) => Value::from(literal),
-            Expr::Var(Var {
-                name,
-                resolved_scope,
-            }) => ctx
+            Expr::Var { name, scope } => ctx
                 .env
-                .get(name, resolved_scope.get())
+                .get(name, scope.get())
                 .map_err(|e| CroxErrorKind::from(e).at(span))?,
             Expr::Fun(func) => Function::new("<anon>", func.clone(), ctx.env.clone()).to_value(),
-            Expr::Assignment {
-                var:
-                    Var {
-                        name,
-                        resolved_scope,
-                    },
-                value,
-            } => {
+            Expr::Assignment { name, scope, value } => {
                 let value = Self::eval_expr(ctx, value)?.item;
                 ctx.env
-                    .assign(name, value, resolved_scope.get())
+                    .assign(name, value, scope.get())
                     .map_err(|e| CroxErrorKind::from(e).at(span))?
             }
             Expr::Unary { op, expr } => {

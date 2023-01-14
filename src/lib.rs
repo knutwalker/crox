@@ -26,7 +26,7 @@ use std::io::Write;
 pub use builtin::{Builtins, Clock};
 pub use call::{Callable, Function};
 pub use context::{Context, InterpreterContext};
-pub use env::Environment;
+pub use env::{Environment, Scope, Scoped};
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result};
 pub use expr::{BinaryOp, Expr, ExprNode, FunctionDef, Literal, LogicalOp, UnaryOp, Var};
 pub use interp::{expr_interpreter, stmt_interpreter, Interpreter, InterpreterError};

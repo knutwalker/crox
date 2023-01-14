@@ -1,6 +1,6 @@
 use crate::{
     Context, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule, FunctionDef, Result,
-    StatementRule, Stmt, StmtArg, StmtNode, Var,
+    Scoped, StatementRule, Stmt, StmtArg, StmtNode,
 };
 use std::marker::PhantomData;
 
@@ -96,11 +96,11 @@ impl<'a> Resolver<'a> {
     pub fn eval_expr(ctx: &mut ResolveContext<'a>, expr: &ExprNode<'a>) -> Result {
         match &*expr.item {
             Expr::Literal(_) => {}
-            Expr::Var(var) => Self::resolve_local(ctx, var),
+            Expr::Var { name, scope } => Self::resolve_local(ctx, name, scope),
             Expr::Fun(func) => Self::resolve_function(ctx, func, ScopeKind::Function)?,
-            Expr::Assignment { var, value } => {
+            Expr::Assignment { name, scope, value } => {
                 Self::eval_expr(ctx, value)?;
-                Self::resolve_local(ctx, var)
+                Self::resolve_local(ctx, name, scope);
             }
             Expr::Unary { expr, .. } => {
                 Self::eval_expr(ctx, expr)?;
@@ -137,9 +137,9 @@ impl<'a> Resolver<'a> {
         Ok(())
     }
 
-    fn resolve_local(ctx: &mut ResolveContext<'a>, var: &Var<'a>) {
-        if let Ok(scope) = ctx.env.scope_of(var.name) {
-            var.resolved_scope.set(scope);
+    fn resolve_local(ctx: &mut ResolveContext<'a>, name: &'a str, scope: &Scoped) {
+        if let Ok(resolved) = ctx.env.scope_of(name) {
+            scope.resolve(resolved);
         }
     }
 
