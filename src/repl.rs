@@ -10,7 +10,7 @@ use chrono::Utc;
 use clap::{Arg, ArgMatches, Command};
 use core::ops::{ControlFlow, Deref, DerefMut, Index};
 use crossterm::style::Color;
-use crox::{CroxError, CroxErrorKind, TokenType};
+use crox::{Config, CroxError, CroxErrorKind, TokenType};
 use directories::ProjectDirs;
 use reedline::{
     default_emacs_keybindings, ColumnarMenu, DefaultHinter, EditCommand, Emacs, KeyCode,
@@ -19,7 +19,7 @@ use reedline::{
     SqliteBackedHistory, Suggestion, ValidationResult,
 };
 
-use crate::frontend::{Config, Frontend};
+use crate::frontend::Frontend;
 
 pub struct Repl {
     line_editor: Changeable<Reedline>,

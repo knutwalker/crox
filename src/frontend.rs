@@ -1,13 +1,7 @@
 use std::io::Write;
 
 use bumpalo::Bump;
-use crox::{CroxError, CroxErrorKind, CroxErrors, Environment, TokenType};
-
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct Config {
-    pub show_ast: bool,
-    pub show_timings: bool,
-}
+use crox::{Config, CroxError, CroxErrorKind, CroxErrors, Environment, TokenType};
 
 pub struct Frontend {
     env: Environment<'static>,
@@ -37,16 +31,14 @@ impl Frontend {
             false
         }
 
-        let verbose = config.map_or(false, |c| c.show_ast);
-
         let line = self.arena.alloc_str(line.trim_end());
 
         match crox::run_with_env(&mut out, self.env.clone(), line) {
-            Ok(res) => crox::print_ast(out, verbose, res),
+            Ok(res) => crox::print_ast(out, config, res),
             Err(e) => match e.errors() {
                 [e] if is_semicolon_instead_of_eof(e) => {
                     match crox::eval_with_env(&mut out, self.env.clone(), line) {
-                        Ok(res) => crox::print_ast(out, verbose, res),
+                        Ok(res) => crox::print_ast(out, config, res),
                         Err(e) => report_error(err, e),
                     }
                 }

@@ -15,6 +15,7 @@ mod resolver;
 mod rule;
 mod scanner;
 mod stmt;
+mod timing;
 mod token;
 mod typer;
 mod util;
@@ -36,12 +37,14 @@ pub use resolver::{expr_resolver, stmt_resolver, Resolver};
 pub use rule::{ExpressionRule, StatementRule};
 pub use scanner::{Scanner, Source};
 pub use stmt::{ClassDecl, FunctionDecl, Stmt, StmtArg, StmtNode};
+pub use timing::Timings;
 pub use token::{Range, Span, Spanned, Token, TokenSet, TokenType};
 pub use typer::{Type, TypeSet};
 pub use util::{EnumSet, ValueEnum};
 pub use value::{Ast, Value, Valued};
 
 use crate::error::ErrorsCollector;
+use crate::timing::TimingsBuilder;
 
 pub fn run(out: impl Write, content: &str) -> Result<Ast<'_>, CroxErrors> {
     let env = Environment::default();
@@ -53,9 +56,14 @@ pub fn run_with_env<'a>(
     env: Environment<'a>,
     content: &'a str,
 ) -> Result<Ast<'a>, CroxErrors> {
-    let resolved = parse(content)?;
-    let values = stmt_interpreter(&mut out, env, resolved).collect_all(content)?;
-    Ok(Ast::new(values))
+    let mut timings = TimingsBuilder::new();
+    let source = scan(content);
+    let tokens = timings.lex(|| source.collect_all(content))?;
+    let statements = timings.parse(|| stmt_parser(source, tokens).collect_all(content))?;
+    let resolved = timings.resolve(|| stmt_resolver(statements).collect_all(content))?;
+    let values =
+        timings.interpret(|| stmt_interpreter(&mut out, env, resolved).collect_all(content))?;
+    Ok(Ast::new(values, timings.build()))
 }
 
 pub fn eval_with_env<'a>(
@@ -63,12 +71,14 @@ pub fn eval_with_env<'a>(
     env: Environment<'a>,
     content: &'a str,
 ) -> Result<Ast<'a>, CroxErrors> {
+    let mut timings = TimingsBuilder::new();
     let source = scan(content);
-    let tokens = source.collect_all(content)?;
-    let statements = expr_parser(source, tokens).collect_all(content)?;
-    let resolved = expr_resolver(statements).collect_all(content)?;
-    let values = expr_interpreter(&mut out, env, resolved).collect_all(content)?;
-    Ok(Ast::new(values))
+    let tokens = timings.lex(|| source.collect_all(content))?;
+    let statements = timings.parse(|| expr_parser(source, tokens).collect_all(content))?;
+    let resolved = timings.resolve(|| expr_resolver(statements).collect_all(content))?;
+    let values =
+        timings.interpret(|| expr_interpreter(&mut out, env, resolved).collect_all(content))?;
+    Ok(Ast::new(values, timings.build()))
 }
 
 pub fn parse(content: &str) -> Result<Vec<StmtNode<'_>>, CroxErrors> {
@@ -102,22 +112,43 @@ pub fn run_as_script(
 pub fn run_as_evaluator(fancy: bool, mut out: impl Write, err: impl Write, content: &str) {
     let env = Environment::default();
     match eval_with_env(&mut out, env, content) {
-        Ok(ast) => print_ast(out, false, ast),
+        Ok(ast) => print_ast(out, None, ast),
         Err(e) => report_error(fancy, err, e),
     }
 }
 
-pub fn print_ast(mut out: impl Write, verbose: bool, ast: Ast<'_>) {
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct Config {
+    pub show_ast: bool,
+    pub show_timings: bool,
+}
+
+pub fn print_ast(mut out: impl Write, config: impl Into<Option<Config>>, ast: Ast<'_>) {
+    let config = config.into().unwrap_or_default();
+    try_print_ast(&mut out, config, ast).unwrap();
+}
+
+fn try_print_ast(mut out: impl Write, config: Config, ast: Ast<'_>) -> std::io::Result<()> {
+    if config.show_timings {
+        writeln!(out, "Lexing: {:?}", ast.timings.lex)?;
+        writeln!(out, "Parsing: {:?}", ast.timings.parse)?;
+        writeln!(out, "Resolving: {:?}", ast.timings.resolve)?;
+        writeln!(out, "Interpreting: {:?}", ast.timings.interpret)?;
+        writeln!(out, "Total: {:?}", ast.timings.total())?;
+    }
+
     for node in ast.iter() {
         let value = &node.item;
-        if verbose {
-            writeln!(out, "{:#?}", node.item).unwrap();
-            writeln!(out, "{value:#?}").unwrap();
+        if config.show_ast {
+            writeln!(out, "{:#?}", node.item)?;
+            writeln!(out, "{value:#?}")?;
         }
         if value != &Value::Nil {
-            writeln!(out, "{value}").unwrap();
+            writeln!(out, "{value}")?;
         }
     }
+
+    Ok(())
 }
 
 pub fn report_error(fancy: bool, mut w: impl Write, mut err: CroxErrors) {

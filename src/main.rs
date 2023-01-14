@@ -109,7 +109,7 @@ fn open_script(file: Option<impl AsRef<Path>>) -> io::Result<Option<String>> {
 
 fn run_script(content: &str) -> crox::Result<(), i32> {
     let ast = crox::run_as_script(true, std::io::stdout(), std::io::stderr(), content)?;
-    crox::print_ast(std::io::stdout(), false, ast);
+    crox::print_ast(std::io::stdout(), None, ast);
     Ok(())
 }
 

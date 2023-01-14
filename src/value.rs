@@ -1,4 +1,7 @@
-use crate::{Callable, CroxErrorKind, Instance, Literal, Node, Result, Span, Type, TypeSet};
+use crate::{
+    Callable, CroxErrorKind, Instance, Literal, Node, Result, Span, Timings, Type,
+    TypeSet,
+};
 
 use std::{borrow::Cow, cmp::Ordering, fmt, ops::Deref, rc::Rc};
 
@@ -156,11 +159,12 @@ pub type Valued<'a> = Node<Value<'a>>;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ast<'a> {
     values: Vec<Valued<'a>>,
+    pub timings: Timings,
 }
 
 impl<'a> Ast<'a> {
-    pub fn new(values: Vec<Valued<'a>>) -> Self {
-        Self { values }
+    pub fn new(values: Vec<Valued<'a>>, timings: Timings) -> Self {
+        Self { values, timings }
     }
 }
 
@@ -172,13 +176,6 @@ impl<'a> Deref for Ast<'a> {
     }
 }
 
-impl<'a> FromIterator<Valued<'a>> for Ast<'a> {
-    fn from_iter<I: IntoIterator<Item = Valued<'a>>>(iter: I) -> Self {
-        Self {
-            values: iter.into_iter().collect(),
-        }
-    }
-}
 
 impl PartialEq for Value<'_> {
     fn eq(&self, other: &Self) -> bool {
