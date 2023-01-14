@@ -526,7 +526,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         Ok(expr)
     }
 
-    ///     primary := NUMBER | STRING | IDENTIFIER | "true" | "false" | "nil" | "(" expression ")" ;
+    ///     primary := NUMBER | STRING | THIS | IDENTIFIER | "true" | "false" | "nil" | "(" expression ")" ;
     fn primary(&mut self) -> Result<ExprNode<'a>> {
         fn expected() -> TokenSet {
             TokenSet::from_iter([LeftParen, String, Number, Identifier, Fun, False, Nil, True])
@@ -556,6 +556,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
                 (Expr::number(num), span)
             }
+            Some((This, span)) => (Expr::this(), span),
             Some((Identifier, span)) => {
                 let ident = self.source.slice(span);
                 (Expr::var(ident), span)

@@ -9,12 +9,12 @@ pub struct Resolver<'a> {
     ctx: ResolveContext<'a>,
 }
 
-pub type ResolveContext<'a> = Context<'a, ScopeKind, ()>;
+pub type ResolveContext<'a> = Context<'a, Current, ()>;
 
 impl<'a> Resolver<'a> {
     pub fn new() -> Self {
         Self {
-            ctx: ResolveContext::new(Environment::empty(), ScopeKind::TopLevel),
+            ctx: ResolveContext::new(Environment::empty(), Current::default()),
         }
     }
 }
@@ -25,11 +25,35 @@ impl<'a> Default for Resolver<'a> {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum ScopeKind {
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct Current {
+    scope: ScopeKind,
+    class: ClassKind,
+}
+
+impl Current {
+    fn with_scope(self, scope: ScopeKind) -> Self {
+        Self { scope, ..self }
+    }
+
+    fn with_class(self, class: ClassKind) -> Self {
+        Self { class, ..self }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+enum ScopeKind {
+    #[default]
     TopLevel,
     Function,
     Method,
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+enum ClassKind {
+    #[default]
+    Global,
+    Class,
 }
 
 impl<'a> Resolver<'a> {
@@ -44,9 +68,14 @@ impl<'a> Resolver<'a> {
             }
             Stmt::Class(class) => {
                 ctx.env.define(class.name.item, ());
-                for method in class.methods.iter() {
-                    Self::resolve_function(ctx, &method.item.fun, ScopeKind::Method)?;
-                }
+                ctx.run_with_new_scope(|ctx| -> Result {
+                    let mut guard = ctx.swap_data(ctx.data.with_class(ClassKind::Class));
+                    guard.env.define("this", ());
+                    for method in class.methods.iter() {
+                        Self::resolve_function(&mut guard, &method.item.fun, ScopeKind::Method)?;
+                    }
+                    Ok(())
+                })?;
             }
             Stmt::Function(func) => {
                 ctx.env.define(func.name.item, ());
@@ -67,7 +96,7 @@ impl<'a> Resolver<'a> {
                 Self::eval_expr(ctx, expr)?;
             }
             Stmt::Return { expr } => {
-                if ctx.data == ScopeKind::TopLevel {
+                if ctx.data.scope == ScopeKind::TopLevel {
                     return Err(CroxErrorKind::ReturnFromTopLevel.at(stmt.span()));
                 }
                 if let Some(expr) = expr.as_ref() {
@@ -130,6 +159,12 @@ impl<'a> Resolver<'a> {
                 Self::eval_expr(ctx, value)?;
                 Self::eval_expr(ctx, object)?;
             }
+            Expr::This { scope } => {
+                if ctx.data.class == ClassKind::Global {
+                    return Err(CroxErrorKind::ThisOutsideClass.at(expr.span));
+                }
+                Self::resolve_local(ctx, "this", scope);
+            }
             Expr::Group { expr } => {
                 Self::eval_expr(ctx, expr)?;
             }
@@ -149,7 +184,7 @@ impl<'a> Resolver<'a> {
         scope_type: ScopeKind,
     ) -> Result {
         ctx.run_with_new_scope(|ctx| {
-            let mut guard = ctx.swap_data(scope_type);
+            let mut guard = ctx.swap_data(ctx.data.with_scope(scope_type));
 
             for param in func.params.iter() {
                 guard

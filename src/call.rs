@@ -1,7 +1,8 @@
 use std::rc::Rc;
 
 use crate::{
-    Environment, FunctionDef, Interpreter, InterpreterContext, InterpreterError, Result, Value,
+    Environment, FunctionDef, Instance, Interpreter, InterpreterContext, InterpreterError, Result,
+    Value,
 };
 
 pub trait Callable<'a>: std::fmt::Debug + 'a {
@@ -26,6 +27,12 @@ pub struct Function<'a> {
 impl<'a> Function<'a> {
     pub fn new(name: &'a str, fun: FunctionDef<'a>, closure: Environment<'a>) -> Self {
         Self { name, fun, closure }
+    }
+
+    pub fn bind(&self, instance: Rc<Instance<'a>>) -> Self {
+        let env = self.closure.new_scope();
+        env.define("this", Value::Instance(instance));
+        Self::new(self.name, self.fun.clone(), env)
     }
 }
 

@@ -226,6 +226,9 @@ pub enum CroxErrorKind {
     ReturnFromTopLevel,
 
     #[diagnostic()]
+    ThisOutsideClass,
+
+    #[diagnostic()]
     UndefinedProperty { name: String },
 
     #[diagnostic()]
@@ -302,6 +305,7 @@ impl CroxErrorKind {
             Self::DuplicateBinding { .. } => "Multiple bindings: ",
             Self::ArityMismatch { .. } => "Arity mismatch: ",
             Self::ReturnFromTopLevel => "Invalid statement: ",
+            Self::ThisOutsideClass => "Invalid statement: ",
             Self::UndefinedProperty { .. } => "Undefined property: ",
             Self::Other(_) => "Error: ",
         }
@@ -388,6 +392,9 @@ impl Display for FancyCroxErrorKind<'_> {
             CroxErrorKind::ReturnFromTopLevel => {
                 f.write_str("Can't return from top-level code")?;
             }
+            CroxErrorKind::ThisOutsideClass => {
+                f.write_str("Can't use 'this' outside of a class")?;
+            }
             CroxErrorKind::UndefinedProperty { name } => {
                 write!(f, "'{name}'")?;
             }
@@ -427,6 +434,7 @@ impl From<&CroxErrorKind> for CroxErrorScope {
             | DuplicateBinding { .. }
             | ArityMismatch { .. }
             | ReturnFromTopLevel
+            | ThisOutsideClass
             | UndefinedProperty { .. } => Self::Interpreter,
             Other(_) => Self::Custom,
         }

@@ -205,6 +205,10 @@ impl<'a, 'o> Interpreter<'a, 'o> {
 
                 value
             }
+            Expr::This { scope } => ctx
+                .env
+                .get("this", scope.get())
+                .map_err(|e| CroxErrorKind::from(e).at(span))?,
             Expr::Group { expr } => Self::eval_expr(ctx, expr)?.item,
         };
 

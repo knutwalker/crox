@@ -46,6 +46,9 @@ pub enum Expr<'a> {
         name: Node<&'a str>,
         value: ExprNode<'a>,
     },
+    This {
+        scope: Scoped,
+    },
     Group {
         expr: ExprNode<'a>,
     },
@@ -229,6 +232,12 @@ impl<'a> Expr<'a> {
             object,
             name,
             value,
+        }
+    }
+
+    pub fn this() -> Self {
+        Self::This {
+            scope: Scoped::new(),
         }
     }
 

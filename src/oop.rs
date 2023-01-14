@@ -50,12 +50,12 @@ impl<'a> Instance<'a> {
         self.class.name
     }
 
-    pub fn get(&self, name: &'a str) -> Option<Value<'a>> {
+    pub fn get(self: &Rc<Self>, name: &'a str) -> Option<Value<'a>> {
         self.fields.borrow().get(name).cloned().or_else(|| {
             self.class
                 .methods
                 .get(name)
-                .map(|method| Value::Fn(method.clone()))
+                .map(|method| Value::Fn(method.bind(Rc::clone(self))))
         })
     }
 

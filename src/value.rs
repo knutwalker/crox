@@ -20,7 +20,7 @@ pub enum Value<'a> {
 type BinOpResult<'a> = Result<Value<'a>, Result<CroxErrorKind, CroxErrorKind>>;
 
 impl<'a> Value<'a> {
-    pub fn as_instance(&self, span: Span) -> Result<&Instance<'a>> {
+    pub fn as_instance(&self, span: Span) -> Result<&Rc<Instance<'a>>> {
         match self {
             Value::Instance(instance) => Ok(instance),
             _ => Err(CroxErrorKind::InvalidType {
