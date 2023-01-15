@@ -255,5 +255,5 @@ class Foo {
     a252,
     a253,
     a254,
-    a255, a) {} // Error at 'a': Can't have more than 255 parameters.
+    a255, a) {} // [offset 10] Too many parameters: Expected at most 255 parameters
 }

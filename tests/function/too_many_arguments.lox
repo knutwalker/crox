@@ -257,5 +257,5 @@ fun foo() {}
      a, // 253
      a, // 254
      a, // 255
-     a); // [offset 5] Too many arguments: expected at most 255 arguments
+     a); // [offset 5] Too many arguments: Expected at most 255 arguments
 }

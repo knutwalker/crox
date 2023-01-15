@@ -254,4 +254,4 @@ fun f(
     a252,
     a253,
     a254,
-    a255, a) {} // [offset 10] Too many arguments: expected at most 255 arguments
+    a255, a) {} // [offset 10] Too many parameters: Expected at most 255 parameters

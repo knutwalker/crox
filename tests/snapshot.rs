@@ -42,7 +42,6 @@ fn test_chapter11() {
 }
 
 #[test]
-#[ignore = "not yet implemented"]
 fn test_chapter12() {
     ALL_SUITES.run(Run::Chapter12Classes);
 }

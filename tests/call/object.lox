@@ -1,4 +1,4 @@
 class Foo {}
 
 var foo = Foo();
-foo(); // [offset 0] Invalid type: expected one of [Function, Class], got 'Identifier'
+foo(); // [offset 0] Invalid type: expected [Callable], got 'Instance'

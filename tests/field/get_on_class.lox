@@ -1,2 +1,2 @@
 class Foo {}
-Foo.bar; // expect runtime error: Only instances have properties.
+Foo.bar; // [offset 0] Invalid type: expected [Instance], got 'Callable'
