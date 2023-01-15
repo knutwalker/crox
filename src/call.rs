@@ -78,18 +78,18 @@ impl<'a> Callable<'a> for Function<'a> {
             }
 
             let res = Interpreter::eval_stmts_in_scope(ctx, &self.fun.body);
-            match res {
-                Ok(()) => {
-                    if self.is_init {
-                        self.closure
-                            .get("this", Scope::Local)
-                            .map_err(|e| CroxErrorKind::from(e).at(span))
-                    } else {
-                        Ok(Value::Nil)
-                    }
-                }
-                Err(InterpreterError::Return(value)) => Ok(value),
-                Err(InterpreterError::Err(err)) => Err(err),
+            let res = match res {
+                Ok(()) => Value::Nil,
+                Err(InterpreterError::Return(val)) => val,
+                Err(InterpreterError::Err(err)) => return Err(err),
+            };
+
+            if self.is_init {
+                self.closure
+                    .get("this", Scope::Local)
+                    .map_err(|e| CroxErrorKind::from(e).at(span))
+            } else {
+                Ok(res)
             }
         })
     }

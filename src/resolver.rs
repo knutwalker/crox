@@ -46,6 +46,7 @@ enum ScopeKind {
     #[default]
     TopLevel,
     Function,
+    Initializer,
     Method,
 }
 
@@ -72,7 +73,12 @@ impl<'a> Resolver<'a> {
                     let mut guard = ctx.swap_data(ctx.data.with_class(ClassKind::Class));
                     guard.env.define("this", ());
                     for method in class.methods.iter() {
-                        Self::resolve_function(&mut guard, &method.item.fun, ScopeKind::Method)?;
+                        let scope_kind = if method.item.name.item == "init" {
+                            ScopeKind::Initializer
+                        } else {
+                            ScopeKind::Method
+                        };
+                        Self::resolve_function(&mut guard, &method.item.fun, scope_kind)?;
                     }
                     Ok(())
                 })?;
@@ -100,6 +106,9 @@ impl<'a> Resolver<'a> {
                     return Err(CroxErrorKind::ReturnFromTopLevel.at(stmt.span()));
                 }
                 if let Some(expr) = expr.as_ref() {
+                    if ctx.data.scope == ScopeKind::Initializer {
+                        return Err(CroxErrorKind::ReturnFromInitializer.at(stmt.span()));
+                    }
                     Self::eval_expr(ctx, expr)?;
                 }
             }
