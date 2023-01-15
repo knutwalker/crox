@@ -12,7 +12,7 @@ pub enum Value<'a> {
     Bool(bool),
     Number(f64),
     Str(Cow<'a, str>),
-    Fn(Function<'a>),
+    Fn(Rc<Function<'a>>),
     Callable(Rc<dyn Callable<'a>>),
     Instance(Rc<Instance<'a>>),
 }
@@ -34,7 +34,7 @@ impl<'a> Value<'a> {
 
     pub fn as_callable(&self, span: Span) -> Result<&dyn Callable<'a>> {
         match self {
-            Value::Fn(fun) => Ok(fun),
+            Value::Fn(fun) => Ok(&**fun),
             Value::Callable(fun) => Ok(&**fun),
             _ => Err(CroxErrorKind::InvalidType {
                 expected: TypeSet::from(Type::Callable),
@@ -255,7 +255,7 @@ impl From<String> for Value<'_> {
 
 impl<'a> From<Function<'a>> for Value<'a> {
     fn from(value: Function<'a>) -> Self {
-        Self::Fn(value)
+        Self::Fn(Rc::new(value))
     }
 }
 

@@ -60,7 +60,7 @@ impl<'a> Instance<'a> {
             self.class
                 .methods
                 .get(name)
-                .map(|method| Value::Fn(method.bind(Rc::clone(self))))
+                .map(|method| Value::from(method.bind(Rc::clone(self))))
         })
     }
 
