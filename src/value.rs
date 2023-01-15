@@ -186,7 +186,6 @@ impl<'a> Deref for Ast<'a> {
     }
 }
 
-
 impl PartialEq for Value<'_> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -194,6 +193,16 @@ impl PartialEq for Value<'_> {
             (Self::Bool(lhs), Self::Bool(rhs)) => lhs == rhs,
             (Self::Number(lhs), Self::Number(rhs)) => lhs == rhs,
             (Self::Str(lhs), Self::Str(rhs)) => lhs == rhs,
+            (Self::Callable(lhs), Self::Callable(rhs)) => {
+                let lhs = &**lhs as *const _ as *const ();
+                let rhs = &**rhs as *const _ as *const ();
+                std::ptr::eq(lhs, rhs)
+            }
+            (Self::Fn(lhs), Self::Fn(rhs)) => {
+                let lhs = &**lhs as *const _ as *const ();
+                let rhs = &**rhs as *const _ as *const ();
+                std::ptr::eq(lhs, rhs)
+            }
             _ => false,
         }
     }
@@ -206,6 +215,8 @@ impl PartialOrd for Value<'_> {
             (Self::Str(s), Self::Str(o)) => s.partial_cmp(o),
             (Self::Bool(b), Self::Bool(o)) => b.partial_cmp(o),
             (Self::Nil, Self::Nil) => Some(Ordering::Equal),
+            (Self::Callable(_), Self::Callable(_)) if self == other => Some(Ordering::Equal),
+            (Self::Fn(_), Self::Fn(_)) if self == other => Some(Ordering::Equal),
             _ => None,
         }
     }
