@@ -47,7 +47,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                     .map(|method| {
                         let name = method.item.name.item;
                         let fun = method.item.fun.clone();
-                        let fun = Function::new(name, fun, ctx.env.clone());
+                        let fun = Function::method(name, fun, ctx.env.clone());
                         (name, fun)
                     })
                     .collect();

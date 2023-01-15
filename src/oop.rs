@@ -19,17 +19,21 @@ impl<'a> Class<'a> {
 
 impl<'a> Callable<'a> for Class<'a> {
     fn arity(&self) -> usize {
-        0
+        self.methods.get("init").map(|fun| fun.arity()).unwrap_or(0)
     }
 
     fn call(
         &self,
-        _ctx: &mut InterpreterContext<'a, '_>,
-        _args: &[Value<'a>],
+        ctx: &mut InterpreterContext<'a, '_>,
+        args: &[Value<'a>],
         span: Span,
     ) -> Result<Value<'a>> {
         let instance = Instance::new(self.clone());
-        Ok(Value::Instance(Rc::new(instance)))
+        let instance = Rc::new(instance);
+        if let Some(initializer) = self.methods.get("init") {
+            initializer.bind(instance.clone()).call(ctx, args, span)?;
+        }
+        Ok(Value::Instance(instance))
     }
 }
 
