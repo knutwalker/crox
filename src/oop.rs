@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{Callable, Function, InterpreterContext, Result, Value};
+use crate::{Callable, Function, InterpreterContext, Result, Span, Value};
 
 #[derive(Clone)]
 pub struct Class<'a> {
@@ -26,6 +26,7 @@ impl<'a> Callable<'a> for Class<'a> {
         &self,
         _ctx: &mut InterpreterContext<'a, '_>,
         _args: &[Value<'a>],
+        span: Span,
     ) -> Result<Value<'a>> {
         let instance = Instance::new(self.clone());
         Ok(Value::Instance(Rc::new(instance)))

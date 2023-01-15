@@ -181,7 +181,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                     .at(span));
                 }
 
-                callee.call(ctx, &arguments)?
+                callee.call(ctx, &arguments, span)?
             }
             Expr::Get { object, name } => {
                 let object = Self::eval_expr(ctx, object)?;

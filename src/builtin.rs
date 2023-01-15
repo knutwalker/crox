@@ -1,7 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::Callable;
-use crate::{InterpreterContext, Result, Value};
+use crate::{InterpreterContext, Result, Span, Value};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Builtins {
@@ -34,6 +34,7 @@ impl<'a> Callable<'a> for Clock {
         &self,
         _ctx: &mut InterpreterContext<'a, '_>,
         _args: &[Value<'a>],
+        _span: Span,
     ) -> Result<Value<'a>> {
         Ok(SystemTime::now()
             .duration_since(UNIX_EPOCH)

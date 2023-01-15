@@ -2,12 +2,17 @@ use std::rc::Rc;
 
 use crate::{
     Environment, FunctionDef, Instance, Interpreter, InterpreterContext, InterpreterError, Result,
-    Value,
+    Span, Value,
 };
 
 pub trait Callable<'a>: std::fmt::Debug + 'a {
     fn arity(&self) -> usize;
-    fn call(&self, ctx: &mut InterpreterContext<'a, '_>, args: &[Value<'a>]) -> Result<Value<'a>>;
+    fn call(
+        &self,
+        ctx: &mut InterpreterContext<'a, '_>,
+        args: &[Value<'a>],
+        span: Span,
+    ) -> Result<Value<'a>>;
 
     fn to_value(self) -> Value<'a>
     where
@@ -41,7 +46,12 @@ impl<'a> Callable<'a> for Function<'a> {
         self.fun.params.len()
     }
 
-    fn call(&self, ctx: &mut InterpreterContext<'a, '_>, args: &[Value<'a>]) -> Result<Value<'a>> {
+    fn call(
+        &self,
+        ctx: &mut InterpreterContext<'a, '_>,
+        args: &[Value<'a>],
+        span: Span,
+    ) -> Result<Value<'a>> {
         ctx.run_with_scope(self.closure.new_scope(), |ctx| {
             for (param, arg) in self.fun.params.iter().zip(args) {
                 ctx.env.define(param.item, arg.clone());
