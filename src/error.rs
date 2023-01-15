@@ -205,7 +205,7 @@ pub enum CroxErrorKind {
     InvalidAssignmentTarget,
 
     #[diagnostic()]
-    TooManyArguments,
+    TooMany(TooMany),
 
     #[diagnostic()]
     InvalidType { expected: TypeSet, actual: Type },
@@ -246,6 +246,12 @@ impl CroxErrorKind {
     pub fn at(self, span: impl Into<Range>) -> CroxError {
         CroxError::new(self, span)
     }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TooMany {
+    Arguments,
+    Parameters,
 }
 
 impl From<char> for CroxErrorKind {
@@ -301,7 +307,8 @@ impl CroxErrorKind {
             Self::InvalidNumberLiteral { reason: None } => "Invalid number literal",
             Self::InvalidNumberLiteral { reason: Some(_) } => "Invalid number literal: ",
             Self::InvalidAssignmentTarget => "Invalid assignment target: ",
-            Self::TooManyArguments => "Too many arguments: ",
+            Self::TooMany(TooMany::Arguments) => "Too many arguments: ",
+            Self::TooMany(TooMany::Parameters) => "Too many parameters: ",
             Self::InvalidType { .. } => "Invalid type: ",
             Self::UndefinedVariable { .. } => "Undefined variable: ",
             Self::UninitializedVariable { .. } => "Uninitialized variable: ",
@@ -368,8 +375,11 @@ impl Display for FancyCroxErrorKind<'_> {
             CroxErrorKind::InvalidAssignmentTarget => {
                 write!(f, "expected an identifier")?;
             }
-            CroxErrorKind::TooManyArguments => {
-                f.write_str("expected at most 255 arguments")?;
+            CroxErrorKind::TooMany(TooMany::Arguments) => {
+                f.write_str("Expected at most 255 arguments")?;
+            }
+            CroxErrorKind::TooMany(TooMany::Parameters) => {
+                f.write_str("Expected at most 255 parameters")?;
             }
             CroxErrorKind::InvalidType { expected, actual } if expected.len() > 1 => {
                 write!(f, "expected one of {expected:?}, got '{actual:?}'")?;
@@ -433,7 +443,7 @@ impl From<&CroxErrorKind> for CroxErrorScope {
             | UnclosedDelimiter { .. }
             | InvalidNumberLiteral { .. }
             | InvalidAssignmentTarget
-            | TooManyArguments => Self::Parser,
+            | TooMany(_) => Self::Parser,
             InvalidType { .. }
             | UndefinedVariable { .. }
             | UninitializedVariable { .. }

@@ -36,7 +36,7 @@
 use crate::{
     BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule, FunctionDecl, FunctionDef,
     Node, Range, Result, Source, Span, StatementRule, Stmt, StmtNode, Token, TokenSet, TokenType,
-    UnaryOp,
+    TooMany, UnaryOp,
 };
 use std::{iter::Peekable, marker::PhantomData};
 use TokenType::*;
@@ -203,7 +203,8 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     fn function_def(&mut self, start: Span) -> Result<Node<FunctionDef<'a>>> {
-        let params = self.parens_list(start, true, |this, span| this.ident(span))?;
+        let params =
+            self.parens_list::<_, Parameters>(start, true, |this, span| this.ident(span))?;
         let right_paren = params.span;
 
         let open_brace = self.expect(LeftBrace, EndOfInput::expected(LeftBrace, right_paren))?;
@@ -581,7 +582,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
     ///   arguments := expression ( "," expression )* ;
     fn arguments(&mut self, start: Span) -> Result<(Vec<ExprNode<'a>>, Span)> {
-        let args = self.parens_list(start, false, |this, _| this.expression())?;
+        let args = self.parens_list::<_, Arguments>(start, false, |this, _| this.expression())?;
 
         Ok((args.item, args.span))
     }
@@ -601,7 +602,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         Ok(Node::new(identifier, span))
     }
 
-    fn parens_list<A>(
+    fn parens_list<A, K: IntoTooMany>(
         &mut self,
         start: Span,
         parse_left_paren: bool,
@@ -613,7 +614,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             start
         };
 
-        let mut args = Args::new();
+        let mut args = Args::<_, K>::new();
 
         // not peek! because we don't want to consume the token
         match self.tokens.peek() {
@@ -764,23 +765,25 @@ impl std::fmt::Display for ExpectedFn {
     }
 }
 
-struct Args<T> {
+struct Args<T, K: IntoTooMany> {
     items: Result<Vec<Node<T>>>,
     limit: usize,
+    _kind: PhantomData<K>,
 }
 
-impl<T> Args<T> {
+impl<T, K: IntoTooMany> Args<T, K> {
     fn new() -> Self {
         Self {
             items: Ok(Vec::new()),
             limit: 255,
+            _kind: PhantomData,
         }
     }
 
     fn push(&mut self, item: Node<T>) {
         if let Ok(items) = self.items.as_mut() {
             if items.len() >= self.limit {
-                self.items = Err(CroxErrorKind::TooManyArguments.at(item.span));
+                self.items = Err(CroxErrorKind::TooMany(K::into()).at(item.span));
             } else {
                 items.push(item);
             }
@@ -789,6 +792,25 @@ impl<T> Args<T> {
 
     fn finish(self) -> Result<Vec<Node<T>>> {
         self.items
+    }
+}
+
+enum Arguments {}
+enum Parameters {}
+
+trait IntoTooMany {
+    fn into() -> TooMany;
+}
+
+impl IntoTooMany for Arguments {
+    fn into() -> TooMany {
+        TooMany::Arguments
+    }
+}
+
+impl IntoTooMany for Parameters {
+    fn into() -> TooMany {
+        TooMany::Parameters
     }
 }
 
