@@ -106,15 +106,11 @@ impl<'a> Value<'a> {
     }
 
     pub fn eq(&self, other: &Self) -> Self {
-        self.partial_cmp(other)
-            .map_or(false, |ord| ord == Ordering::Equal)
-            .into()
+        (self == other).into()
     }
 
     pub fn not_eq(&self, other: &Self) -> Self {
-        self.partial_cmp(other)
-            .map_or(true, |ord| ord != Ordering::Equal)
-            .into()
+        (self != other).into()
     }
 
     pub fn lt(&self, other: &Self) -> BinOpResult<'a> {
