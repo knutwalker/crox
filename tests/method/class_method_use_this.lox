@@ -1,0 +1,11 @@
+class Foo {
+  init() {
+    this.bar = " bar";
+  }
+
+  class static() {
+    print "static" + this.bar;
+  }
+}
+
+Foo.static(); // [line 7, offset 21] Invalid statement: Can't use 'this' in a class method

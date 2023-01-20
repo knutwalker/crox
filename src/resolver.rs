@@ -48,6 +48,7 @@ enum ScopeKind {
     Function,
     Initializer,
     Method,
+    ClassMethod,
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
@@ -71,6 +72,13 @@ impl<'a> Resolver<'a> {
                 ctx.env.define(class.name.item, ());
                 ctx.run_with_new_scope(|ctx| -> Result {
                     let mut guard = ctx.swap_data(ctx.data.with_class(ClassKind::Class));
+                    for method in class.class_methods.iter() {
+                        Self::resolve_function(
+                            &mut guard,
+                            &method.item.fun,
+                            ScopeKind::ClassMethod,
+                        )?;
+                    }
                     guard.env.define("this", ());
                     for method in class.methods.iter() {
                         let scope_kind = if method.item.name.item == "init" {
@@ -171,6 +179,9 @@ impl<'a> Resolver<'a> {
             Expr::This { scope } => {
                 if ctx.data.class == ClassKind::Global {
                     return Err(CroxErrorKind::ThisOutsideClass.at(expr.span));
+                }
+                if ctx.data.scope == ScopeKind::ClassMethod {
+                    return Err(CroxErrorKind::ThisInClassMethod.at(expr.span));
                 }
                 Self::resolve_local(ctx, "this", scope);
             }

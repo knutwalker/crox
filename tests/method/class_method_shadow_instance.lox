@@ -1,0 +1,13 @@
+class Foo {
+  method() {
+    print "instance";
+  }
+
+  class method() {
+    print "static";
+  }
+}
+
+Foo.method(); // expect: static
+var inst = Foo();
+inst.method(); // expect: instance

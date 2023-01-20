@@ -7,6 +7,7 @@ pub enum Type {
     Number,
     String,
     Callable,
+    Class,
     Instance,
     Nil,
 }
@@ -31,6 +32,7 @@ impl Value<'_> {
             Self::Str(_) => Type::String,
             Self::Fn(_) | Self::Callable(_) => Type::Callable,
             Self::Instance(_) => Type::Instance,
+            Self::Class(_) => Type::Class,
         }
     }
 }

@@ -1,0 +1,8 @@
+class Foo {
+  class static() {
+    print "static";
+  }
+}
+
+var method = Foo.static;
+method(); // expect: static

@@ -1,2 +1,2 @@
 class Foo {}
-Foo.bar; // [offset 0] Invalid type: expected [Instance], got 'Callable'
+Foo.bar; // [offset 0] Invalid type: expected [Instance], got 'Class'

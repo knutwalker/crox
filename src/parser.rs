@@ -159,7 +159,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let open_brace = self.expect(LeftBrace, EndOfInput::expected(LeftBrace, name.span))?;
 
         let mut methods = Vec::new();
-        let mut span = open_brace;
+        let mut class_methods = Vec::new();
 
         loop {
             // not peek! because we don't want to consume the token
@@ -169,16 +169,18 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
                 Some(&(RightBrace, _)) | None => {
                     break;
                 }
-                Some(_) => {
-                    let method = self.function_decl(FnKind::Method, span)?;
-                    span = method.span;
-                    methods.push(method);
+                Some(&(_, fn_span)) => {
+                    let method = self.method_decl(fn_span)?;
+                    match method {
+                        Method::Instance(method) => methods.push(method),
+                        Method::Class(method) => class_methods.push(method),
+                    }
                 }
             }
         }
 
         let close_brace = self.expect(RightBrace, EndOfInput::Unclosed(LeftBrace, open_brace))?;
-        let stmt = Stmt::class(name, methods);
+        let stmt = Stmt::class(name, methods, class_methods);
         let span = open_brace.union(close_brace);
         Ok(stmt.at(span))
     }
@@ -189,6 +191,17 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     fn fun_decl(&mut self, start: Span) -> Result<StmtNode<'a>> {
         self.function_decl(FnKind::Function, start)
             .map(|f| f.map(Stmt::Function))
+    }
+
+    fn method_decl(&mut self, start: Span) -> Result<Method<'a>> {
+        let class = self.tokens.next_if(|&(token, _)| token == Class);
+        let mut func = self.function_decl(FnKind::Method, start)?;
+        if let Some((_, class_span)) = class {
+            func.span = class_span.union(func.span).into();
+            Ok(Method::Class(func))
+        } else {
+            Ok(Method::Instance(func))
+        }
     }
 
     fn function_decl(&mut self, kind: FnKind, start: Span) -> Result<Node<FunctionDecl<'a>>> {
@@ -812,6 +825,11 @@ impl IntoTooMany for Parameters {
     fn into() -> TooMany {
         TooMany::Parameters
     }
+}
+
+enum Method<'a> {
+    Instance(Node<FunctionDecl<'a>>),
+    Class(Node<FunctionDecl<'a>>),
 }
 
 #[cfg(test)]

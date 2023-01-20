@@ -1,6 +1,6 @@
 use crate::{
-    Callable, CroxErrorKind, Function, Instance, Literal, Node, Result, Span, Timings, Type,
-    TypeSet,
+    AsInstance, AsMutInstance, Callable, Class, CroxErrorKind, Function, Instance, Literal, Node,
+    Result, Span, Timings, Type, TypeSet,
 };
 
 use std::{borrow::Cow, cmp::Ordering, fmt, ops::Deref, rc::Rc};
@@ -13,14 +13,28 @@ pub enum Value<'a> {
     Number(f64),
     Str(Cow<'a, str>),
     Fn(Rc<Function<'a>>),
-    Callable(Rc<dyn Callable<'a>>),
     Instance(Rc<Instance<'a>>),
+    Class(Rc<Class<'a>>),
+    Callable(Rc<dyn Callable<'a>>),
 }
 
 type BinOpResult<'a> = Result<Value<'a>, Result<CroxErrorKind, CroxErrorKind>>;
 
 impl<'a> Value<'a> {
-    pub fn as_instance(&self, span: Span) -> Result<&Rc<Instance<'a>>> {
+    pub fn as_instance(&self, span: Span) -> Result<&dyn AsInstance<'a>> {
+        match self {
+            Value::Instance(instance) => Ok(instance),
+            Value::Class(class) => Ok(class),
+            _ => Err(CroxErrorKind::InvalidType {
+                expected: TypeSet::from(Type::Instance),
+                actual: self.typ(),
+            }
+            .at(span)
+            .with_payload(format!("{self:?}"))),
+        }
+    }
+
+    pub fn as_mut_instance(&self, span: Span) -> Result<&dyn AsMutInstance<'a>> {
         match self {
             Value::Instance(instance) => Ok(instance),
             _ => Err(CroxErrorKind::InvalidType {
@@ -36,6 +50,7 @@ impl<'a> Value<'a> {
         match self {
             Value::Fn(fun) => Ok(&**fun),
             Value::Callable(fun) => Ok(&**fun),
+            Value::Class(class) => Ok(&**class),
             _ => Err(CroxErrorKind::InvalidType {
                 expected: TypeSet::from(Type::Callable),
                 actual: self.typ(),
@@ -203,6 +218,11 @@ impl PartialEq for Value<'_> {
                 let rhs = &**rhs as *const _ as *const ();
                 std::ptr::eq(lhs, rhs)
             }
+            (Self::Class(lhs), Self::Class(rhs)) => {
+                let lhs = &**lhs as *const _;
+                let rhs = &**rhs as *const _;
+                std::ptr::eq(lhs, rhs)
+            }
             _ => false,
         }
     }
@@ -217,6 +237,7 @@ impl PartialOrd for Value<'_> {
             (Self::Nil, Self::Nil) => Some(Ordering::Equal),
             (Self::Callable(_), Self::Callable(_)) if self == other => Some(Ordering::Equal),
             (Self::Fn(_), Self::Fn(_)) if self == other => Some(Ordering::Equal),
+            (Self::Class(_), Self::Class(_)) if self == other => Some(Ordering::Equal),
             _ => None,
         }
     }
@@ -270,6 +291,12 @@ impl<'a> From<Function<'a>> for Value<'a> {
     }
 }
 
+impl<'a> From<Class<'a>> for Value<'a> {
+    fn from(value: Class<'a>) -> Self {
+        Self::Class(Rc::new(value))
+    }
+}
+
 impl fmt::Display for Value<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -280,6 +307,7 @@ impl fmt::Display for Value<'_> {
             Value::Fn(fun) => fmt::Debug::fmt(fun, f),
             Value::Callable(fun) => fmt::Debug::fmt(fun, f),
             Value::Instance(inst) => fmt::Debug::fmt(inst, f),
+            Value::Class(inst) => fmt::Debug::fmt(inst, f),
         }
     }
 }

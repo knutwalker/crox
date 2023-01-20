@@ -1,0 +1,8 @@
+class Foo {
+  class static() {
+    print "static";
+  }
+}
+
+var foo = Foo();
+foo.static(); // [offset 4] Invalid statement: 'static' is a class method and cannot be accessed from an instance

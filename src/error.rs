@@ -232,7 +232,13 @@ pub enum CroxErrorKind {
     ThisOutsideClass,
 
     #[diagnostic()]
+    ThisInClassMethod,
+
+    #[diagnostic()]
     UndefinedProperty { name: String },
+
+    #[diagnostic()]
+    ClassPropertyOnInstance { name: String },
 
     #[diagnostic()]
     Other(String),
@@ -314,8 +320,11 @@ impl CroxErrorKind {
             Self::UninitializedVariable { .. } => "Uninitialized variable: ",
             Self::DuplicateBinding { .. } => "Multiple bindings: ",
             Self::ArityMismatch { .. } => "Arity mismatch: ",
-            Self::ReturnFromTopLevel | Self::ReturnFromInitializer => "Invalid statement: ",
-            Self::ThisOutsideClass => "Invalid statement: ",
+            Self::ReturnFromTopLevel
+            | Self::ReturnFromInitializer
+            | Self::ThisInClassMethod
+            | Self::ThisOutsideClass
+            | Self::ClassPropertyOnInstance { .. } => "Invalid statement: ",
             Self::UndefinedProperty { .. } => "Undefined property: ",
             Self::Other(_) => "Error: ",
         }
@@ -411,8 +420,17 @@ impl Display for FancyCroxErrorKind<'_> {
             CroxErrorKind::ThisOutsideClass => {
                 f.write_str("Can't use 'this' outside of a class")?;
             }
+            CroxErrorKind::ThisInClassMethod => {
+                f.write_str("Can't use 'this' in a class method")?;
+            }
             CroxErrorKind::UndefinedProperty { name } => {
                 write!(f, "'{name}'")?;
+            }
+            CroxErrorKind::ClassPropertyOnInstance { name } => {
+                write!(
+                    f,
+                    "'{name}' is a class method and cannot be accessed from an instance"
+                )?;
             }
             CroxErrorKind::Other(msg) => {
                 write!(f, "{msg}")?;
@@ -452,7 +470,9 @@ impl From<&CroxErrorKind> for CroxErrorScope {
             | ReturnFromTopLevel
             | ReturnFromInitializer
             | ThisOutsideClass
-            | UndefinedProperty { .. } => Self::Interpreter,
+            | ThisInClassMethod
+            | UndefinedProperty { .. }
+            | ClassPropertyOnInstance { .. } => Self::Interpreter,
             Other(_) => Self::Custom,
         }
     }

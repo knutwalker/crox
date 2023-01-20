@@ -65,10 +65,15 @@ impl<'a> Stmt<'a> {
         Self::Expression { expr }
     }
 
-    pub fn class(name: Node<&'a str>, methods: impl Into<Rc<[Node<FunctionDecl<'a>>]>>) -> Self {
+    pub fn class(
+        name: Node<&'a str>,
+        methods: impl Into<Rc<[Node<FunctionDecl<'a>>]>>,
+        class_methods: impl Into<Rc<[Node<FunctionDecl<'a>>]>>,
+    ) -> Self {
         Self::Class(ClassDecl {
             name,
             methods: methods.into(),
+            class_methods: class_methods.into(),
         })
     }
 
@@ -129,6 +134,7 @@ impl<'a> Stmt<'a> {
 pub struct ClassDecl<'a> {
     pub name: Node<&'a str>,
     pub methods: Rc<[Node<FunctionDecl<'a>>]>,
+    pub class_methods: Rc<[Node<FunctionDecl<'a>>]>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

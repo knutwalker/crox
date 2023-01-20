@@ -1,9 +1,9 @@
 use crate::{
     BinaryOp, Callable, Class, CroxError, CroxErrorKind, Environment, Expr, ExprNode,
-    ExpressionRule, Function, InterpreterContext, LogicalOp, Span, StatementRule, Stmt, StmtNode,
-    UnaryOp, Value, Valued,
+    ExpressionRule, Function, InterpreterContext, LogicalOp, LookupError, Span, StatementRule,
+    Stmt, StmtNode, Type, TypeSet, UnaryOp, Value, Valued,
 };
-use std::{io::Write, marker::PhantomData};
+use std::{io::Write, marker::PhantomData, rc::Rc};
 
 pub struct Interpreter<'a, 'o> {
     context: InterpreterContext<'a, 'o>,
@@ -41,6 +41,18 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 let name = class.name.item;
                 ctx.env.define(name, Value::Nil);
 
+                let class_methods = class
+                    .class_methods
+                    .iter()
+                    .map(|method| {
+                        let name = method.item.name.item;
+                        let fun = method.item.fun.clone();
+                        let fun = Function::method(name, fun, ctx.env.clone());
+                        let fun = Rc::new(fun);
+                        (name, fun)
+                    })
+                    .collect();
+
                 let methods = class
                     .methods
                     .iter()
@@ -52,8 +64,8 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                     })
                     .collect();
 
-                let class = Class::new(name, methods);
-                let class = class.to_value();
+                let class = Class::new(name, methods, class_methods);
+                let class = Value::from(class);
                 ctx.env.define(name, class);
             }
             Stmt::Function(func) => {
@@ -186,11 +198,22 @@ impl<'a, 'o> Interpreter<'a, 'o> {
             Expr::Get { object, name } => {
                 let object = Self::eval_expr(ctx, object)?;
                 let instance = object.item.as_instance(span)?;
-                instance.get(name.item).ok_or_else(|| {
-                    CroxErrorKind::UndefinedProperty {
+                instance.get(name.item).map_err(|e| match e {
+                    LookupError::NoSuchProperty => CroxErrorKind::UndefinedProperty {
                         name: name.item.to_owned(),
                     }
-                    .at(name.span)
+                    .at(name.span),
+                    LookupError::ClassPropertyOnInstance => {
+                        CroxErrorKind::ClassPropertyOnInstance {
+                            name: name.item.to_owned(),
+                        }
+                        .at(name.span)
+                    }
+                    LookupError::InvalidType => CroxErrorKind::InvalidType {
+                        expected: TypeSet::from(Type::Instance),
+                        actual: Type::Class,
+                    }
+                    .at(span),
                 })?
             }
             Expr::Set {
@@ -199,7 +222,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 value,
             } => {
                 let object = Self::eval_expr(ctx, object)?;
-                let instance = object.item.as_instance(span)?;
+                let instance = object.item.as_mut_instance(span)?;
                 let value = Self::eval_expr(ctx, value)?.item;
                 instance.set(name.item, value.clone());
 
