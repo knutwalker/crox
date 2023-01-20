@@ -1,31 +1,28 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{Callable, Function, InterpreterContext, Result, Span, Value};
+use crate::{
+    Callable, CroxErrorKind, Function, InterpreterContext, Members, Node, Result, Span, Type,
+    TypeSet, Value,
+};
 
 #[derive(Clone)]
 pub struct Class<'a> {
     pub name: &'a str,
-    methods: Rc<HashMap<&'a str, Function<'a>>>,
-    class_methods: Rc<HashMap<&'a str, Rc<Function<'a>>>>,
+    members: Members<Rc<Function<'a>>>,
 }
 
 impl<'a> Class<'a> {
-    pub fn new(
-        name: &'a str,
-        methods: HashMap<&'a str, Function<'a>>,
-        class_methods: HashMap<&'a str, Rc<Function<'a>>>,
-    ) -> Self {
-        Self {
-            name,
-            methods: methods.into(),
-            class_methods: class_methods.into(),
-        }
+    pub fn new(name: &'a str, members: Members<Rc<Function<'a>>>) -> Self {
+        Self { name, members }
     }
 }
 
 impl<'a> Callable<'a> for Class<'a> {
     fn arity(&self) -> usize {
-        self.methods.get("init").map(|fun| fun.arity()).unwrap_or(0)
+        self.members
+            .methods()
+            .find_map(|m| (m.name == "init").then_some(m.arity()))
+            .unwrap_or(0)
     }
 
     fn call(
@@ -36,8 +33,10 @@ impl<'a> Callable<'a> for Class<'a> {
     ) -> Result<Value<'a>> {
         let instance = Instance::new(self.clone());
         let instance = Rc::new(instance);
-        if let Some(initializer) = self.methods.get("init") {
-            initializer.bind(instance.clone()).call(ctx, args, span)?;
+        if let Some(initializer) = self.members.methods().find(|m| m.name == "init") {
+            initializer
+                .bind(Rc::clone(&instance))
+                .call(ctx, args, span)?;
         }
         Ok(Value::Instance(instance))
     }
@@ -63,7 +62,12 @@ impl<'a> Instance<'a> {
 }
 
 pub trait AsInstance<'a> {
-    fn get(&self, name: &'a str) -> Result<Value<'a>, LookupError>;
+    fn get(
+        &self,
+        name: &Node<&'a str>,
+        ctx: &mut InterpreterContext<'a, '_>,
+        caller: Span,
+    ) -> Result<Value<'a>>;
 }
 
 pub trait AsMutInstance<'a> {
@@ -71,22 +75,41 @@ pub trait AsMutInstance<'a> {
 }
 
 impl<'a> AsInstance<'a> for Rc<Instance<'a>> {
-    fn get(&self, name: &'a str) -> Result<Value<'a>, LookupError> {
-        // return error enum or error ish enum for the reason -- not found / invalid type
+    fn get(
+        &self,
+        name: &Node<&'a str>,
+        ctx: &mut InterpreterContext<'a, '_>,
+        caller: Span,
+    ) -> Result<Value<'a>> {
+        let name_span = name.span;
+        let name = name.item;
+
         let field = self.fields.borrow();
         let field = field.get(name);
         if let Some(field) = field {
             return Ok(field.clone());
         }
-        let method = self.class.methods.get(name);
+
+        if let Some(property) = self.class.members.properties().find(|p| p.name == name) {
+            let property = property.bind(Rc::clone(self));
+            return property.call(ctx, &[], caller);
+        }
+
+        let method = self.class.members.methods().find(|m| m.name == name);
         if let Some(method) = method {
             let method = method.bind(Rc::clone(self));
             return Ok(Value::from(method));
         }
-        if self.class.class_methods.contains_key(name) {
-            return Err(LookupError::ClassPropertyOnInstance);
+        if self.class.members.class_methods().any(|cm| cm.name == name) {
+            return Err(CroxErrorKind::ClassPropertyOnInstance {
+                name: name.to_owned(),
+            }
+            .at(name_span));
         }
-        Err(LookupError::NoSuchProperty)
+        Err(CroxErrorKind::UndefinedProperty {
+            name: name.to_owned(),
+        }
+        .at(name_span))
     }
 }
 
@@ -97,19 +120,24 @@ impl<'a> AsMutInstance<'a> for Rc<Instance<'a>> {
 }
 
 impl<'a> AsInstance<'a> for Rc<Class<'a>> {
-    fn get(&self, name: &'a str) -> Result<Value<'a>, LookupError> {
-        let method = self.class_methods.get(name);
+    fn get(
+        &self,
+        name: &Node<&'a str>,
+        _ctx: &mut InterpreterContext<'a, '_>,
+        caller: Span,
+    ) -> Result<Value<'a>> {
+        let name = name.item;
+
+        let method = self.members.class_methods().find(|cm| cm.name == name);
         if let Some(method) = method {
             return Ok(Value::Fn(Rc::clone(method)));
         }
-        Err(LookupError::InvalidType)
+        Err(CroxErrorKind::InvalidType {
+            expected: TypeSet::from(Type::Instance),
+            actual: Type::Class,
+        }
+        .at(caller))
     }
-}
-
-pub enum LookupError {
-    NoSuchProperty,
-    ClassPropertyOnInstance,
-    InvalidType,
 }
 
 impl<'a> std::fmt::Debug for Class<'a> {

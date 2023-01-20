@@ -72,7 +72,7 @@ impl<'a> Resolver<'a> {
                 ctx.env.define(class.name.item, ());
                 ctx.run_with_new_scope(|ctx| -> Result {
                     let mut guard = ctx.swap_data(ctx.data.with_class(ClassKind::Class));
-                    for method in class.class_methods.iter() {
+                    for method in class.members().class_methods() {
                         Self::resolve_function(
                             &mut guard,
                             &method.item.fun,
@@ -80,7 +80,10 @@ impl<'a> Resolver<'a> {
                         )?;
                     }
                     guard.env.define("this", ());
-                    for method in class.methods.iter() {
+                    for property in class.members().properties() {
+                        Self::resolve_function(&mut guard, &property.item.fun, ScopeKind::Method)?;
+                    }
+                    for method in class.members().methods() {
                         let scope_kind = if method.item.name.item == "init" {
                             ScopeKind::Initializer
                         } else {
@@ -88,6 +91,7 @@ impl<'a> Resolver<'a> {
                         };
                         Self::resolve_function(&mut guard, &method.item.fun, scope_kind)?;
                     }
+
                     Ok(())
                 })?;
             }

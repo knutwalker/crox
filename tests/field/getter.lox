@@ -1,0 +1,13 @@
+class Rect {
+  init(width, height) {
+    this.width = width;
+    this.height = height;
+  }
+
+  area {
+    return this.width * this.height;
+  }
+}
+
+var rect = Rect(6, 7);
+print rect.area; // expect: 42

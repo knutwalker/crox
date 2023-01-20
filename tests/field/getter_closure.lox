@@ -1,0 +1,14 @@
+var width = 6;
+
+class Line {
+  init(height) {
+    this.height = height;
+  }
+
+  area {
+    return this.height * width;
+  }
+}
+
+var line = Line(7);
+print line.area; // expect: 42

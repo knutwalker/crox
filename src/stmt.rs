@@ -65,20 +65,12 @@ impl<'a> Stmt<'a> {
         Self::Expression { expr }
     }
 
-    pub fn class(
-        name: Node<&'a str>,
-        methods: impl Into<Rc<[Node<FunctionDecl<'a>>]>>,
-        class_methods: impl Into<Rc<[Node<FunctionDecl<'a>>]>>,
-    ) -> Self {
-        Self::Class(ClassDecl {
-            name,
-            methods: methods.into(),
-            class_methods: class_methods.into(),
-        })
+    pub fn class(name: Node<&'a str>, members: Vec<Node<FunctionDecl<'a>>>) -> Self {
+        Self::Class(ClassDecl::new(name, members))
     }
 
-    pub fn fun(name: Node<&'a str>, fun: FunctionDef<'a>) -> FunctionDecl<'a> {
-        FunctionDecl { name, fun }
+    pub fn fun(name: Node<&'a str>, kind: FunctionKind, fun: FunctionDef<'a>) -> FunctionDecl<'a> {
+        FunctionDecl { name, kind, fun }
     }
 
     pub fn if_(condition: ExprNode<'a>, then_: StmtNode<'a>) -> Self {
@@ -133,12 +125,85 @@ impl<'a> Stmt<'a> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ClassDecl<'a> {
     pub name: Node<&'a str>,
-    pub methods: Rc<[Node<FunctionDecl<'a>>]>,
-    pub class_methods: Rc<[Node<FunctionDecl<'a>>]>,
+    members: Members<Node<FunctionDecl<'a>>>,
+}
+
+impl<'a> ClassDecl<'a> {
+    pub fn new(name: Node<&'a str>, members: Vec<Node<FunctionDecl<'a>>>) -> Self {
+        let members = Members::new(members, |m| m.item.kind);
+        Self { name, members }
+    }
+
+    pub fn members(&self) -> &Members<Node<FunctionDecl<'a>>> {
+        &self.members
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FunctionDecl<'a> {
     pub name: Node<&'a str>,
+    pub kind: FunctionKind,
     pub fun: FunctionDef<'a>,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum FunctionKind {
+    Class,
+    Function,
+    Method,
+    ClassMethod,
+    Property,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Members<T> {
+    members: Rc<[T]>,
+    methods: usize,
+    class_methods: usize,
+}
+
+impl<T> Members<T> {
+    pub fn new(mut members: Vec<T>, to_kind: impl Fn(&T) -> FunctionKind) -> Self {
+        members.sort_by_key(|m| to_kind(m));
+
+        let (methods, class_methods) =
+            members
+                .iter()
+                .fold((0, 0), |(methods, class_methods), member| {
+                    match to_kind(member) {
+                        FunctionKind::Method => (methods + 1, class_methods + 1),
+                        FunctionKind::ClassMethod => (methods, class_methods + 1),
+                        FunctionKind::Property => (methods, class_methods),
+                        otherwise => panic!("unsupported class member of kind {otherwise}"),
+                    }
+                });
+
+        Self {
+            members: members.into(),
+            methods,
+            class_methods,
+        }
+    }
+
+    pub fn methods(&self) -> impl Iterator<Item = &T> {
+        self.members[..self.methods].iter()
+    }
+
+    pub fn class_methods(&self) -> impl Iterator<Item = &T> {
+        self.members[self.methods..self.class_methods].iter()
+    }
+
+    pub fn properties(&self) -> impl Iterator<Item = &T> {
+        self.members[self.class_methods..].iter()
+    }
+
+    pub fn map<U>(&self, map: impl FnMut(&T) -> U) -> Members<U> {
+        let members = self.members.iter().map(map).collect();
+
+        Members {
+            members,
+            methods: self.methods,
+            class_methods: self.class_methods,
+        }
+    }
 }

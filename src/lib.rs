@@ -31,12 +31,12 @@ pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result, To
 pub use expr::{BinaryOp, Expr, ExprNode, FunctionDef, Literal, LogicalOp, UnaryOp, Var};
 pub use interp::{expr_interpreter, stmt_interpreter, Interpreter, InterpreterError};
 pub use node::{Ident, Node, Spannable};
-pub use oop::{AsInstance, AsMutInstance, Class, Instance, LookupError};
+pub use oop::{AsInstance, AsMutInstance, Class, Instance};
 pub use parser::{expr_parser, stmt_parser, Parser};
 pub use resolver::{expr_resolver, stmt_resolver, Resolver};
 pub use rule::{ExpressionRule, StatementRule};
 pub use scanner::{Scanner, Source};
-pub use stmt::{ClassDecl, FunctionDecl, Stmt, StmtArg, StmtNode};
+pub use stmt::{ClassDecl, FunctionDecl, FunctionKind, Members, Stmt, StmtArg, StmtNode};
 pub use timing::Timings;
 pub use token::{Range, Span, Spanned, Token, TokenSet, TokenType};
 pub use typer::{Type, TypeSet};

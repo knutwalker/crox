@@ -35,8 +35,8 @@
 //!```
 use crate::{
     BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule, FunctionDecl, FunctionDef,
-    Node, Range, Result, Source, Span, StatementRule, Stmt, StmtNode, Token, TokenSet, TokenType,
-    TooMany, UnaryOp,
+    FunctionKind, Node, Range, Result, Source, Span, StatementRule, Stmt, StmtNode, Token,
+    TokenSet, TokenType, TooMany, UnaryOp,
 };
 use std::{iter::Peekable, marker::PhantomData};
 use TokenType::*;
@@ -154,12 +154,11 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     fn class_decl(&mut self, start: Span) -> Result<StmtNode<'a>> {
         let name = self
             .ident(start)
-            .map_err(|c| c.with_payload(ExpectedFn(FnKind::Class)))?;
+            .map_err(|c| c.with_payload(ExpectedFn(FunctionKind::Class)))?;
 
         let open_brace = self.expect(LeftBrace, EndOfInput::expected(LeftBrace, name.span))?;
 
-        let mut methods = Vec::new();
-        let mut class_methods = Vec::new();
+        let mut members = Vec::new();
 
         loop {
             // not peek! because we don't want to consume the token
@@ -171,16 +170,13 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
                 }
                 Some(&(_, fn_span)) => {
                     let method = self.method_decl(fn_span)?;
-                    match method {
-                        Method::Instance(method) => methods.push(method),
-                        Method::Class(method) => class_methods.push(method),
-                    }
+                    members.push(method);
                 }
             }
         }
 
         let close_brace = self.expect(RightBrace, EndOfInput::Unclosed(LeftBrace, open_brace))?;
-        let stmt = Stmt::class(name, methods, class_methods);
+        let stmt = Stmt::class(name, members);
         let span = open_brace.union(close_brace);
         Ok(stmt.at(span))
     }
@@ -189,22 +185,11 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     ///    function := IDENTIFIER "(" parameters? ")" block ;
     ///  parameters := IDENTIFIER ( "," IDENTIFIER )* ;
     fn fun_decl(&mut self, start: Span) -> Result<StmtNode<'a>> {
-        self.function_decl(FnKind::Function, start)
+        self.function_decl(FunctionKind::Function, start)
             .map(|f| f.map(Stmt::Function))
     }
 
-    fn method_decl(&mut self, start: Span) -> Result<Method<'a>> {
-        let class = self.tokens.next_if(|&(token, _)| token == Class);
-        let mut func = self.function_decl(FnKind::Method, start)?;
-        if let Some((_, class_span)) = class {
-            func.span = class_span.union(func.span).into();
-            Ok(Method::Class(func))
-        } else {
-            Ok(Method::Instance(func))
-        }
-    }
-
-    fn function_decl(&mut self, kind: FnKind, start: Span) -> Result<Node<FunctionDecl<'a>>> {
+    fn function_decl(&mut self, kind: FunctionKind, start: Span) -> Result<Node<FunctionDecl<'a>>> {
         let name = self
             .ident(start)
             .map_err(|c| c.with_payload(ExpectedFn(kind)))?;
@@ -212,20 +197,56 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let fn_def = self.function_def(name.span)?;
         let span = start.union(fn_def.span);
 
-        Ok(Node::new(Stmt::fun(name, fn_def.item), span))
+        Ok(Node::new(Stmt::fun(name, kind, fn_def.item), span))
+    }
+
+    fn method_decl(&mut self, start: Span) -> Result<Node<FunctionDecl<'a>>> {
+        let class = self.tokens.next_if(|&(token, _)| token == Class);
+        match class {
+            Some((_, class_span)) => self.function_decl(FunctionKind::ClassMethod, class_span),
+            None => self.function_or_property(start),
+        }
+    }
+
+    fn function_or_property(&mut self, start: Span) -> Result<Node<FunctionDecl<'a>>> {
+        let name = self
+            .ident(start)
+            .map_err(|c| c.with_payload(ExpectedFn(FunctionKind::Method)))?;
+
+        let (is_property, fn_def) = match self.tokens.peek() {
+            Some(&(LeftBrace, left_brace)) => {
+                (FunctionKind::Property, self.property_def(left_brace)?)
+            }
+            _ => (FunctionKind::Method, self.function_def(name.span)?),
+        };
+
+        let span = start.union(fn_def.span);
+        let fn_item = Node::new(Stmt::fun(name, is_property, fn_def.item), span);
+        Ok(fn_item)
+    }
+
+    fn property_def(&mut self, start: Span) -> Result<Node<FunctionDef<'a>>> {
+        self.function_body(Vec::new(), start, start)
     }
 
     fn function_def(&mut self, start: Span) -> Result<Node<FunctionDef<'a>>> {
         let params =
             self.parens_list::<_, Parameters>(start, true, |this, span| this.ident(span))?;
-        let right_paren = params.span;
 
-        let open_brace = self.expect(LeftBrace, EndOfInput::expected(LeftBrace, right_paren))?;
+        self.function_body(params.item, start, params.span)
+    }
+
+    fn function_body(
+        &mut self,
+        params: Vec<Node<&'a str>>,
+        fn_start: Span,
+        body_start: Span,
+    ) -> Result<Node<FunctionDef<'a>>> {
+        let open_brace = self.expect(LeftBrace, EndOfInput::expected(LeftBrace, body_start))?;
         let body = self.block(open_brace)?;
+        let span = fn_start.union(body.span);
 
-        let span = start.union(body.span);
-
-        Ok(Node::new(FunctionDef::new(params.item, body.item), span))
+        Ok(Node::new(FunctionDef::new(params, body.item), span))
     }
 
     ///     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
@@ -753,24 +774,19 @@ impl From<EndOfInput> for CroxError {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum FnKind {
-    Class,
-    Function,
-    Method,
-}
-
-impl std::fmt::Display for FnKind {
+impl std::fmt::Display for FunctionKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FnKind::Class => f.write_str("class"),
-            FnKind::Function => f.write_str("function"),
-            FnKind::Method => f.write_str("method"),
+            Self::Class => f.write_str("class"),
+            Self::Function => f.write_str("function"),
+            Self::Method => f.write_str("method"),
+            Self::ClassMethod => f.write_str("class method"),
+            Self::Property => f.write_str("property"),
         }
     }
 }
 
-struct ExpectedFn(FnKind);
+struct ExpectedFn(FunctionKind);
 
 impl std::fmt::Display for ExpectedFn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -825,11 +841,6 @@ impl IntoTooMany for Parameters {
     fn into() -> TooMany {
         TooMany::Parameters
     }
-}
-
-enum Method<'a> {
-    Instance(Node<FunctionDecl<'a>>),
-    Class(Node<FunctionDecl<'a>>),
 }
 
 #[cfg(test)]

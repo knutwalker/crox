@@ -24,7 +24,7 @@ pub trait Callable<'a>: std::fmt::Debug + 'a {
 
 #[derive(Clone)]
 pub struct Function<'a> {
-    name: &'a str,
+    pub name: &'a str,
     is_init: bool,
     fun: FunctionDef<'a>,
     closure: Environment<'a>,

@@ -1,0 +1,6 @@
+class Nil {
+  value {}
+}
+
+var inst = Nil();
+print inst.value; // expect: nil

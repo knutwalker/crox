@@ -1,0 +1,17 @@
+fun calcArea(self) {
+  return self.width * self.height;
+}
+
+class Rect {
+  init(width, height) {
+    this.width = width;
+    this.height = height;
+  }
+
+  area {
+    return calcArea(this);
+  }
+}
+
+var rect = Rect(6, 7);
+print rect.area; // expect: 42
