@@ -1,4 +1,4 @@
-use crate::{ExprNode, FunctionDef, Node, Span};
+use crate::{ExprNode, FunctionDef, Node, Span, Var};
 use std::{fmt::Debug, rc::Rc};
 
 pub type StmtNode<'a> = Node<Stmt<'a>>;
@@ -65,8 +65,12 @@ impl<'a> Stmt<'a> {
         Self::Expression { expr }
     }
 
-    pub fn class(name: Node<&'a str>, members: Vec<Node<FunctionDecl<'a>>>) -> Self {
-        Self::Class(ClassDecl::new(name, members))
+    pub fn class(
+        name: Node<&'a str>,
+        superclass: Option<Node<Var<'a>>>,
+        members: Vec<Node<FunctionDecl<'a>>>,
+    ) -> Self {
+        Self::Class(ClassDecl::new(name, superclass, members))
     }
 
     pub fn fun(name: Node<&'a str>, kind: FunctionKind, fun: FunctionDef<'a>) -> FunctionDecl<'a> {
@@ -125,13 +129,22 @@ impl<'a> Stmt<'a> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ClassDecl<'a> {
     pub name: Node<&'a str>,
+    pub superclass: Option<Node<Var<'a>>>,
     members: Members<Node<FunctionDecl<'a>>>,
 }
 
 impl<'a> ClassDecl<'a> {
-    pub fn new(name: Node<&'a str>, members: Vec<Node<FunctionDecl<'a>>>) -> Self {
+    pub fn new(
+        name: Node<&'a str>,
+        superclass: Option<Node<Var<'a>>>,
+        members: Vec<Node<FunctionDecl<'a>>>,
+    ) -> Self {
         let members = Members::new(members, |m| m.item.kind);
-        Self { name, members }
+        Self {
+            name,
+            superclass,
+            members,
+        }
     }
 
     pub fn members(&self) -> &Members<Node<FunctionDecl<'a>>> {

@@ -12,12 +12,21 @@ use crate::{
 #[derive(Clone)]
 pub struct Class<'a> {
     pub name: &'a str,
+    superclass: Option<Node<Rc<Class<'a>>>>,
     members: Members<Rc<Function<'a>>>,
 }
 
 impl<'a> Class<'a> {
-    pub fn new(name: &'a str, members: Members<Rc<Function<'a>>>) -> Self {
-        Self { name, members }
+    pub fn new(
+        name: &'a str,
+        superclass: Option<Node<Rc<Class<'a>>>>,
+        members: Members<Rc<Function<'a>>>,
+    ) -> Self {
+        Self {
+            name,
+            superclass,
+            members,
+        }
     }
 }
 

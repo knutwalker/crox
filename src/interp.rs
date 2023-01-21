@@ -1,7 +1,7 @@
 use crate::{
     BinaryOp, Callable, Class, CroxError, CroxErrorKind, Environment, Expr, ExprNode,
-    ExpressionRule, Function, InterpreterContext, LogicalOp, Span, StatementRule, Stmt, StmtNode,
-    UnaryOp, Value, Valued, Var,
+    ExpressionRule, Function, InterpreterContext, LogicalOp, Node, Span, StatementRule, Stmt,
+    StmtNode, UnaryOp, Value, Valued, Var,
 };
 use std::{io::Write, marker::PhantomData, rc::Rc};
 
@@ -38,6 +38,19 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 let _ = Self::eval_expr(ctx, expr)?;
             }
             Stmt::Class(class) => {
+                let superclass = class
+                    .superclass
+                    .as_ref()
+                    .map(|s| {
+                        let superclass = s.clone().map(|s| Rc::new(Expr::Var(s)));
+                        let superclass = Self::eval_expr(ctx, &superclass)?;
+                        match superclass.item {
+                            Value::Class(class) => Ok(Node::new(class, superclass.span)),
+                            _ => Err(CroxErrorKind::SuperClassIsNotAClass.at(s.span)),
+                        }
+                    })
+                    .transpose()?;
+
                 let name = class.name.item;
                 ctx.env.define(name, Value::Nil);
 
@@ -48,7 +61,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                     Rc::new(fun)
                 });
 
-                let class = Class::new(name, class_members);
+                let class = Class::new(name, superclass, class_members);
                 let class = Value::from(class);
                 ctx.env.define(name, class);
             }

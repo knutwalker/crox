@@ -1,4 +1,4 @@
 class Foo {}
 
-// [line 4] Error at '(': Expect superclass name.
+// [line 4, offset 12] Unexpected token: expected [Identifier], got 'LeftParen'
 class Bar < (Foo) {}

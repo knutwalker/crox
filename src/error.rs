@@ -235,6 +235,12 @@ pub enum CroxErrorKind {
     ThisInClassMethod,
 
     #[diagnostic()]
+    InheritsSelf,
+
+    #[diagnostic()]
+    SuperClassIsNotAClass,
+
+    #[diagnostic()]
     UndefinedProperty { name: String },
 
     #[diagnostic()]
@@ -324,6 +330,8 @@ impl CroxErrorKind {
             | Self::ReturnFromInitializer
             | Self::ThisInClassMethod
             | Self::ThisOutsideClass
+            | Self::InheritsSelf
+            | Self::SuperClassIsNotAClass
             | Self::ClassPropertyOnInstance { .. } => "Invalid statement: ",
             Self::UndefinedProperty { .. } => "Undefined property: ",
             Self::Other(_) => "Error: ",
@@ -423,6 +431,12 @@ impl Display for FancyCroxErrorKind<'_> {
             CroxErrorKind::ThisInClassMethod => {
                 f.write_str("Can't use 'this' in a class method")?;
             }
+            CroxErrorKind::InheritsSelf => {
+                f.write_str("A class can't inherit from itself")?;
+            }
+            CroxErrorKind::SuperClassIsNotAClass => {
+                f.write_str("Superclass must be a class")?;
+            }
             CroxErrorKind::UndefinedProperty { name } => {
                 write!(f, "'{name}'")?;
             }
@@ -471,6 +485,8 @@ impl From<&CroxErrorKind> for CroxErrorScope {
             | ReturnFromInitializer
             | ThisOutsideClass
             | ThisInClassMethod
+            | InheritsSelf
+            | SuperClassIsNotAClass
             | UndefinedProperty { .. }
             | ClassPropertyOnInstance { .. } => Self::Interpreter,
             Other(_) => Self::Custom,

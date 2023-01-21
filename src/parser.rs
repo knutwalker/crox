@@ -4,7 +4,7 @@
 //!     program := declaration* EOF ;
 //! declaration := classDecl | funDecl | varDecl | statement ;
 //!
-//!   classDecl := "class" IDENTIFIER "{" member* "}" ;
+//!   classDecl := "class" IDENTIFIER ( "<" IDENTIFIER )? "{" member* "}" ;
 //!      member := method | property ;
 //!      method := "class"? function ;
 //!    property := IDENTIFIER block ;
@@ -153,11 +153,20 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         .map_or_else(|| self.statement(), Ok)
     }
 
-    ///   classDecl := "class" IDENTIFIER "{" member* "}" ;
+    ///   classDecl := "class" IDENTIFIER ( "<" IDENTIFIER )? "{" member* "}" ;
     fn class_decl(&mut self, start: Span) -> Result<StmtNode<'a>> {
         let name = self
             .ident(start)
             .map_err(|c| c.with_payload(ExpectedFn(FunctionKind::Class)))?;
+
+        let extends = self.tokens.next_if(|&(token, _)| token == Less);
+        let superclass = extends
+            .map(|(_, span)| {
+                self.ident(span)
+                    .map(|name| name.map(Var::new))
+                    .map_err(|c| c.with_payload(ExpectedFn(FunctionKind::Class)))
+            })
+            .transpose()?;
 
         let open_brace = self.expect(LeftBrace, EndOfInput::expected(LeftBrace, name.span))?;
 
@@ -179,7 +188,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         }
 
         let close_brace = self.expect(RightBrace, EndOfInput::Unclosed(LeftBrace, open_brace))?;
-        let stmt = Stmt::class(name, members);
+        let stmt = Stmt::class(name, superclass, members);
         let span = open_brace.union(close_brace);
         Ok(stmt.at(span))
     }

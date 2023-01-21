@@ -2,7 +2,7 @@ use crate::{
     Context, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule, FunctionDef, Result,
     Scoped, StatementRule, Stmt, StmtArg, StmtNode, Var,
 };
-use std::marker::PhantomData;
+use std::{marker::PhantomData, rc::Rc};
 
 #[derive(Debug)]
 pub struct Resolver<'a> {
@@ -70,6 +70,13 @@ impl<'a> Resolver<'a> {
             }
             Stmt::Class(class) => {
                 ctx.env.define(class.name.item, ());
+                if let Some(superclass) = &class.superclass {
+                    if superclass.item.name == class.name.item {
+                        return Err(CroxErrorKind::InheritsSelf.at(superclass.span));
+                    }
+                    let superclass = superclass.clone().map(|s| Rc::new(Expr::Var(s)));
+                    Self::eval_expr(ctx, &superclass)?;
+                }
                 ctx.run_with_new_scope(|ctx| -> Result {
                     let mut guard = ctx.swap_data(ctx.data.with_class(ClassKind::Class));
                     for method in class.members().class_methods() {
