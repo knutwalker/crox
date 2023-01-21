@@ -1,7 +1,7 @@
 use crate::{
     BinaryOp, Callable, Class, CroxError, CroxErrorKind, Environment, Expr, ExprNode,
     ExpressionRule, Function, InterpreterContext, LogicalOp, Span, StatementRule, Stmt, StmtNode,
-    UnaryOp, Value, Valued,
+    UnaryOp, Value, Valued, Var,
 };
 use std::{io::Write, marker::PhantomData, rc::Rc};
 
@@ -110,7 +110,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
         let span = expr.span;
         let value = match &*expr.item {
             Expr::Literal(literal) => Value::from(literal),
-            Expr::Var { name, scope } => ctx
+            Expr::Var(Var { name, scope }) => ctx
                 .env
                 .get(name, scope.get())
                 .map_err(|e| CroxErrorKind::from(e).at(span))?,

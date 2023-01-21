@@ -1,4 +1,8 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::{Ref, RefCell},
+    collections::HashMap,
+    rc::Rc,
+};
 
 use crate::{
     Callable, CroxErrorKind, Function, InterpreterContext, Members, Node, Result, Span, Type,
@@ -61,6 +65,37 @@ impl<'a> Instance<'a> {
     }
 }
 
+impl<'a> Class<'a> {
+    fn lookup(&self, name: &'a str) -> Lookup<'_, 'a> {
+        if let Some(property) = self.members.properties().find(|p| p.name == name) {
+            return Lookup::Property(property);
+        }
+
+        let method = self.members.methods().find(|m| m.name == name);
+        if let Some(method) = method {
+            return Lookup::Method(method);
+        }
+
+        if self.members.class_methods().any(|cm| cm.name == name) {
+            return Lookup::ClassMethod;
+        }
+
+        Lookup::Undefined
+    }
+}
+
+impl<'a> Instance<'a> {
+    fn lookup(&self, name: &'a str) -> Lookup<'_, 'a> {
+        let field = self.fields.borrow();
+        let field = Ref::filter_map(field, |f| f.get(name));
+        if let Ok(field) = field {
+            return Lookup::Field(field);
+        }
+
+        self.class.lookup(name)
+    }
+}
+
 pub trait AsInstance<'a> {
     fn get(
         &self,
@@ -81,35 +116,25 @@ impl<'a> AsInstance<'a> for Rc<Instance<'a>> {
         ctx: &mut InterpreterContext<'a, '_>,
         caller: Span,
     ) -> Result<Value<'a>> {
-        let name_span = name.span;
-        let name = name.item;
-
-        let field = self.fields.borrow();
-        let field = field.get(name);
-        if let Some(field) = field {
-            return Ok(field.clone());
-        }
-
-        if let Some(property) = self.class.members.properties().find(|p| p.name == name) {
-            let property = property.bind(Rc::clone(self));
-            return property.call(ctx, &[], caller);
-        }
-
-        let method = self.class.members.methods().find(|m| m.name == name);
-        if let Some(method) = method {
-            let method = method.bind(Rc::clone(self));
-            return Ok(Value::from(method));
-        }
-        if self.class.members.class_methods().any(|cm| cm.name == name) {
-            return Err(CroxErrorKind::ClassPropertyOnInstance {
-                name: name.to_owned(),
+        match self.lookup(name.item) {
+            Lookup::Field(field) => Ok(field.clone()),
+            Lookup::Property(property) => {
+                let property = property.bind(Rc::clone(self));
+                property.call(ctx, &[], caller)
             }
-            .at(name_span));
+            Lookup::Method(method) => {
+                let method = method.bind(Rc::clone(self));
+                Ok(Value::from(method))
+            }
+            Lookup::ClassMethod => Err(CroxErrorKind::ClassPropertyOnInstance {
+                name: name.item.to_owned(),
+            }
+            .at(name.span)),
+            Lookup::Undefined => Err(CroxErrorKind::UndefinedProperty {
+                name: name.item.to_owned(),
+            }
+            .at(name.span)),
         }
-        Err(CroxErrorKind::UndefinedProperty {
-            name: name.to_owned(),
-        }
-        .at(name_span))
     }
 }
 
@@ -138,6 +163,14 @@ impl<'a> AsInstance<'a> for Rc<Class<'a>> {
         }
         .at(caller))
     }
+}
+
+enum Lookup<'a, 'env> {
+    Field(Ref<'a, Value<'env>>),
+    Property(&'a Rc<Function<'env>>),
+    Method(&'a Rc<Function<'env>>),
+    ClassMethod,
+    Undefined,
 }
 
 impl<'a> std::fmt::Debug for Class<'a> {

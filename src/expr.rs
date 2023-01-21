@@ -9,10 +9,7 @@ pub type ExprNode<'a> = Node<Rc<Expr<'a>>>;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr<'a> {
     Literal(Literal<'a>),
-    Var {
-        name: &'a str,
-        scope: Scoped,
-    },
+    Var(Var<'a>),
     Fun(FunctionDef<'a>),
     Assignment {
         name: &'a str,
@@ -76,10 +73,7 @@ impl<'a> Expr<'a> {
     }
 
     pub fn var(name: &'a str) -> Self {
-        Self::Var {
-            name,
-            scope: Scoped::new(),
-        }
+        Self::Var(Var::new(name))
     }
 
     pub fn fun(fun: FunctionDef<'a>) -> Self {
@@ -262,11 +256,15 @@ pub enum Literal<'a> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Var<'a> {
     pub name: &'a str,
+    pub scope: Scoped,
 }
 
 impl<'a> Var<'a> {
     pub fn new(name: &'a str) -> Self {
-        Self { name }
+        Self {
+            name,
+            scope: Scoped::new(),
+        }
     }
 }
 

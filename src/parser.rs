@@ -4,7 +4,10 @@
 //!     program := declaration* EOF ;
 //! declaration := classDecl | funDecl | varDecl | statement ;
 //!
-//!   classDecl := "class" IDENTIFIER "{" function* "}" ;
+//!   classDecl := "class" IDENTIFIER "{" member* "}" ;
+//!      member := method | property ;
+//!      method := "class"? function ;
+//!    property := IDENTIFIER block ;
 //!     funDecl := "fun" function ;
 //!    function := IDENTIFIER "(" parameters? ")" block ;
 //!     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
@@ -36,7 +39,7 @@
 use crate::{
     BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule, FunctionDecl, FunctionDef,
     FunctionKind, Node, Range, Result, Source, Span, StatementRule, Stmt, StmtNode, Token,
-    TokenSet, TokenType, TooMany, UnaryOp,
+    TokenSet, TokenType, TooMany, UnaryOp, Var,
 };
 use std::{iter::Peekable, marker::PhantomData};
 use TokenType::*;
@@ -150,7 +153,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         .map_or_else(|| self.statement(), Ok)
     }
 
-    ///   classDecl := "class" IDENTIFIER "{" function* "}" ;
+    ///   classDecl := "class" IDENTIFIER "{" member* "}" ;
     fn class_decl(&mut self, start: Span) -> Result<StmtNode<'a>> {
         let name = self
             .ident(start)
@@ -169,7 +172,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
                     break;
                 }
                 Some(&(_, fn_span)) => {
-                    let method = self.method_decl(fn_span)?;
+                    let method = self.member(fn_span)?;
                     members.push(method);
                 }
             }
@@ -179,6 +182,16 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let stmt = Stmt::class(name, members);
         let span = open_brace.union(close_brace);
         Ok(stmt.at(span))
+    }
+
+    ///      member := method | property ;
+    ///      method := "class"? function ;
+    fn member(&mut self, start: Span) -> Result<Node<FunctionDecl<'a>>> {
+        let class = self.tokens.next_if(|&(token, _)| token == Class);
+        match class {
+            Some((_, class_span)) => self.function_decl(FunctionKind::ClassMethod, class_span),
+            None => self.function_or_property(start),
+        }
     }
 
     ///     funDecl := "fun" function ;
@@ -200,14 +213,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         Ok(Node::new(Stmt::fun(name, kind, fn_def.item), span))
     }
 
-    fn method_decl(&mut self, start: Span) -> Result<Node<FunctionDecl<'a>>> {
-        let class = self.tokens.next_if(|&(token, _)| token == Class);
-        match class {
-            Some((_, class_span)) => self.function_decl(FunctionKind::ClassMethod, class_span),
-            None => self.function_or_property(start),
-        }
-    }
-
+    ///    property := IDENTIFIER block ;
     fn function_or_property(&mut self, start: Span) -> Result<Node<FunctionDecl<'a>>> {
         let name = self
             .ident(start)
@@ -448,7 +454,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             let value = self.assignment()?;
             let span = expr.span.union(value.span);
             let assign = match &*expr.item {
-                Expr::Var { name, .. } => Expr::assign(name, value),
+                Expr::Var(Var { name, .. }) => Expr::assign(name, value),
                 Expr::Get { object, name } => Expr::set(object.clone(), *name, value),
                 _ => {
                     return Err(CroxErrorKind::InvalidAssignmentTarget.at(expr.span));

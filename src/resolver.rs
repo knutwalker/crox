@@ -1,6 +1,6 @@
 use crate::{
     Context, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule, FunctionDef, Result,
-    Scoped, StatementRule, Stmt, StmtArg, StmtNode,
+    Scoped, StatementRule, Stmt, StmtArg, StmtNode, Var,
 };
 use std::marker::PhantomData;
 
@@ -146,7 +146,7 @@ impl<'a> Resolver<'a> {
     pub fn eval_expr(ctx: &mut ResolveContext<'a>, expr: &ExprNode<'a>) -> Result {
         match &*expr.item {
             Expr::Literal(_) => {}
-            Expr::Var { name, scope } => Self::resolve_local(ctx, name, scope),
+            Expr::Var(Var { name, scope }) => Self::resolve_local(ctx, name, scope),
             Expr::Fun(func) => Self::resolve_function(ctx, func, ScopeKind::Function)?,
             Expr::Assignment { name, scope, value } => {
                 Self::eval_expr(ctx, value)?;
