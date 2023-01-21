@@ -1,0 +1,11 @@
+var a = "global";
+{
+  var showA = fun() {
+    print a;
+  };
+
+  showA(); // expect: global
+  var a = "block";
+  showA(); // expect: global
+}
+
