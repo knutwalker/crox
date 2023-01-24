@@ -50,7 +50,6 @@ pub enum Run {
     Chapter29Superclasses = 29,
     Chapter30Optimization = 30,
     AllCompiled = 31,
-    // Chapter32All = 32,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -1,2 +1,2 @@
-// [line 2, offset 9] Unexpected token: expected one of [LeftParen, Identifier, String, Number, False, Fun, Nil, True], got 'Var'
+// [line 2, offset 9] Unexpected token: expected one of [LeftParen, Identifier, String, Number, False, Fun, Nil, Super, This, True], got 'Var'
 for (;;) var foo;

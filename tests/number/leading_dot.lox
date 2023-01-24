@@ -1,2 +1,2 @@
-// [line 2, offset 0] Error: Unexpected token: expected one of [LeftParen, Identifier, String, Number, False, Fun, Nil, True], got 'Dot'
+// [line 2, offset 0] Error: Unexpected token: expected one of [LeftParen, Identifier, String, Number, False, Fun, Nil, Super, This, True], got 'Dot'
 .123;

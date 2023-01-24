@@ -1,2 +1,2 @@
-// [line 2, offset 23] Unexpected token: expected one of [LeftParen, Identifier, String, Number, False, Fun, Nil, True], got 'LeftBrace'
+// [line 2, offset 23] Unexpected token: expected one of [LeftParen, Identifier, String, Number, False, Fun, Nil, Super, This, True], got 'LeftBrace'
 for (var a = 1; a < 2; {}) {}

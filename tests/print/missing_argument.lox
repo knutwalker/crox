@@ -1,2 +1,2 @@
-// [line 2, offset 5] Error: Unexpected token: expected one of [LeftParen, Identifier, String, Number, False, Fun, Nil, True], got 'Semicolon'
+// [line 2, offset 5] Error: Unexpected token: expected one of [LeftParen, Identifier, String, Number, False, Fun, Nil, Super, This, True], got 'Semicolon'
 print;

@@ -1,3 +1,3 @@
-// [line 3, offset 16] Unexpected token: expected one of [LeftParen, Identifier, String, Number, False, Fun, Nil, True], got 'LeftBrace'
+// [line 3, offset 16] Unexpected token: expected one of [LeftParen, Identifier, String, Number, False, Fun, Nil, Super, This, True], got 'LeftBrace'
 // [line 3, offset 29] Unexpected token: expected [Semicolon], got 'RightParen'
 for (var a = 1; {}; a = a + 1) {}
