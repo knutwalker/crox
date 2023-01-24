@@ -241,10 +241,19 @@ pub enum CroxErrorKind {
     SuperClassIsNotAClass,
 
     #[diagnostic()]
-    UndefinedProperty { name: String },
+    SuperOutsideClass,
 
     #[diagnostic()]
-    ClassPropertyOnInstance { name: String },
+    SuperInClassWithoutSuperclass,
+
+    #[diagnostic()]
+    UndefinedMember { name: String },
+
+    #[diagnostic()]
+    ClassMemberOnInstance { name: String },
+
+    #[diagnostic()]
+    MemberIsNotAMethod { name: String },
 
     #[diagnostic()]
     Other(String),
@@ -331,9 +340,12 @@ impl CroxErrorKind {
             | Self::ThisInClassMethod
             | Self::ThisOutsideClass
             | Self::InheritsSelf
+            | Self::SuperOutsideClass
+            | Self::SuperInClassWithoutSuperclass
             | Self::SuperClassIsNotAClass
-            | Self::ClassPropertyOnInstance { .. } => "Invalid statement: ",
-            Self::UndefinedProperty { .. } => "Undefined property: ",
+            | Self::ClassMemberOnInstance { .. }
+            | Self::MemberIsNotAMethod { .. } => "Invalid statement: ",
+            Self::UndefinedMember { .. } => "Undefined property: ",
             Self::Other(_) => "Error: ",
         }
     }
@@ -437,14 +449,23 @@ impl Display for FancyCroxErrorKind<'_> {
             CroxErrorKind::SuperClassIsNotAClass => {
                 f.write_str("Superclass must be a class")?;
             }
-            CroxErrorKind::UndefinedProperty { name } => {
+            CroxErrorKind::SuperOutsideClass => {
+                f.write_str("Can't use 'super' outside of a class")?;
+            }
+            CroxErrorKind::SuperInClassWithoutSuperclass => {
+                f.write_str("Can't use 'super' in a class with no superclass")?;
+            }
+            CroxErrorKind::UndefinedMember { name } => {
                 write!(f, "'{name}'")?;
             }
-            CroxErrorKind::ClassPropertyOnInstance { name } => {
+            CroxErrorKind::ClassMemberOnInstance { name } => {
                 write!(
                     f,
                     "'{name}' is a class method and cannot be accessed from an instance"
                 )?;
+            }
+            CroxErrorKind::MemberIsNotAMethod { name } => {
+                write!(f, "'{name}' is not a method")?;
             }
             CroxErrorKind::Other(msg) => {
                 write!(f, "{msg}")?;
@@ -487,8 +508,11 @@ impl From<&CroxErrorKind> for CroxErrorScope {
             | ThisInClassMethod
             | InheritsSelf
             | SuperClassIsNotAClass
-            | UndefinedProperty { .. }
-            | ClassPropertyOnInstance { .. } => Self::Interpreter,
+            | SuperOutsideClass
+            | SuperInClassWithoutSuperclass
+            | UndefinedMember { .. }
+            | ClassMemberOnInstance { .. }
+            | MemberIsNotAMethod { .. } => Self::Interpreter,
             Other(_) => Self::Custom,
         }
     }

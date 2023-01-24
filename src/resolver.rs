@@ -1,6 +1,6 @@
 use crate::{
-    Context, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule, FunctionDef, Result,
-    Scoped, StatementRule, Stmt, StmtArg, StmtNode, Var,
+    ClassDecl, Context, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule, FunctionDef,
+    Result, Scoped, StatementRule, Stmt, StmtArg, StmtNode, Var,
 };
 use std::{marker::PhantomData, rc::Rc};
 
@@ -56,6 +56,7 @@ enum ClassKind {
     #[default]
     Global,
     Class,
+    Subclass,
 }
 
 impl<'a> Resolver<'a> {
@@ -69,38 +70,26 @@ impl<'a> Resolver<'a> {
                 Self::eval_expr(ctx, expr)?;
             }
             Stmt::Class(class) => {
-                ctx.env.define(class.name.item, ());
+                let mut guard = ctx.swap_data(ctx.data.with_class(ClassKind::Class));
+                guard.env.define(class.name.item, ());
                 if let Some(superclass) = &class.superclass {
                     if superclass.item.name == class.name.item {
                         return Err(CroxErrorKind::InheritsSelf.at(superclass.span));
                     }
                     let superclass = superclass.clone().map(|s| Rc::new(Expr::Var(s)));
-                    Self::eval_expr(ctx, &superclass)?;
-                }
-                ctx.run_with_new_scope(|ctx| -> Result {
-                    let mut guard = ctx.swap_data(ctx.data.with_class(ClassKind::Class));
-                    for method in class.members().class_methods() {
-                        Self::resolve_function(
-                            &mut guard,
-                            &method.item.fun,
-                            ScopeKind::ClassMethod,
-                        )?;
-                    }
-                    guard.env.define("this", ());
-                    for property in class.members().properties() {
-                        Self::resolve_function(&mut guard, &property.item.fun, ScopeKind::Method)?;
-                    }
-                    for method in class.members().methods() {
-                        let scope_kind = if method.item.name.item == "init" {
-                            ScopeKind::Initializer
-                        } else {
-                            ScopeKind::Method
-                        };
-                        Self::resolve_function(&mut guard, &method.item.fun, scope_kind)?;
-                    }
 
-                    Ok(())
-                })?;
+                    let new_data = guard.data.with_class(ClassKind::Subclass);
+                    let mut guard = guard.swap_data(new_data);
+
+                    Self::eval_expr(&mut guard, &superclass)?;
+
+                    guard.run_with_new_scope(|ctx| {
+                        ctx.env.define("super", ());
+                        Self::resolve_class(ctx, class)
+                    })?;
+                } else {
+                    Self::resolve_class(&mut guard, class)?;
+                }
             }
             Stmt::Function(func) => {
                 ctx.env.define(func.name.item, ());
@@ -187,6 +176,16 @@ impl<'a> Resolver<'a> {
                 Self::eval_expr(ctx, value)?;
                 Self::eval_expr(ctx, object)?;
             }
+            Expr::Super { method: _, scope } => {
+                match ctx.data.class {
+                    ClassKind::Global => return Err(CroxErrorKind::SuperOutsideClass.at(expr.span)),
+                    ClassKind::Class => {
+                        return Err(CroxErrorKind::SuperInClassWithoutSuperclass.at(expr.span))
+                    }
+                    ClassKind::Subclass => {}
+                }
+                Self::resolve_local(ctx, "super", scope);
+            }
             Expr::This { scope } => {
                 if ctx.data.class == ClassKind::Global {
                     return Err(CroxErrorKind::ThisOutsideClass.at(expr.span));
@@ -226,6 +225,29 @@ impl<'a> Resolver<'a> {
             Self::eval_stmts_in_scope(&mut guard, &func.body)?;
             Ok(())
         })
+    }
+
+    fn resolve_class(ctx: &mut ResolveContext<'a>, class: &ClassDecl<'a>) -> Result {
+        ctx.run_with_new_scope(|ctx| -> Result {
+            for method in class.members().class_methods() {
+                Self::resolve_function(ctx, &method.item.fun, ScopeKind::ClassMethod)?;
+            }
+            ctx.env.define("this", ());
+            for property in class.members().properties() {
+                Self::resolve_function(ctx, &property.item.fun, ScopeKind::Method)?;
+            }
+            for method in class.members().methods() {
+                let scope_kind = if method.item.name.item == "init" {
+                    ScopeKind::Initializer
+                } else {
+                    ScopeKind::Method
+                };
+                Self::resolve_function(ctx, &method.item.fun, scope_kind)?;
+            }
+
+            Ok(())
+        })?;
+        Ok(())
     }
 }
 

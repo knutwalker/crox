@@ -1,7 +1,7 @@
 use crate::{
-    BinaryOp, Callable, Class, CroxError, CroxErrorKind, Environment, Expr, ExprNode,
+    BinaryOp, Callable, Class, ClassDecl, CroxError, CroxErrorKind, Environment, Expr, ExprNode,
     ExpressionRule, Function, InterpreterContext, LogicalOp, Node, Span, StatementRule, Stmt,
-    StmtNode, UnaryOp, Value, Valued, Var,
+    StmtNode, Type, TypeSet, UnaryOp, Value, Valued, Var,
 };
 use std::{io::Write, marker::PhantomData, rc::Rc};
 
@@ -54,16 +54,17 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 let name = class.name.item;
                 ctx.env.define(name, Value::Nil);
 
-                let class_members = class.members().map(|m| {
-                    let name = m.item.name.item;
-                    let fun = m.item.fun.clone();
-                    let fun = Function::method(name, fun, ctx.env.clone());
-                    Rc::new(fun)
-                });
+                if let Some(the_superclass) = superclass.as_ref().cloned() {
+                    ctx.run_with_new_scope(|ctx| {
+                        let the_superclass = Rc::clone(&the_superclass.item);
+                        let the_superclass = Value::Class(the_superclass);
+                        ctx.env.define("super", the_superclass);
 
-                let class = Class::new(name, superclass, class_members);
-                let class = Value::from(class);
-                ctx.env.define(name, class);
+                        Self::class_new(ctx, name, class, superclass)
+                    })
+                } else {
+                    Self::class_new(ctx, name, class, superclass);
+                }
             }
             Stmt::Function(func) => {
                 let name = func.name.item;
@@ -195,7 +196,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
             Expr::Get { object, name } => {
                 let object = Self::eval_expr(ctx, object)?;
                 let instance = object.item.as_instance(span)?;
-                instance.get(name, ctx, span)?
+                instance.get(name, span)?.into_value(ctx, span)?
             }
             Expr::Set {
                 object,
@@ -213,12 +214,70 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 .env
                 .get("this", scope.get())
                 .map_err(|e| CroxErrorKind::from(e).at(span))?,
+            Expr::Super { method, scope } => {
+                let superclass = ctx
+                    .env
+                    .get("super", scope.get())
+                    .map_err(|e| CroxErrorKind::from(e).at(span))?;
+
+                let this_scope = scope.get_at_offset(-1).unwrap_or_else(|| {
+                    panic!("[ICE] scope for `super` needs to be properly resolved, but it was {scope:?}")
+                });
+
+                let this = ctx
+                    .env
+                    .get("this", this_scope)
+                    .map_err(|e| CroxErrorKind::from(e).at(span))?;
+
+                let method = match &superclass {
+                    Value::Class(superclass) => superclass
+                        .lookup(method.item)
+                        .into_method(method.item, method.span),
+                    _ => Err(CroxErrorKind::InvalidType {
+                        expected: TypeSet::from(Type::Class),
+                        actual: superclass.typ(),
+                    }
+                    .at(span)),
+                }?;
+
+                let this = match this {
+                    Value::Instance(instance) => instance,
+                    _ => {
+                        return Err(CroxErrorKind::InvalidType {
+                            expected: TypeSet::from(Type::Instance),
+                            actual: this.typ(),
+                        }
+                        .at(span))
+                    }
+                };
+
+                Value::from(method.bind(this))
+            }
             Expr::Group { expr } => Self::eval_expr(ctx, expr)?.item,
         };
 
         Ok(Valued::new(value, span))
     }
+
+    fn class_new<'env, 'out>(
+        ctx: &mut InterpreterContext<'env, 'out>,
+        name: &'env str,
+        class: &ClassDecl<'env>,
+        superclass: Option<Node<Rc<Class<'env>>>>,
+    ) {
+        let class_members = class.members().map(|m| {
+            let name = m.item.name.item;
+            let fun = m.item.fun.clone();
+            let fun = Function::method(name, fun, ctx.env.clone());
+            Rc::new(fun)
+        });
+
+        let class = Class::new(name, superclass, class_members);
+        let class = Value::from(class);
+        ctx.env.define(name, class);
+    }
 }
+
 impl<'a, 'e> Interpreter<'a, 'e> {
     pub fn eval_own_stmts_in_scope(&mut self, stmts: &[StmtNode<'a>]) -> Result<'a, ()> {
         Self::eval_stmts_in_scope(&mut self.context, stmts)

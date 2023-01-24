@@ -147,6 +147,16 @@ impl Scoped {
         self.resolved.get()
     }
 
+    pub fn get_at_offset(&self, offset: i32) -> Option<Scope> {
+        match self.get() {
+            Scope::Global => None,
+            Scope::Local => None,
+            Scope::Enclosing { distance } => Some(Scope::Enclosing {
+                distance: distance.checked_add_signed(offset)?,
+            }),
+        }
+    }
+
     pub fn resolve(&self, scope: Scope) {
         self.resolved.set(scope);
     }

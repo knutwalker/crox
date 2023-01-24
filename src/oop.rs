@@ -75,7 +75,7 @@ impl<'a> Instance<'a> {
 }
 
 impl<'a> Class<'a> {
-    fn lookup(&self, name: &'a str) -> Lookup<'_, 'a> {
+    pub fn lookup(&self, name: &'a str) -> Lookup<'_, 'a> {
         if let Some(property) = self.members.properties().find(|p| p.name == name) {
             return Lookup::Property(property);
         }
@@ -116,12 +116,7 @@ impl<'a> Instance<'a> {
 }
 
 pub trait AsInstance<'a> {
-    fn get(
-        &self,
-        name: &Node<&'a str>,
-        ctx: &mut InterpreterContext<'a, '_>,
-        caller: Span,
-    ) -> Result<Value<'a>>;
+    fn get(&self, name: &Node<&'a str>, caller: Span) -> Result<IntoValue<'a>>;
 }
 
 pub trait AsMutInstance<'a> {
@@ -129,31 +124,9 @@ pub trait AsMutInstance<'a> {
 }
 
 impl<'a> AsInstance<'a> for Rc<Instance<'a>> {
-    fn get(
-        &self,
-        name: &Node<&'a str>,
-        ctx: &mut InterpreterContext<'a, '_>,
-        caller: Span,
-    ) -> Result<Value<'a>> {
-        match self.lookup(name.item) {
-            Lookup::Field(field) => Ok(field.clone()),
-            Lookup::Property(property) => {
-                let property = property.bind(Rc::clone(self));
-                property.call(ctx, &[], caller)
-            }
-            Lookup::Method(method) => {
-                let method = method.bind(Rc::clone(self));
-                Ok(Value::from(method))
-            }
-            Lookup::ClassMethod => Err(CroxErrorKind::ClassPropertyOnInstance {
-                name: name.item.to_owned(),
-            }
-            .at(name.span)),
-            Lookup::Undefined => Err(CroxErrorKind::UndefinedProperty {
-                name: name.item.to_owned(),
-            }
-            .at(name.span)),
-        }
+    fn get(&self, name: &Node<&'a str>, _caller: Span) -> Result<IntoValue<'a>> {
+        self.lookup(name.item)
+            .into_value(self, name.item, name.span)
     }
 }
 
@@ -164,17 +137,12 @@ impl<'a> AsMutInstance<'a> for Rc<Instance<'a>> {
 }
 
 impl<'a> AsInstance<'a> for Rc<Class<'a>> {
-    fn get(
-        &self,
-        name: &Node<&'a str>,
-        _ctx: &mut InterpreterContext<'a, '_>,
-        caller: Span,
-    ) -> Result<Value<'a>> {
+    fn get(&self, name: &Node<&'a str>, caller: Span) -> Result<IntoValue<'a>> {
         let name = name.item;
 
         let method = self.members.class_methods().find(|cm| cm.name == name);
         if let Some(method) = method {
-            return Ok(Value::Fn(Rc::clone(method)));
+            return Ok(IntoValue::Value(Value::Fn(Rc::clone(method))));
         }
         Err(CroxErrorKind::InvalidType {
             expected: TypeSet::from(Type::Instance),
@@ -184,12 +152,79 @@ impl<'a> AsInstance<'a> for Rc<Class<'a>> {
     }
 }
 
-enum Lookup<'a, 'env> {
+#[derive(Clone, Debug)]
+pub enum IntoValue<'a> {
+    Value(Value<'a>),
+    Property(Function<'a>),
+}
+
+impl<'a> IntoValue<'a> {
+    pub fn into_value(
+        self,
+        ctx: &mut InterpreterContext<'a, '_>,
+        caller: Span,
+    ) -> Result<Value<'a>> {
+        match self {
+            IntoValue::Value(v) => Ok(v),
+            IntoValue::Property(p) => p.call(ctx, &[], caller),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Lookup<'a, 'env> {
     Field(Ref<'a, Value<'env>>),
     Property(&'a Rc<Function<'env>>),
     Method(&'a Rc<Function<'env>>),
     ClassMethod,
     Undefined,
+}
+
+impl<'a, 'env> Lookup<'a, 'env> {
+    pub fn into_method(self, method: &str, span: Span) -> Result<&'a Rc<Function<'env>>> {
+        match self {
+            Lookup::Method(method) => Ok(method),
+            Lookup::Field(_) | Lookup::Property(_) => Err(CroxErrorKind::MemberIsNotAMethod {
+                name: method.to_owned(),
+            }
+            .at(span)),
+            Lookup::ClassMethod => Err(CroxErrorKind::ClassMemberOnInstance {
+                name: method.to_owned(),
+            }
+            .at(span)),
+            Lookup::Undefined => Err(CroxErrorKind::UndefinedMember {
+                name: method.to_owned(),
+            }
+            .at(span)),
+        }
+    }
+
+    fn into_value(
+        self,
+        instance: &Rc<Instance<'env>>,
+        name: &str,
+        span: Span,
+    ) -> Result<IntoValue<'env>> {
+        match self {
+            Lookup::Field(field) => Ok(IntoValue::Value(field.clone())),
+            Lookup::Property(property) => {
+                let property = property.bind(Rc::clone(instance));
+                Ok(IntoValue::Property(property))
+            }
+            Lookup::Method(method) => {
+                let method = method.bind(Rc::clone(instance));
+                Ok(IntoValue::Value(Value::from(method)))
+            }
+            Lookup::ClassMethod => Err(CroxErrorKind::ClassMemberOnInstance {
+                name: name.to_owned(),
+            }
+            .at(span)),
+            Lookup::Undefined => Err(CroxErrorKind::UndefinedMember {
+                name: name.to_owned(),
+            }
+            .at(span)),
+        }
+    }
 }
 
 impl<'a> std::fmt::Debug for Class<'a> {

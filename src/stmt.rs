@@ -162,6 +162,7 @@ pub struct FunctionDecl<'a> {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FunctionKind {
     Class,
+    Superclass,
     Function,
     Method,
     ClassMethod,

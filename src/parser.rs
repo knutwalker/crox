@@ -31,7 +31,9 @@
 //!      factor := unary ( ( "*" | "/" ) unary )* ;
 //!       unary := ( "!" | "-" ) unary | call ;
 //!        call := primary ( "(" arguments? ")" | "." IDENTIFIER )* ;
-//!     primary := NUMBER | STRING | IDENTIFIER | "true" | "false" | "nil" | "(" expression ")" ;
+//!     primary := NUMBER | STRING | IDENTIFIER | funDecl |
+//!                "true" | "false" | "nil" | "this" |
+//!                "(" expression ")" | "super" . IDENTIFIER ;
 //!
 //!   arguments := expression ( "," expression )* ;
 //!  parameters := IDENTIFIER ( "," IDENTIFIER )* ;
@@ -576,10 +578,14 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         Ok(expr)
     }
 
-    ///     primary := NUMBER | STRING | THIS | IDENTIFIER | "true" | "false" | "nil" | "(" expression ")" ;
+    ///     primary := NUMBER | STRING | IDENTIFIER | funDecl |
+    ///                "true" | "false" | "nil" | "this" |
+    ///                "(" expression ")" | "super" . IDENTIFIER ;
     fn primary(&mut self) -> Result<ExprNode<'a>> {
         fn expected() -> TokenSet {
-            TokenSet::from_iter([LeftParen, String, Number, Identifier, Fun, False, Nil, True])
+            TokenSet::from_iter([
+                LeftParen, String, Number, This, Super, Identifier, Fun, False, Nil, True,
+            ])
         }
 
         let (node, span) = match self.tokens.next() {
@@ -607,6 +613,15 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
                 (Expr::number(num), span)
             }
             Some((This, span)) => (Expr::this(), span),
+            Some((Super, span)) => {
+                let dot = self.expect(Dot, EndOfInput::expected(Dot, span))?;
+                let method = self
+                    .ident(dot)
+                    .map_err(|c| c.with_payload(ExpectedFn(FunctionKind::Superclass)))?;
+
+                let span = span.union(method.span);
+                (Expr::super_(method), Span::from(span))
+            }
             Some((Identifier, span)) => {
                 let ident = self.source.slice(span);
                 (Expr::var(ident), span)
@@ -793,6 +808,7 @@ impl std::fmt::Display for FunctionKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Class => f.write_str("class"),
+            Self::Superclass => f.write_str("superclass"),
             Self::Function => f.write_str("function"),
             Self::Method => f.write_str("method"),
             Self::ClassMethod => f.write_str("class method"),

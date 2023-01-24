@@ -43,6 +43,10 @@ pub enum Expr<'a> {
         name: Node<&'a str>,
         value: ExprNode<'a>,
     },
+    Super {
+        method: Node<&'a str>,
+        scope: Scoped,
+    },
     This {
         scope: Scoped,
     },
@@ -226,6 +230,13 @@ impl<'a> Expr<'a> {
             object,
             name,
             value,
+        }
+    }
+
+    pub fn super_(method: Node<&'a str>) -> Self {
+        Self::Super {
+            method,
+            scope: Scoped::new(),
         }
     }
 
