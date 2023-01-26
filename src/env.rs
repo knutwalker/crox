@@ -133,7 +133,7 @@ impl Scope {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scoped {
-    pub resolved: Cell<Scope>,
+    resolved: Cell<Scope>,
 }
 
 impl Scoped {

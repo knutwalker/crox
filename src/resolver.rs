@@ -1,8 +1,8 @@
 use crate::{
     ClassDecl, Context, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule, FunctionDef,
-    Result, Scoped, StatementRule, Stmt, StmtArg, StmtNode, Var,
+    Result, Scoped, Span, StatementRule, Stmt, StmtArg, StmtNode, Var,
 };
-use std::{marker::PhantomData, rc::Rc};
+use std::marker::PhantomData;
 
 #[derive(Debug)]
 pub struct Resolver<'a> {
@@ -70,20 +70,19 @@ impl<'a> Resolver<'a> {
                 Self::eval_expr(ctx, expr)?;
             }
             Stmt::Class(class) => {
+                ctx.env.define(class.name.item, ());
                 let mut guard = ctx.swap_data(ctx.data.with_class(ClassKind::Class));
-                guard.env.define(class.name.item, ());
                 if let Some(superclass) = &class.superclass {
                     if superclass.item.name == class.name.item {
                         return Err(CroxErrorKind::InheritsSelf.at(superclass.span));
                     }
-                    let superclass = superclass.clone().map(|s| Rc::new(Expr::Var(s)));
+
+                    Self::resolve_local(&mut guard, superclass.item.name, &superclass.item.scope);
 
                     let new_data = guard.data.with_class(ClassKind::Subclass);
-                    let mut guard = guard.swap_data(new_data);
+                    let mut inner_guard = guard.swap_data(new_data);
 
-                    Self::eval_expr(&mut guard, &superclass)?;
-
-                    guard.run_with_new_scope(|ctx| {
+                    inner_guard.run_with_new_scope(|ctx| {
                         ctx.env.define("super", ());
                         Self::resolve_class(ctx, class)
                     })?;
