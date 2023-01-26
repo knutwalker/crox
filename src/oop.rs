@@ -85,6 +85,16 @@ impl<'a> Class<'a> {
             return Lookup::Method(method);
         }
 
+        if let Some(superclass) = self.superclass.as_ref() {
+            match superclass.item.lookup(name) {
+                res @ (Lookup::Field(_)
+                | Lookup::Property(_)
+                | Lookup::Method(_)
+                | Lookup::ClassMethod) => return res,
+                Lookup::Undefined => {}
+            }
+        }
+
         if self.members.class_methods().any(|cm| cm.name == name) {
             return Lookup::ClassMethod;
         }
