@@ -54,7 +54,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 let name = class.name.item;
                 ctx.env.define(name, Value::Nil);
 
-                if let Some(the_superclass) = superclass.as_ref().cloned() {
+                let class = if let Some(the_superclass) = superclass.as_ref().cloned() {
                     ctx.run_with_new_scope(|ctx| {
                         let the_superclass = Rc::clone(&the_superclass.item);
                         let the_superclass = Value::Class(the_superclass);
@@ -63,8 +63,9 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                         Self::class_new(ctx, name, class, superclass)
                     })
                 } else {
-                    Self::class_new(ctx, name, class, superclass);
-                }
+                    Self::class_new(ctx, name, class, superclass)
+                };
+                ctx.env.define(name, class);
             }
             Stmt::Function(func) => {
                 let name = func.name.item;
@@ -264,7 +265,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
         name: &'env str,
         class: &ClassDecl<'env>,
         superclass: Option<Node<Rc<Class<'env>>>>,
-    ) {
+    ) -> Value<'env> {
         let class_members = class.members().map(|m| {
             let name = m.item.name.item;
             let fun = m.item.fun.clone();
@@ -273,8 +274,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
         });
 
         let class = Class::new(name, superclass, class_members);
-        let class = Value::from(class);
-        ctx.env.define(name, class);
+        Value::from(class)
     }
 }
 
