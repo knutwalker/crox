@@ -231,15 +231,20 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                     .map_err(|e| CroxErrorKind::from(e).at(span))?;
 
                 let method = match &superclass {
-                    Value::Class(superclass) => superclass
-                        .lookup(method.item)
-                        .into_method(method.item, method.span),
-                    _ => Err(CroxErrorKind::InvalidType {
-                        expected: TypeSet::from(Type::Class),
-                        actual: superclass.typ(),
+                    Value::Class(superclass) => {
+                        let method_fn = superclass
+                            .lookup(method.item)
+                            .into_method(method.item, method.span)?;
+                        Node::new(method_fn, method.span)
                     }
-                    .at(span)),
-                }?;
+                    _ => {
+                        return Err(CroxErrorKind::InvalidType {
+                            expected: TypeSet::from(Type::Class),
+                            actual: superclass.typ(),
+                        }
+                        .at(span))
+                    }
+                };
 
                 let this = match this {
                     Value::Instance(instance) => instance,
@@ -252,7 +257,8 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                     }
                 };
 
-                Value::from(method.bind(this))
+                let value = Value::from(method.item.bind(this));
+                return Ok(Valued::new(value, method.span));
             }
             Expr::Group { expr } => Self::eval_expr(ctx, expr)?.item,
         };
