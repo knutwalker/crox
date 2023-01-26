@@ -1,6 +1,6 @@
 use crate::{
     ClassDecl, Context, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule, FunctionDef,
-    Result, Scoped, Span, StatementRule, Stmt, StmtArg, StmtNode, Var,
+    Result, Scoped, Span, StatementRule, Stmt, StmtNode, Var,
 };
 use std::marker::PhantomData;
 
@@ -60,14 +60,16 @@ enum ClassKind {
 }
 
 impl<'a> Resolver<'a> {
-    pub fn eval_stmts_in_scope(ctx: &mut ResolveContext<'a>, stmts: &[StmtNode<'a>]) -> Result {
-        stmts.iter().try_for_each(|stmt| Self::eval_stmt(ctx, stmt))
+    pub fn resolve_stmts_in_scope(ctx: &mut ResolveContext<'a>, stmts: &[StmtNode<'a>]) -> Result {
+        stmts
+            .iter()
+            .try_for_each(|stmt| Self::resolve_stmt(ctx, &stmt.item, stmt.span))
     }
 
-    pub fn eval_stmt(ctx: &mut ResolveContext<'a>, stmt: &impl StmtArg<'a>) -> Result {
-        match stmt.stmt() {
+    pub fn resolve_stmt(ctx: &mut ResolveContext<'a>, stmt: &Stmt<'a>, span: Span) -> Result {
+        match stmt {
             Stmt::Expression { expr } => {
-                Self::eval_expr(ctx, expr)?;
+                Self::resolve_expr(ctx, &expr.item, expr.span)?;
             }
             Stmt::Class(class) => {
                 ctx.env.define(class.name.item, ());
@@ -99,87 +101,87 @@ impl<'a> Resolver<'a> {
                 then_,
                 else_,
             } => {
-                Self::eval_expr(ctx, condition)?;
-                Self::eval_stmt(ctx, then_)?;
+                Self::resolve_expr(ctx, &condition.item, condition.span)?;
+                Self::resolve_stmt(ctx, &then_.item, then_.span)?;
                 if let Some(else_) = else_ {
-                    Self::eval_stmt(ctx, else_)?;
+                    Self::resolve_stmt(ctx, &else_.item, else_.span)?;
                 }
             }
             Stmt::Print { expr } => {
-                Self::eval_expr(ctx, expr)?;
+                Self::resolve_expr(ctx, &expr.item, expr.span)?;
             }
             Stmt::Return { expr } => {
                 if ctx.data.scope == ScopeKind::TopLevel {
-                    return Err(CroxErrorKind::ReturnFromTopLevel.at(stmt.span()));
+                    return Err(CroxErrorKind::ReturnFromTopLevel.at(span));
                 }
                 if let Some(expr) = expr.as_ref() {
                     if ctx.data.scope == ScopeKind::Initializer {
-                        return Err(CroxErrorKind::ReturnFromInitializer.at(stmt.span()));
+                        return Err(CroxErrorKind::ReturnFromInitializer.at(span));
                     }
-                    Self::eval_expr(ctx, expr)?;
+                    Self::resolve_expr(ctx, &expr.item, expr.span)?;
                 }
             }
             Stmt::Var { name, initializer } => {
                 // The book splits this into two steps to make shadowing an error.
                 // In Crox, we allow shadowing.
                 if let Some(init) = initializer.as_ref() {
-                    Self::eval_expr(ctx, init)?;
+                    Self::resolve_expr(ctx, &init.item, init.span)?;
                 }
                 ctx.env.define_local(name.item, ());
             }
             Stmt::While { condition, body } => {
-                Self::eval_expr(ctx, condition)?;
-                Self::eval_stmt(ctx, body)?;
+                Self::resolve_expr(ctx, &condition.item, condition.span)?;
+                Self::resolve_stmt(ctx, &body.item, body.span)?;
             }
             Stmt::Block { stmts } => {
-                ctx.run_with_new_scope(|ctx| Self::eval_stmts_in_scope(ctx, stmts))?;
+                ctx.run_with_new_scope(|ctx| Self::resolve_stmts_in_scope(ctx, stmts))?;
             }
         };
         Ok(())
     }
 
-    pub fn eval_expr(ctx: &mut ResolveContext<'a>, expr: &ExprNode<'a>) -> Result {
-        match &*expr.item {
+    pub fn resolve_expr(ctx: &mut ResolveContext<'a>, expr: &Expr<'a>, span: Span) -> Result {
+        match expr {
             Expr::Literal(_) => {}
             Expr::Var(Var { name, scope }) => Self::resolve_local(ctx, name, scope),
             Expr::Fun(func) => Self::resolve_function(ctx, func, ScopeKind::Function)?,
             Expr::Assignment { name, scope, value } => {
-                Self::eval_expr(ctx, value)?;
+                Self::resolve_expr(ctx, &value.item, value.span)?;
                 Self::resolve_local(ctx, name, scope);
             }
             Expr::Unary { expr, .. } => {
-                Self::eval_expr(ctx, expr)?;
+                Self::resolve_expr(ctx, &expr.item, expr.span)?;
             }
             Expr::Logical { lhs, rhs, .. } => {
-                Self::eval_expr(ctx, lhs)?;
-                Self::eval_expr(ctx, rhs)?;
+                Self::resolve_expr(ctx, &lhs.item, lhs.span)?;
+                Self::resolve_expr(ctx, &rhs.item, rhs.span)?;
             }
             Expr::Binary { lhs, rhs, .. } => {
-                Self::eval_expr(ctx, lhs)?;
-                Self::eval_expr(ctx, rhs)?;
+                Self::resolve_expr(ctx, &lhs.item, lhs.span)?;
+                Self::resolve_expr(ctx, &rhs.item, rhs.span)?;
             }
             Expr::Call { callee, arguments } => {
-                Self::eval_expr(ctx, callee)?;
+                Self::resolve_expr(ctx, &callee.item, callee.span)?;
                 arguments
                     .iter()
-                    .try_for_each(|arg| Self::eval_expr(ctx, arg))?;
+                    .try_for_each(|arg| Self::resolve_expr(ctx, &arg.item, arg.span))?;
             }
             Expr::Get { object, name: _ } => {
-                Self::eval_expr(ctx, object)?;
+                Self::resolve_expr(ctx, &object.item, object.span)?;
             }
             Expr::Set {
                 object,
                 name: _,
                 value,
             } => {
-                Self::eval_expr(ctx, value)?;
-                Self::eval_expr(ctx, object)?;
+                Self::resolve_expr(ctx, &value.item, value.span)?;
+                Self::resolve_expr(ctx, &object.item, object.span)?;
             }
             Expr::Super { method: _, scope } => {
                 match ctx.data.class {
-                    ClassKind::Global => return Err(CroxErrorKind::SuperOutsideClass.at(expr.span)),
+                    ClassKind::Global => return Err(CroxErrorKind::SuperOutsideClass.at(span)),
                     ClassKind::Class => {
-                        return Err(CroxErrorKind::SuperInClassWithoutSuperclass.at(expr.span))
+                        return Err(CroxErrorKind::SuperInClassWithoutSuperclass.at(span))
                     }
                     ClassKind::Subclass => {}
                 }
@@ -187,15 +189,15 @@ impl<'a> Resolver<'a> {
             }
             Expr::This { scope } => {
                 if ctx.data.class == ClassKind::Global {
-                    return Err(CroxErrorKind::ThisOutsideClass.at(expr.span));
+                    return Err(CroxErrorKind::ThisOutsideClass.at(span));
                 }
                 if ctx.data.scope == ScopeKind::ClassMethod {
-                    return Err(CroxErrorKind::ThisInClassMethod.at(expr.span));
+                    return Err(CroxErrorKind::ThisInClassMethod.at(span));
                 }
                 Self::resolve_local(ctx, "this", scope);
             }
             Expr::Group { expr } => {
-                Self::eval_expr(ctx, expr)?;
+                Self::resolve_expr(ctx, &expr.item, expr.span)?;
             }
         };
         Ok(())
@@ -221,7 +223,7 @@ impl<'a> Resolver<'a> {
                     .define_local_unique(param.item, ())
                     .map_err(|e| CroxErrorKind::from(e).at(param.span))?;
             }
-            Self::eval_stmts_in_scope(&mut guard, &func.body)?;
+            Self::resolve_stmts_in_scope(&mut guard, &func.body)?;
             Ok(())
         })
     }
@@ -251,16 +253,16 @@ impl<'a> Resolver<'a> {
 }
 
 impl<'a> Resolver<'a> {
-    pub fn eval_own_stmts_in_scope(&mut self, stmts: &[StmtNode<'a>]) -> Result {
-        Self::eval_stmts_in_scope(&mut self.ctx, stmts)
+    pub fn resolve_own_stmts_in_scope(&mut self, stmts: &[StmtNode<'a>]) -> Result {
+        Self::resolve_stmts_in_scope(&mut self.ctx, stmts)
     }
 
-    pub fn eval_own_stmt(&mut self, stmt: &StmtNode<'a>) -> Result {
-        Self::eval_stmt(&mut self.ctx, stmt)
+    pub fn resolve_own_stmt(&mut self, stmt: &StmtNode<'a>) -> Result {
+        Self::resolve_stmt(&mut self.ctx, &stmt.item, stmt.span)
     }
 
-    pub fn eval_own_expr(&mut self, expr: &ExprNode<'a>) -> Result {
-        Self::eval_expr(&mut self.ctx, expr)
+    pub fn resolve_own_expr(&mut self, expr: &ExprNode<'a>) -> Result {
+        Self::resolve_expr(&mut self.ctx, &expr.item, expr.span)
     }
 }
 
@@ -319,7 +321,7 @@ impl ResolverRule for ExpressionRule {
     type Input<'a> = ExprNode<'a>;
 
     fn resolve<'a>(interpreter: &mut Resolver<'a>, input: &Self::Input<'a>) -> Result {
-        interpreter.eval_own_expr(input)
+        interpreter.resolve_own_expr(input)
     }
 }
 
@@ -327,6 +329,6 @@ impl ResolverRule for StatementRule {
     type Input<'a> = StmtNode<'a>;
 
     fn resolve<'a>(interpreter: &mut Resolver<'a>, input: &Self::Input<'a>) -> Result {
-        interpreter.eval_own_stmt(input)
+        interpreter.resolve_own_stmt(input)
     }
 }

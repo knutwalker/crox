@@ -35,31 +35,6 @@ pub enum Stmt<'a> {
     },
 }
 
-pub trait StmtArg<'a> {
-    fn stmt(&self) -> &Stmt<'a>;
-    fn span(&self) -> Span;
-}
-
-impl<'a> StmtArg<'a> for StmtNode<'a> {
-    fn stmt(&self) -> &Stmt<'a> {
-        &self.item
-    }
-
-    fn span(&self) -> Span {
-        self.span
-    }
-}
-
-impl<'a> StmtArg<'a> for BoxedStmt<'a> {
-    fn stmt(&self) -> &Stmt<'a> {
-        &self.item
-    }
-
-    fn span(&self) -> Span {
-        self.span
-    }
-}
-
 impl<'a> Stmt<'a> {
     pub fn expression(expr: ExprNode<'a>) -> Self {
         Self::Expression { expr }

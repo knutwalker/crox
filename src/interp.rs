@@ -35,7 +35,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
     ) -> Result<'a, Valued<'a>> {
         match &stmt {
             Stmt::Expression { expr } => {
-                let _ = Self::eval_expr(ctx, expr)?;
+                let _ = Self::eval_expr(ctx, &expr.item, expr.span)?;
             }
             Stmt::Class(class) => {
                 let superclass = class
@@ -43,7 +43,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                     .as_ref()
                     .map(|s| {
                         let superclass = s.clone().map(|s| Rc::new(Expr::Var(s)));
-                        let superclass = Self::eval_expr(ctx, &superclass)?;
+                        let superclass = Self::eval_expr(ctx, &superclass.item, superclass.span)?;
                         match superclass.item {
                             Value::Class(class) => Ok(Node::new(class, superclass.span)),
                             _ => Err(CroxErrorKind::SuperClassIsNotAClass.at(s.span)),
@@ -78,20 +78,23 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 then_,
                 else_,
             } => {
-                if Self::eval_expr(ctx, condition)?.item.as_bool() {
+                if Self::eval_expr(ctx, &condition.item, condition.span)?
+                    .item
+                    .as_bool()
+                {
                     Self::eval_stmt(ctx, &then_.item, then_.span)?;
                 } else if let Some(else_) = else_ {
                     Self::eval_stmt(ctx, &else_.item, else_.span)?;
                 }
             }
             Stmt::Print { expr } => {
-                let val = Self::eval_expr(ctx, expr)?.item;
+                let val = Self::eval_expr(ctx, &expr.item, expr.span)?.item;
                 writeln!(ctx.data, "{val}").unwrap();
             }
             Stmt::Return { expr } => {
                 return Err(InterpreterError::Return(
                     expr.as_ref()
-                        .map(|e| Self::eval_expr(ctx, e))
+                        .map(|e| Self::eval_expr(ctx, &e.item, e.span))
                         .transpose()?
                         .map(|v| v.item)
                         .unwrap_or(Value::Nil),
@@ -100,13 +103,16 @@ impl<'a, 'o> Interpreter<'a, 'o> {
             Stmt::Var { name, initializer } => {
                 let value = initializer
                     .as_ref()
-                    .map(|e| Self::eval_expr(ctx, e))
+                    .map(|e| Self::eval_expr(ctx, &e.item, e.span))
                     .transpose()?
                     .map(|v| v.item);
                 ctx.env.define(name.item, value);
             }
             Stmt::While { condition, body } => {
-                while Self::eval_expr(ctx, condition)?.item.as_bool() {
+                while Self::eval_expr(ctx, &condition.item, condition.span)?
+                    .item
+                    .as_bool()
+                {
                     Self::eval_stmt(ctx, &body.item, body.span)?;
                 }
             }
@@ -120,10 +126,10 @@ impl<'a, 'o> Interpreter<'a, 'o> {
 
     pub fn eval_expr(
         ctx: &mut InterpreterContext<'a, 'o>,
-        expr: &ExprNode<'a>,
+        expr: &Expr<'a>,
+        span: Span,
     ) -> crate::Result<Valued<'a>> {
-        let span = expr.span;
-        let value = match &*expr.item {
+        let value = match expr {
             Expr::Literal(literal) => Value::from(literal),
             Expr::Var(Var { name, scope }) => ctx
                 .env
@@ -131,29 +137,31 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 .map_err(|e| CroxErrorKind::from(e).at(span))?,
             Expr::Fun(func) => Function::new("<anon>", func.clone(), ctx.env.clone()).to_value(),
             Expr::Assignment { name, scope, value } => {
-                let value = Self::eval_expr(ctx, value)?.item;
+                let value = Self::eval_expr(ctx, &value.item, value.span)?.item;
                 ctx.env
                     .assign(name, value, scope.get())
                     .map_err(|e| CroxErrorKind::from(e).at(span))?
             }
             Expr::Unary { op, expr } => {
-                let value = Self::eval_expr(ctx, expr)?.item;
+                let value = Self::eval_expr(ctx, &expr.item, expr.span)?.item;
                 match op {
                     UnaryOp::Neg => value.neg().map_err(|e| e.at(expr.span))?,
                     UnaryOp::Not => value.not(),
                 }
             }
             Expr::Logical { lhs, op, rhs } => {
-                let lhs = Self::eval_expr(ctx, lhs)?.item;
+                let lhs = Self::eval_expr(ctx, &lhs.item, lhs.span)?.item;
                 match op {
                     LogicalOp::And if !lhs.as_bool() => lhs,
                     LogicalOp::Or if lhs.as_bool() => lhs,
-                    LogicalOp::And | LogicalOp::Or => Self::eval_expr(ctx, rhs)?.item,
+                    LogicalOp::And | LogicalOp::Or => {
+                        Self::eval_expr(ctx, &rhs.item, rhs.span)?.item
+                    }
                 }
             }
             Expr::Binary { lhs, op, rhs } => {
-                let lhs = Self::eval_expr(ctx, lhs)?;
-                let rhs = Self::eval_expr(ctx, rhs)?;
+                let lhs = Self::eval_expr(ctx, &lhs.item, lhs.span)?;
+                let rhs = Self::eval_expr(ctx, &rhs.item, rhs.span)?;
                 let to_error = |e: crate::Result<CroxErrorKind, CroxErrorKind>| match e {
                     Ok(e) => e.at(lhs.span),
                     Err(e) => e.at(rhs.span),
@@ -174,14 +182,14 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 }
             }
             Expr::Call { callee, arguments } => {
-                let callee = Self::eval_expr(ctx, callee)?;
+                let callee = Self::eval_expr(ctx, &callee.item, callee.span)?;
                 let span = callee.span;
 
                 let callee = callee.item.as_callable(callee.span)?;
 
                 let arguments = arguments
                     .iter()
-                    .map(|arg| Self::eval_expr(ctx, arg).map(|v| v.item))
+                    .map(|arg| Self::eval_expr(ctx, &arg.item, arg.span).map(|v| v.item))
                     .collect::<crate::Result<Vec<_>>>()?;
 
                 if callee.arity() != arguments.len() {
@@ -195,7 +203,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 callee.call(ctx, &arguments, span)?
             }
             Expr::Get { object, name } => {
-                let object = Self::eval_expr(ctx, object)?;
+                let object = Self::eval_expr(ctx, &object.item, object.span)?;
                 let instance = object.item.as_instance(span)?;
                 instance.get(name, span)?.into_value(ctx, span)?
             }
@@ -204,9 +212,9 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 name,
                 value,
             } => {
-                let object = Self::eval_expr(ctx, object)?;
+                let object = Self::eval_expr(ctx, &object.item, object.span)?;
                 let instance = object.item.as_mut_instance(span)?;
-                let value = Self::eval_expr(ctx, value)?.item;
+                let value = Self::eval_expr(ctx, &value.item, value.span)?.item;
                 instance.set(name.item, value.clone());
 
                 value
@@ -260,7 +268,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 let value = Value::from(method.item.bind(this));
                 return Ok(Valued::new(value, method.span));
             }
-            Expr::Group { expr } => Self::eval_expr(ctx, expr)?.item,
+            Expr::Group { expr } => Self::eval_expr(ctx, &expr.item, expr.span)?.item,
         };
 
         Ok(Valued::new(value, span))
@@ -294,7 +302,7 @@ impl<'a, 'e> Interpreter<'a, 'e> {
     }
 
     pub fn eval_own_expr(&mut self, expr: &ExprNode<'a>) -> crate::Result<Valued<'a>> {
-        Self::eval_expr(&mut self.context, expr)
+        Self::eval_expr(&mut self.context, &expr.item, expr.span)
     }
 }
 
