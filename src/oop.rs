@@ -115,28 +115,28 @@ impl<'a> Instance<'a> {
     }
 }
 
-pub trait AsInstance<'a> {
+pub trait InstanceLike<'a> {
     fn get(&self, name: &Node<&'a str>, caller: Span) -> Result<IntoValue<'a>>;
 }
 
-pub trait AsMutInstance<'a> {
+pub trait MutInstanceLike<'a> {
     fn set(&self, name: &'a str, value: Value<'a>);
 }
 
-impl<'a> AsInstance<'a> for Rc<Instance<'a>> {
+impl<'a> InstanceLike<'a> for Rc<Instance<'a>> {
     fn get(&self, name: &Node<&'a str>, _caller: Span) -> Result<IntoValue<'a>> {
         self.lookup(name.item)
             .into_value(self, name.item, name.span)
     }
 }
 
-impl<'a> AsMutInstance<'a> for Rc<Instance<'a>> {
+impl<'a> MutInstanceLike<'a> for Rc<Instance<'a>> {
     fn set(&self, name: &'a str, value: Value<'a>) {
         self.fields.borrow_mut().insert(name, value);
     }
 }
 
-impl<'a> AsInstance<'a> for Rc<Class<'a>> {
+impl<'a> InstanceLike<'a> for Rc<Class<'a>> {
     fn get(&self, name: &Node<&'a str>, caller: Span) -> Result<IntoValue<'a>> {
         let name = name.item;
 

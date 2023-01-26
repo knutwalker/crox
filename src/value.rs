@@ -1,6 +1,6 @@
 use crate::{
-    AsInstance, AsMutInstance, Callable, Class, CroxErrorKind, Function, Instance, Literal, Node,
-    Result, Span, Timings, Type, TypeSet,
+    Callable, Class, CroxErrorKind, Function, Instance, InstanceLike, Literal, MutInstanceLike,
+    Node, Result, Span, Timings, Type, TypeSet,
 };
 
 use std::{borrow::Cow, cmp::Ordering, fmt, ops::Deref, rc::Rc};
@@ -21,7 +21,7 @@ pub enum Value<'a> {
 type BinOpResult<'a> = Result<Value<'a>, Result<CroxErrorKind, CroxErrorKind>>;
 
 impl<'a> Value<'a> {
-    pub fn as_instance(&self, span: Span) -> Result<&dyn AsInstance<'a>> {
+    pub fn as_instance(&self, span: Span) -> Result<&dyn InstanceLike<'a>> {
         match self {
             Value::Instance(instance) => Ok(instance),
             Value::Class(class) => Ok(class),
@@ -34,7 +34,7 @@ impl<'a> Value<'a> {
         }
     }
 
-    pub fn as_mut_instance(&self, span: Span) -> Result<&dyn AsMutInstance<'a>> {
+    pub fn as_mut_instance(&self, span: Span) -> Result<&dyn MutInstanceLike<'a>> {
         match self {
             Value::Instance(instance) => Ok(instance),
             _ => Err(CroxErrorKind::InvalidType {

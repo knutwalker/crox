@@ -31,7 +31,7 @@ pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result, To
 pub use expr::{BinaryOp, Expr, ExprNode, FunctionDef, Literal, LogicalOp, UnaryOp, Var};
 pub use interp::{expr_interpreter, stmt_interpreter, Interpreter, InterpreterError};
 pub use node::{Ident, Node, Spannable};
-pub use oop::{AsInstance, AsMutInstance, Class, Instance, IntoValue};
+pub use oop::{Class, Instance, InstanceLike, IntoValue, MutInstanceLike};
 pub use parser::{expr_parser, stmt_parser, Parser};
 pub use resolver::{expr_resolver, stmt_resolver, Resolver};
 pub use rule::{ExpressionRule, StatementRule};
