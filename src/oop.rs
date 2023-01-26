@@ -32,10 +32,7 @@ impl<'a> Class<'a> {
 
 impl<'a> Callable<'a> for Class<'a> {
     fn arity(&self) -> usize {
-        self.members
-            .methods()
-            .find_map(|m| (m.name == "init").then_some(m.arity()))
-            .unwrap_or(0)
+        self.method_lookup("init").map_or(0, |m| m.arity())
     }
 
     fn call(
@@ -46,7 +43,7 @@ impl<'a> Callable<'a> for Class<'a> {
     ) -> Result<Value<'a>> {
         let instance = Instance::new(self.clone());
         let instance = Rc::new(instance);
-        if let Some(initializer) = self.members.methods().find(|m| m.name == "init") {
+        if let Some(initializer) = self.method_lookup("init") {
             initializer
                 .bind(Rc::clone(&instance))
                 .call(ctx, args, span)?;
@@ -100,6 +97,17 @@ impl<'a> Class<'a> {
         }
 
         Lookup::Undefined
+    }
+
+    fn method_lookup(&self, name: &'a str) -> Option<&Rc<Function<'a>>> {
+        let method = self.members.methods().find(|m| m.name == name);
+        if let Some(method) = method {
+            return Some(method);
+        }
+
+        self.superclass
+            .as_ref()
+            .and_then(|sc| sc.item.method_lookup(name))
     }
 }
 
