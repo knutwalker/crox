@@ -1,0 +1,9 @@
+class A {
+  class method() {
+    print "static";
+  }
+}
+
+class B < A {}
+
+B.method(); // excpect: static

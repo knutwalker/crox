@@ -2,7 +2,7 @@ class A {}
 
 class B < A {
   method() {
-    // [line 6] Error at ';': Expect '.' after 'super'.
+    // [line 6, offset 9] Unexpected token: expected [Dot], got 'Semicolon'
     super;
   }
 }

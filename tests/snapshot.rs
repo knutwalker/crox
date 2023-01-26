@@ -47,7 +47,6 @@ fn test_chapter12() {
 }
 
 #[test]
-#[ignore = "not yet implemented"]
 fn test_chapter13() {
     ALL_SUITES.run(Run::Chapter13Inheritance);
 }

@@ -1,0 +1,10 @@
+class A {
+  class method() {
+    print "static";
+  }
+}
+
+class B < A {}
+
+var b = B();
+b.method(); // [offset 2] Invalid statement: 'method' is a class method and cannot be accessed from an instance

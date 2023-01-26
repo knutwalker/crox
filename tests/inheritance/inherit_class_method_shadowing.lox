@@ -1,0 +1,13 @@
+class A {
+  class method() {
+    print "A";
+  }
+}
+
+class B < A {
+  class method() {
+    print "B";
+  }
+}
+
+B.method(); // excpect: B
