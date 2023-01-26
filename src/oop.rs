@@ -109,6 +109,17 @@ impl<'a> Class<'a> {
             .as_ref()
             .and_then(|sc| sc.item.method_lookup(name))
     }
+
+    fn class_method_lookup(&self, name: &'a str) -> Option<&Rc<Function<'a>>> {
+        let method = self.members.class_methods().find(|m| m.name == name);
+        if let Some(method) = method {
+            return Some(method);
+        }
+
+        self.superclass
+            .as_ref()
+            .and_then(|sc| sc.item.class_method_lookup(name))
+    }
 }
 
 impl<'a> Instance<'a> {
@@ -146,9 +157,7 @@ impl<'a> MutInstanceLike<'a> for Rc<Instance<'a>> {
 
 impl<'a> InstanceLike<'a> for Rc<Class<'a>> {
     fn get(&self, name: &Node<&'a str>, caller: Span) -> Result<IntoValue<'a>> {
-        let name = name.item;
-
-        let method = self.members.class_methods().find(|cm| cm.name == name);
+        let method = self.class_method_lookup(name.item);
         if let Some(method) = method {
             return Ok(IntoValue::Value(Value::Fn(Rc::clone(method))));
         }
