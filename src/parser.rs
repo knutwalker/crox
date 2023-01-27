@@ -176,7 +176,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let superclass = extends
             .map(|(_, span)| {
                 self.ident(span)
-                    .map(|name| name.map(Var::new))
+                    .map(|name| name.map(|v| Var::new(v, self.arena)))
                     .map_err(|c| c.with_payload(ExpectedFn(FunctionKind::Class)))
             })
             .transpose()?;
@@ -274,7 +274,9 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let body = self.block(open_brace)?;
         let span = fn_start.union(body.span);
 
-        Ok(Node::new(FunctionDef::new(params, body.item), span))
+        let params = self.arena.alloc_slice_copy(&params);
+        let body = self.arena.alloc_slice_clone(&body.item);
+        Ok(Node::new(FunctionDef::new(params, body), span))
     }
 
     ///     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
@@ -478,7 +480,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             let assign = match &expr.item {
                 Expr::Var(Var { name, .. }) => {
                     let value = value.alloc(self.arena);
-                    Expr::assign(name, value)
+                    Expr::assign(name, value, self.arena)
                 }
                 Expr::Get { object, name } => {
                     let value = value.alloc(self.arena);
@@ -638,7 +640,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
                 (Expr::number(num), span)
             }
-            Some((This, span)) => (Expr::this(), span),
+            Some((This, span)) => (Expr::this(self.arena), span),
             Some((Super, span)) => {
                 let dot = self.expect(Dot, EndOfInput::expected(Dot, span))?;
                 let method = self
@@ -646,11 +648,11 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
                     .map_err(|c| c.with_payload(ExpectedFn(FunctionKind::Superclass)))?;
 
                 let span = span.union(method.span);
-                (Expr::super_(method), Span::from(span))
+                (Expr::super_(method, self.arena), Span::from(span))
             }
             Some((Identifier, span)) => {
                 let ident = self.source.slice(span);
-                (Expr::var(ident), span)
+                (Expr::var(ident, self.arena), span)
             }
             Some((Fun, span)) => {
                 let fun = self.function_def(span)?;
@@ -1028,16 +1030,16 @@ mod tests {
         let init = Stmt::var("i".at(9..10), Some(zero)).at(5..15);
 
         // condition
-        let i = Expr::var("i").at(16..17).alloc(&arena);
+        let i = Expr::var("i", &arena).at(16..17).alloc(&arena);
         let cond = Expr::less_than(i, ten).at(16..22);
 
         // increment
-        let i = Expr::var("i").at(28..29).alloc(&arena);
+        let i = Expr::var("i", &arena).at(28..29).alloc(&arena);
         let add = Expr::add(i, one).at(28..33).alloc(&arena);
-        let incr = Expr::assign("i", add).at(24..33);
+        let incr = Expr::assign("i", add, &arena).at(24..33);
 
         // body
-        let i = Expr::var("i").at(41..42);
+        let i = Expr::var("i", &arena).at(41..42);
         let body = Stmt::print(i).at(35..43);
         let body = Stmt::block(vec![body]).at(35..43);
 
@@ -1066,18 +1068,18 @@ mod tests {
         let init = Stmt::var("i".at(9..10), Some(zero)).at(5..15);
 
         // condition
-        let i = Expr::var("i").at(16..17).alloc(&arena);
+        let i = Expr::var("i", &arena).at(16..17).alloc(&arena);
         let cond = Expr::less_than(i, ten).at(16..22);
 
         // increment
-        let i = Expr::var("i").at(28..29).alloc(&arena);
+        let i = Expr::var("i", &arena).at(28..29).alloc(&arena);
         let add = Expr::add(i, one).at(28..33).alloc(&arena);
-        let incr = Expr::assign("i", add).at(24..33);
+        let incr = Expr::assign("i", add, &arena).at(24..33);
 
         // body
-        let i = Expr::var("i").at(43..44);
+        let i = Expr::var("i", &arena).at(43..44);
         let print1 = Stmt::print(i).at(37..45);
-        let i = Expr::var("i").at(52..53);
+        let i = Expr::var("i", &arena).at(52..53);
         let print2 = Stmt::print(i).at(46..54);
         let body = Stmt::block(vec![print1, print2]).at(35..56);
 
@@ -1102,11 +1104,11 @@ mod tests {
         let init = Stmt::var("i".at(9..10), Some(zero)).at(5..15);
 
         // condition
-        let i = Expr::var("i").at(16..17).alloc(&arena);
+        let i = Expr::var("i", &arena).at(16..17).alloc(&arena);
         let cond = Expr::less_than(i, ten).at(16..22);
 
         // body
-        let i = Expr::var("i").at(32..33);
+        let i = Expr::var("i", &arena).at(32..33);
         let body = Stmt::print(i).at(26..34);
 
         // desugar body
@@ -1129,12 +1131,12 @@ mod tests {
         let init = Stmt::var("i".at(9..10), Some(zero)).at(5..16);
 
         // increment
-        let i = Expr::var("i").at(22..23).alloc(&arena);
+        let i = Expr::var("i", &arena).at(22..23).alloc(&arena);
         let add = Expr::add(i, one).at(22..27).alloc(&arena);
-        let incr = Expr::assign("i", add).at(18..27);
+        let incr = Expr::assign("i", add, &arena).at(18..27);
 
         // body
-        let i = Expr::var("i").at(35..36);
+        let i = Expr::var("i", &arena).at(35..36);
         let body = Stmt::print(i).at(29..37);
         let body = Stmt::block(vec![body]).at(29..37);
 
@@ -1156,16 +1158,16 @@ mod tests {
         let one = Expr::number(1.0).at(23..24).alloc(&arena);
 
         // condition
-        let i = Expr::var("i").at(7..8).alloc(&arena);
+        let i = Expr::var("i", &arena).at(7..8).alloc(&arena);
         let cond = Expr::less_than(i, ten).at(7..13);
 
         // increment
-        let i = Expr::var("i").at(19..20).alloc(&arena);
+        let i = Expr::var("i", &arena).at(19..20).alloc(&arena);
         let add = Expr::add(i, one).at(19..24).alloc(&arena);
-        let incr = Expr::assign("i", add).at(15..24);
+        let incr = Expr::assign("i", add, &arena).at(15..24);
 
         // body
-        let i = Expr::var("i").at(32..33);
+        let i = Expr::var("i", &arena).at(32..33);
         let body = Stmt::print(i).at(26..34);
         let body = Stmt::block(vec![body]).at(26..34);
 
@@ -1194,16 +1196,16 @@ mod tests {
         let init = Stmt::var("i".at(9..10), Some(zero)).at(5..15);
 
         // condition
-        let i = Expr::var("i").at(16..17).alloc(&arena);
+        let i = Expr::var("i", &arena).at(16..17).alloc(&arena);
         let cond = Expr::less_than(i, ten).at(16..22);
 
         // increment
-        let i = Expr::var("i").at(28..29).alloc(&arena);
+        let i = Expr::var("i", &arena).at(28..29).alloc(&arena);
         let add = Expr::add(i, one1).at(28..33).alloc(&arena);
-        let incr = Expr::assign("i", add).at(24..33);
+        let incr = Expr::assign("i", add, &arena).at(24..33);
 
         // body
-        let i = Expr::var("i").at(43..44);
+        let i = Expr::var("i", &arena).at(43..44);
         let print = Stmt::print(i).at(37..45);
         let assign = Stmt::var(Node::new("i", 50..51), Expr::neg(one2).at(54..56)).at(46..57);
         let body = Stmt::block(vec![print, assign]).at(35..59);

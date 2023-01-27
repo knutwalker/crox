@@ -1,58 +1,57 @@
+use bumpalo::Bump;
+
 use crate::{Node, Scoped, Span, StmtNode};
-use std::{
-    fmt::{Debug, Display},
-    rc::Rc,
-};
+use std::fmt::{Debug, Display};
 
 pub type ExprNode<'a> = Node<Expr<'a>>;
-type Exp<'a> = Node<&'a Expr<'a>>;
+pub type BoxedExpr<'a> = Node<&'a Expr<'a>>;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Expr<'a> {
     Literal(Literal<'a>),
     Var(Var<'a>),
     Fun(FunctionDef<'a>),
     Assignment {
         name: &'a str,
-        scope: Scoped,
-        value: Exp<'a>,
+        scope: &'a Scoped,
+        value: BoxedExpr<'a>,
     },
     Unary {
         op: UnaryOp,
-        expr: Exp<'a>,
+        expr: BoxedExpr<'a>,
     },
     Logical {
-        lhs: Exp<'a>,
+        lhs: BoxedExpr<'a>,
         op: LogicalOp,
-        rhs: Exp<'a>,
+        rhs: BoxedExpr<'a>,
     },
     Binary {
-        lhs: Exp<'a>,
+        lhs: BoxedExpr<'a>,
         op: BinaryOp,
-        rhs: Exp<'a>,
+        rhs: BoxedExpr<'a>,
     },
     Call {
-        callee: Exp<'a>,
+        callee: BoxedExpr<'a>,
         arguments: &'a [ExprNode<'a>],
     },
     Get {
-        object: Exp<'a>,
+        object: BoxedExpr<'a>,
         name: Node<&'a str>,
     },
     Set {
-        object: Exp<'a>,
+        object: BoxedExpr<'a>,
         name: Node<&'a str>,
-        value: Exp<'a>,
+        value: BoxedExpr<'a>,
     },
     Super {
         method: Node<&'a str>,
-        scope: Scoped,
+        scope: &'a Scoped,
     },
     This {
-        scope: Scoped,
+        scope: &'a Scoped,
     },
     Group {
-        expr: Exp<'a>,
+        expr: BoxedExpr<'a>,
     },
 }
 
@@ -77,41 +76,41 @@ impl<'a> Expr<'a> {
         Self::Literal(Literal::String(s))
     }
 
-    pub fn var(name: &'a str) -> Self {
-        Self::Var(Var::new(name))
+    pub fn var(name: &'a str, arena: &'a Bump) -> Self {
+        Self::Var(Var::new(name, arena))
     }
 
     pub fn fun(fun: FunctionDef<'a>) -> Self {
         Self::Fun(fun)
     }
 
-    pub fn assign(name: &'a str, value: Exp<'a>) -> Self {
+    pub fn assign(name: &'a str, value: BoxedExpr<'a>, arena: &'a Bump) -> Self {
         Self::Assignment {
             name,
-            scope: Scoped::new(),
+            scope: arena.alloc(Scoped::new()),
             value,
         }
     }
 
-    pub fn neg(expr: Exp<'a>) -> Self {
+    pub fn neg(expr: BoxedExpr<'a>) -> Self {
         Self::Unary {
             op: UnaryOp::Neg,
             expr,
         }
     }
 
-    pub fn not(expr: Exp<'a>) -> Self {
+    pub fn not(expr: BoxedExpr<'a>) -> Self {
         Self::Unary {
             op: UnaryOp::Not,
             expr,
         }
     }
 
-    pub fn unary(op: UnaryOp, expr: Exp<'a>) -> Self {
+    pub fn unary(op: UnaryOp, expr: BoxedExpr<'a>) -> Self {
         Self::Unary { op, expr }
     }
 
-    pub fn and(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
+    pub fn and(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
         Self::Logical {
             lhs,
             op: LogicalOp::And,
@@ -119,7 +118,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn or(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
+    pub fn or(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
         Self::Logical {
             lhs,
             op: LogicalOp::Or,
@@ -127,11 +126,11 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn logical(lhs: Exp<'a>, op: LogicalOp, rhs: Exp<'a>) -> Self {
+    pub fn logical(lhs: BoxedExpr<'a>, op: LogicalOp, rhs: BoxedExpr<'a>) -> Self {
         Self::Logical { lhs, op, rhs }
     }
 
-    pub fn add(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
+    pub fn add(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::Add,
@@ -139,7 +138,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn sub(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
+    pub fn sub(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::Sub,
@@ -147,7 +146,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn mul(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
+    pub fn mul(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::Mul,
@@ -155,7 +154,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn div(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
+    pub fn div(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::Div,
@@ -163,7 +162,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn equals(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
+    pub fn equals(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::Equals,
@@ -171,7 +170,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn not_equals(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
+    pub fn not_equals(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::NotEquals,
@@ -179,7 +178,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn less_than(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
+    pub fn less_than(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::LessThan,
@@ -187,7 +186,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn less_than_or_equal(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
+    pub fn less_than_or_equal(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::LessThanOrEqual,
@@ -195,7 +194,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn greater_than(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
+    pub fn greater_than(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::GreaterThan,
@@ -203,7 +202,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn greater_than_or_equal(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
+    pub fn greater_than_or_equal(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::GreaterThanOrEqual,
@@ -211,19 +210,19 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn binary(lhs: Exp<'a>, op: BinaryOp, rhs: Exp<'a>) -> Self {
+    pub fn binary(lhs: BoxedExpr<'a>, op: BinaryOp, rhs: BoxedExpr<'a>) -> Self {
         Self::Binary { lhs, op, rhs }
     }
 
-    pub fn call(callee: Exp<'a>, arguments: &'a [ExprNode<'a>]) -> Self {
+    pub fn call(callee: BoxedExpr<'a>, arguments: &'a [ExprNode<'a>]) -> Self {
         Self::Call { callee, arguments }
     }
 
-    pub fn get(object: Exp<'a>, name: Node<&'a str>) -> Self {
+    pub fn get(object: BoxedExpr<'a>, name: Node<&'a str>) -> Self {
         Self::Get { object, name }
     }
 
-    pub fn set(object: Exp<'a>, name: Node<&'a str>, value: Exp<'a>) -> Self {
+    pub fn set(object: BoxedExpr<'a>, name: Node<&'a str>, value: BoxedExpr<'a>) -> Self {
         Self::Set {
             object,
             name,
@@ -231,20 +230,20 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn super_(method: Node<&'a str>) -> Self {
+    pub fn super_(method: Node<&'a str>, arena: &'a Bump) -> Self {
         Self::Super {
             method,
-            scope: Scoped::new(),
+            scope: arena.alloc(Scoped::new()),
         }
     }
 
-    pub fn this() -> Self {
+    pub fn this(arena: &'a Bump) -> Self {
         Self::This {
-            scope: Scoped::new(),
+            scope: arena.alloc(Scoped::new()),
         }
     }
 
-    pub fn group(expr: Exp<'a>) -> Self {
+    pub fn group(expr: BoxedExpr<'a>) -> Self {
         Self::Group { expr }
     }
 
@@ -262,36 +261,30 @@ pub enum Literal<'a> {
     String(&'a str),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Var<'a> {
     pub name: &'a str,
-    pub scope: Scoped,
+    pub scope: &'a Scoped,
 }
 
 impl<'a> Var<'a> {
-    pub fn new(name: &'a str) -> Self {
+    pub fn new(name: &'a str, arena: &'a Bump) -> Self {
         Self {
             name,
-            scope: Scoped::new(),
+            scope: arena.alloc(Scoped::new()),
         }
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct FunctionDef<'a> {
-    pub params: Rc<[Node<&'a str>]>,
-    pub body: Rc<[StmtNode<'a>]>,
+    pub params: &'a [Node<&'a str>],
+    pub body: &'a [StmtNode<'a>],
 }
 
 impl<'a> FunctionDef<'a> {
-    pub fn new(
-        params: impl Into<Rc<[Node<&'a str>]>>,
-        body: impl Into<Rc<[StmtNode<'a>]>>,
-    ) -> Self {
-        Self {
-            params: params.into(),
-            body: body.into(),
-        }
+    pub fn new(params: &'a [Node<&'a str>], body: &'a [StmtNode<'a>]) -> Self {
+        Self { params, body }
     }
 }
 
