@@ -1,10 +1,12 @@
+use bumpalo::Bump;
+
 use crate::{BoxedExpr, FunctionDef, Node, Span, Var};
-use std::{fmt::Debug, rc::Rc};
+use std::fmt::Debug;
 
 pub type StmtNode<'a> = Node<Stmt<'a>>;
 pub type BoxedStmt<'a> = Node<&'a Stmt<'a>>;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Stmt<'a> {
     Expression {
         expr: BoxedExpr<'a>,
@@ -43,7 +45,7 @@ impl<'a> Stmt<'a> {
     pub fn class(
         name: Node<&'a str>,
         superclass: Option<Node<Var<'a>>>,
-        members: Vec<Node<FunctionDecl<'a>>>,
+        members: &'a mut [Node<FunctionDecl<'a>>],
     ) -> Self {
         Self::Class(ClassDecl::new(name, superclass, members))
     }
@@ -96,18 +98,18 @@ impl<'a> Stmt<'a> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ClassDecl<'a> {
     pub name: Node<&'a str>,
     pub superclass: Option<Node<Var<'a>>>,
-    members: Members<Node<FunctionDecl<'a>>>,
+    members: Members<'a, Node<FunctionDecl<'a>>>,
 }
 
 impl<'a> ClassDecl<'a> {
     pub fn new(
         name: Node<&'a str>,
         superclass: Option<Node<Var<'a>>>,
-        members: Vec<Node<FunctionDecl<'a>>>,
+        members: &'a mut [Node<FunctionDecl<'a>>],
     ) -> Self {
         let members = Members::new(members, |m| m.item.kind);
         Self {
@@ -117,7 +119,7 @@ impl<'a> ClassDecl<'a> {
         }
     }
 
-    pub fn members(&self) -> &Members<Node<FunctionDecl<'a>>> {
+    pub fn members(&self) -> &Members<'a, Node<FunctionDecl<'a>>> {
         &self.members
     }
 }
@@ -139,15 +141,15 @@ pub enum FunctionKind {
     Property,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Members<T> {
-    members: Rc<[T]>,
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Members<'a, T> {
+    members: &'a [T],
     methods: usize,
     class_methods: usize,
 }
 
-impl<T> Members<T> {
-    pub fn new(mut members: Vec<T>, to_kind: impl Fn(&T) -> FunctionKind) -> Self {
+impl<'a, T> Members<'a, T> {
+    pub fn new(members: &'a mut [T], to_kind: impl Fn(&T) -> FunctionKind) -> Self {
         members.sort_by_key(|m| to_kind(m));
 
         let (methods, class_methods) =
@@ -163,7 +165,7 @@ impl<T> Members<T> {
                 });
 
         Self {
-            members: members.into(),
+            members,
             methods,
             class_methods,
         }
@@ -181,8 +183,9 @@ impl<T> Members<T> {
         self.members[self.class_methods..].iter()
     }
 
-    pub fn map<U>(&self, map: impl FnMut(&T) -> U) -> Members<U> {
-        let members = self.members.iter().map(map).collect();
+    pub fn map<U>(&self, arena: &'a Bump, map: impl FnMut(&T) -> U) -> Members<'a, U> {
+        let members = self.members.iter().map(map);
+        let members = arena.alloc_slice_fill_iter(members);
 
         Members {
             members,

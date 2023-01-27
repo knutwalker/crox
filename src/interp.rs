@@ -278,7 +278,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
         class: &ClassDecl<'env>,
         superclass: Option<Node<Rc<Class<'env>>>>,
     ) -> Value<'env> {
-        let class_members = class.members().map(|m| {
+        let class_members = class.members().map(ctx.arena, |m| {
             let name = m.item.name.item;
             let fun = m.item.fun.clone();
             let fun = Function::method(name, fun, ctx.env.clone());

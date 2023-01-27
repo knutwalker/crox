@@ -13,14 +13,14 @@ use crate::{
 pub struct Class<'a> {
     pub name: &'a str,
     superclass: Option<Node<Rc<Class<'a>>>>,
-    members: Members<Rc<Function<'a>>>,
+    members: Members<'a, Rc<Function<'a>>>,
 }
 
 impl<'a> Class<'a> {
     pub fn new(
         name: &'a str,
         superclass: Option<Node<Rc<Class<'a>>>>,
-        members: Members<Rc<Function<'a>>>,
+        members: Members<'a, Rc<Function<'a>>>,
     ) -> Self {
         Self {
             name,

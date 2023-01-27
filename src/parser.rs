@@ -200,6 +200,8 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             }
         }
 
+        let members = self.arena.alloc_slice_fill_iter(members);
+
         let close_brace = self.expect(RightBrace, EndOfInput::Unclosed(LeftBrace, open_brace))?;
         let stmt = Stmt::class(name, superclass, members);
         let span = open_brace.union(close_brace);
