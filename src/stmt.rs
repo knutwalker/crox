@@ -1,42 +1,42 @@
-use crate::{ExprNode, FunctionDef, Node, Span, Var};
+use crate::{BoxedExpr, FunctionDef, Node, Span, Var};
 use std::{fmt::Debug, rc::Rc};
 
 pub type StmtNode<'a> = Node<Stmt<'a>>;
-pub type BoxedStmt<'a> = Node<Rc<Stmt<'a>>>;
+pub type BoxedStmt<'a> = Node<&'a Stmt<'a>>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt<'a> {
     Expression {
-        expr: ExprNode<'a>,
+        expr: BoxedExpr<'a>,
     },
     Class(ClassDecl<'a>),
     Function(FunctionDecl<'a>),
     If {
-        condition: ExprNode<'a>,
+        condition: BoxedExpr<'a>,
         then_: BoxedStmt<'a>,
         else_: Option<BoxedStmt<'a>>,
     },
     Print {
-        expr: ExprNode<'a>,
+        expr: BoxedExpr<'a>,
     },
     Return {
-        expr: Option<ExprNode<'a>>,
+        expr: Option<BoxedExpr<'a>>,
     },
     Var {
         name: Node<&'a str>,
-        initializer: Option<ExprNode<'a>>,
+        initializer: Option<BoxedExpr<'a>>,
     },
     While {
-        condition: ExprNode<'a>,
+        condition: BoxedExpr<'a>,
         body: BoxedStmt<'a>,
     },
     Block {
-        stmts: Rc<[StmtNode<'a>]>,
+        stmts: &'a [StmtNode<'a>],
     },
 }
 
 impl<'a> Stmt<'a> {
-    pub fn expression(expr: ExprNode<'a>) -> Self {
+    pub fn expression(expr: BoxedExpr<'a>) -> Self {
         Self::Expression { expr }
     }
 
@@ -52,48 +52,43 @@ impl<'a> Stmt<'a> {
         FunctionDecl { name, kind, fun }
     }
 
-    pub fn if_(condition: ExprNode<'a>, then_: StmtNode<'a>) -> Self {
+    pub fn if_(condition: BoxedExpr<'a>, then_: BoxedStmt<'a>) -> Self {
         Self::If {
             condition,
-            then_: then_.map(Rc::new),
+            then_,
             else_: None,
         }
     }
 
-    pub fn if_else(condition: ExprNode<'a>, then_: StmtNode<'a>, else_: StmtNode<'a>) -> Self {
+    pub fn if_else(condition: BoxedExpr<'a>, then_: BoxedStmt<'a>, else_: BoxedStmt<'a>) -> Self {
         Self::If {
             condition,
-            then_: then_.map(Rc::new),
-            else_: Some(else_.map(Rc::new)),
+            then_,
+            else_: Some(else_),
         }
     }
 
-    pub fn print(expr: ExprNode<'a>) -> Self {
+    pub fn print(expr: BoxedExpr<'a>) -> Self {
         Self::Print { expr }
     }
 
-    pub fn return_(expr: impl Into<Option<ExprNode<'a>>>) -> Self {
+    pub fn return_(expr: impl Into<Option<BoxedExpr<'a>>>) -> Self {
         Self::Return { expr: expr.into() }
     }
 
-    pub fn var(name: Node<&'a str>, initializer: impl Into<Option<ExprNode<'a>>>) -> Self {
+    pub fn var(name: Node<&'a str>, initializer: impl Into<Option<BoxedExpr<'a>>>) -> Self {
         Self::Var {
             name,
             initializer: initializer.into(),
         }
     }
 
-    pub fn while_(condition: ExprNode<'a>, body: StmtNode<'a>) -> Self {
-        Self::While {
-            condition,
-            body: body.map(Rc::new),
-        }
+    pub fn while_(condition: BoxedExpr<'a>, body: BoxedStmt<'a>) -> Self {
+        Self::While { condition, body }
     }
 
-    pub fn block(stmts: impl Into<Rc<[StmtNode<'a>]>>) -> Self {
-        Self::Block {
-            stmts: stmts.into(),
-        }
+    pub fn block(stmts: &'a [StmtNode<'a>]) -> Self {
+        Self::Block { stmts }
     }
 
     pub fn at(self, span: impl Into<Span>) -> StmtNode<'a> {
@@ -127,7 +122,7 @@ impl<'a> ClassDecl<'a> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct FunctionDecl<'a> {
     pub name: Node<&'a str>,
     pub kind: FunctionKind,

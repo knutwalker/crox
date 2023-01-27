@@ -287,6 +287,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             (Equal, _) => self.expression()?,
         });
 
+        let init = init.map(|i| i.alloc(self.arena));
         let end_span = self.expect(Semicolon, EndOfInput::unclosed(Identifier, span))?;
 
         Ok(Stmt::var(name, init).at(span.union(end_span)))
@@ -295,16 +296,18 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     ///   statement := exprStmt | forStmt | ifStmt | printStmt | whileStmt | block;
     fn statement(&mut self) -> Result<StmtNode<'a>> {
         let stmt = peek!(self, {
-            (For, span) => self.for_statement(span),
-            (If, span) => self.if_statement(span),
-            (Print, span) => self.print_statement(span),
-            (Return, span) => self.return_statement(span),
-            (While, span) => self.while_statement(span),
-            (LeftBrace, span) => self.block(span).map(|n| n.map(Stmt::block)),
+            (For, span) => self.for_statement(span)?,
+            (If, span) => self.if_statement(span)?,
+            (Print, span) => self.print_statement(span)?,
+            (Return, span) => self.return_statement(span)?,
+            (While, span) => self.while_statement(span)?,
+            (LeftBrace, span) => self.block(span)?.map(|stmts| {
+                let stmts = self.arena.alloc_slice_fill_iter(stmts);
+                Stmt::block(stmts)
+            }),
         });
         match stmt {
-            Some(Ok(stmt)) => Ok(stmt),
-            Some(Err(err)) => Err(err),
+            Some(stmt) => Ok(stmt),
             None => self.expr_statement(),
         }
     }
@@ -312,6 +315,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     ///    exprStmt := expression ";" ;
     fn expr_statement(&mut self) -> Result<StmtNode<'a>> {
         let expr = self.expression()?;
+        let expr = expr.alloc(self.arena);
         let end_span = self.expect(Semicolon, EndOfInput::expected(Semicolon, expr.span))?;
         let span = expr.span.union(end_span);
         let stmt = Stmt::expression(expr);
@@ -369,20 +373,29 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let body_span = body.span;
 
         if let Some(increment) = increment {
+            let increment = increment.alloc(self.arena);
             let increment = Stmt::expression(increment).at(inc_span);
             // the increment must happen in a separate, outer scope of the body
             // so we need to wrap the body in a block if it isn't already
             // and then wrap the body and the increment in their own block
             if !matches!(&body.item, Stmt::Block { .. }) {
-                body = Stmt::block(vec![body]).at(body_span);
+                let inner_body = self.arena.alloc(body);
+                let inner_body = std::slice::from_ref(inner_body);
+                body = Stmt::block(inner_body).at(body_span);
             }
-            body = Stmt::block(vec![body, increment]).at(body_span);
+            let inner_body = self.arena.alloc_slice_fill_iter([body, increment]);
+            body = Stmt::block(inner_body).at(body_span);
         };
 
+        let condition = condition.alloc(self.arena);
+        let body = body.alloc(self.arena);
         let body = Stmt::while_(condition, body).at(body_span);
 
         let body = match initializer {
-            Some(init) => Stmt::block(vec![init, body]),
+            Some(init) => {
+                let inner_body = self.arena.alloc_slice_fill_iter([init, body]);
+                Stmt::block(inner_body)
+            }
             None => body.item,
         };
 
@@ -393,14 +406,17 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     fn if_statement(&mut self, span: Span) -> Result<StmtNode<'a>> {
         self.expect(LeftParen, EndOfInput::expected(LeftParen, span))?;
         let cond = self.expression()?;
+        let cond = cond.alloc(self.arena);
         self.expect(RightParen, EndOfInput::unclosed(LeftParen, span))?;
 
         let then_ = self.statement()?;
+        let then_ = then_.alloc(self.arena);
         // cannot rewrite this with peek! because we move cond into the match
         let stmt = match self.tokens.peek() {
             Some((Else, _)) => {
                 let _ = self.tokens.next();
                 let else_ = self.statement()?;
+                let else_ = else_.alloc(self.arena);
                 let span = span.union(else_.span);
                 Stmt::if_else(cond, then_, else_).at(span)
             }
@@ -416,6 +432,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     ///   printStmt := "print" expression ";" ;
     fn print_statement(&mut self, print_span: Span) -> Result<StmtNode<'a>> {
         let expr = self.expression()?;
+        let expr = expr.alloc(self.arena);
         let end_span = self.expect(Semicolon, EndOfInput::Unclosed(Print, print_span))?;
         let stmt = Stmt::print(expr);
         Ok(stmt.at(print_span.union(end_span)))
@@ -425,7 +442,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     fn return_statement(&mut self, span: Span) -> Result<StmtNode<'a>> {
         let expr = match self.tokens.peek() {
             Some(&(Semicolon, _)) => None,
-            Some(_) => Some(self.expression()?),
+            Some(_) => Some(self.expression()?.alloc(self.arena)),
             None => None,
         };
         let end_span = self.expect(Semicolon, EndOfInput::Unclosed(Return, span))?;
@@ -437,9 +454,11 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     fn while_statement(&mut self, span: Span) -> Result<StmtNode<'a>> {
         self.expect(LeftParen, EndOfInput::expected(LeftParen, span))?;
         let cond = self.expression()?;
+        let cond = cond.alloc(self.arena);
         self.expect(RightParen, EndOfInput::unclosed(LeftParen, span))?;
 
         let body = self.statement()?;
+        let body = body.alloc(self.arena);
         let span = span.union(body.span);
         Ok(Stmt::while_(cond, body).at(span))
     }
@@ -954,7 +973,7 @@ mod tests {
         let arena = Bump::new();
         let actual = parse::<StatementRule>("print 1;", &arena);
 
-        let expected = Stmt::print(Expr::number(1.0).at(6..7)).at(0..8);
+        let expected = Stmt::print(Expr::number(1.0).at(6..7).alloc(&arena)).at(0..8);
         assert_eq!(actual, vec![expected]);
     }
 
@@ -971,7 +990,7 @@ mod tests {
         let sum = Expr::add(sum, three).at(6..15).alloc(&arena);
 
         let seven = Expr::number(7.0).at(18..19).alloc(&arena);
-        let sum = Expr::add(sum, seven).at(6..19);
+        let sum = Expr::add(sum, seven).at(6..19).alloc(&arena);
 
         let expected = Stmt::print(sum).at(0..20);
         assert_eq!(actual, vec![expected]);
@@ -982,13 +1001,14 @@ mod tests {
         let arena = Bump::new();
         let actual = parse::<StatementRule>("{ print 1; print 2; }", &arena);
 
-        let one = Expr::number(1.0).at(8..9);
-        let two = Expr::number(2.0).at(17..18);
+        let one = Expr::number(1.0).at(8..9).alloc(&arena);
+        let two = Expr::number(2.0).at(17..18).alloc(&arena);
 
         let first = Stmt::print(one).at(2..10);
         let second = Stmt::print(two).at(11..19);
 
-        let expected = Stmt::block(vec![first, second]).at(0..21);
+        let block = [first, second];
+        let expected = Stmt::block(&block).at(0..21);
         assert_eq!(actual, vec![expected]);
     }
 
@@ -1022,7 +1042,7 @@ mod tests {
         let actual = parse::<StatementRule>("for (var i = 0; i < 10; i = i + 1) print i;", &arena);
 
         // constants
-        let zero = Expr::number(0.0).at(13..14);
+        let zero = Expr::number(0.0).at(13..14).alloc(&arena);
         let ten = Expr::number(10.0).at(20..22).alloc(&arena);
         let one = Expr::number(1.0).at(32..33).alloc(&arena);
 
@@ -1031,24 +1051,27 @@ mod tests {
 
         // condition
         let i = Expr::var("i", &arena).at(16..17).alloc(&arena);
-        let cond = Expr::less_than(i, ten).at(16..22);
+        let cond = Expr::less_than(i, ten).at(16..22).alloc(&arena);
 
         // increment
         let i = Expr::var("i", &arena).at(28..29).alloc(&arena);
         let add = Expr::add(i, one).at(28..33).alloc(&arena);
-        let incr = Expr::assign("i", add, &arena).at(24..33);
+        let incr = Expr::assign("i", add, &arena).at(24..33).alloc(&arena);
 
         // body
-        let i = Expr::var("i", &arena).at(41..42);
+        let i = Expr::var("i", &arena).at(41..42).alloc(&arena);
         let body = Stmt::print(i).at(35..43);
-        let body = Stmt::block(vec![body]).at(35..43);
+        let block = [body];
+        let body = Stmt::block(&block).at(35..43);
 
         // desugar body
-        let body = Stmt::block(vec![body, Stmt::expression(incr).at(24..33)]).at(35..43);
+        let block = [body, Stmt::expression(incr).at(24..33)];
+        let body = Stmt::block(&block).at(35..43).alloc(&arena);
         let body = Stmt::while_(cond, body).at(35..43);
-        let body = Stmt::block(vec![init, body]).at(0..43);
+        let block = [init, body];
+        let body = Stmt::block(&block).at(0..43);
 
-        assert_eq!(actual, vec![body]);
+        assert_eq!(actual, &[body]);
     }
 
     #[test]
@@ -1060,7 +1083,7 @@ mod tests {
         );
 
         // constants
-        let zero = Expr::number(0.0).at(13..14);
+        let zero = Expr::number(0.0).at(13..14).alloc(&arena);
         let ten = Expr::number(10.0).at(20..22).alloc(&arena);
         let one = Expr::number(1.0).at(32..33).alloc(&arena);
 
@@ -1069,26 +1092,29 @@ mod tests {
 
         // condition
         let i = Expr::var("i", &arena).at(16..17).alloc(&arena);
-        let cond = Expr::less_than(i, ten).at(16..22);
+        let cond = Expr::less_than(i, ten).at(16..22).alloc(&arena);
 
         // increment
         let i = Expr::var("i", &arena).at(28..29).alloc(&arena);
         let add = Expr::add(i, one).at(28..33).alloc(&arena);
-        let incr = Expr::assign("i", add, &arena).at(24..33);
+        let incr = Expr::assign("i", add, &arena).at(24..33).alloc(&arena);
 
         // body
-        let i = Expr::var("i", &arena).at(43..44);
+        let i = Expr::var("i", &arena).at(43..44).alloc(&arena);
         let print1 = Stmt::print(i).at(37..45);
-        let i = Expr::var("i", &arena).at(52..53);
+        let i = Expr::var("i", &arena).at(52..53).alloc(&arena);
         let print2 = Stmt::print(i).at(46..54);
-        let body = Stmt::block(vec![print1, print2]).at(35..56);
+        let block = [print1, print2];
+        let body = Stmt::block(&block).at(35..56);
 
         // desugar body
-        let body = Stmt::block(vec![body, Stmt::expression(incr).at(24..33)]).at(35..56);
+        let block = [body, Stmt::expression(incr).at(24..33)];
+        let body = Stmt::block(&block).at(35..56).alloc(&arena);
         let body = Stmt::while_(cond, body).at(35..56);
-        let body = Stmt::block(vec![init, body]).at(0..56);
+        let block = [init, body];
+        let body = Stmt::block(&block).at(0..56);
 
-        assert_eq!(actual, vec![body]);
+        assert_eq!(actual, &[body]);
     }
 
     #[test]
@@ -1097,7 +1123,7 @@ mod tests {
         let actual = parse::<StatementRule>("for (var i = 0; i < 10; ) print i;", &arena);
 
         // constants
-        let zero = Expr::number(0.0).at(13..14);
+        let zero = Expr::number(0.0).at(13..14).alloc(&arena);
         let ten = Expr::number(10.0).at(20..22).alloc(&arena);
 
         // initializer
@@ -1105,17 +1131,18 @@ mod tests {
 
         // condition
         let i = Expr::var("i", &arena).at(16..17).alloc(&arena);
-        let cond = Expr::less_than(i, ten).at(16..22);
+        let cond = Expr::less_than(i, ten).at(16..22).alloc(&arena);
 
         // body
-        let i = Expr::var("i", &arena).at(32..33);
-        let body = Stmt::print(i).at(26..34);
+        let i = Expr::var("i", &arena).at(32..33).alloc(&arena);
+        let body = Stmt::print(i).at(26..34).alloc(&arena);
 
         // desugar body
         let body = Stmt::while_(cond, body).at(26..34);
-        let body = Stmt::block(vec![init, body]).at(0..34);
+        let block = [init, body];
+        let body = Stmt::block(&block).at(0..34);
 
-        assert_eq!(actual, vec![body]);
+        assert_eq!(actual, &[body]);
     }
 
     #[test]
@@ -1124,7 +1151,7 @@ mod tests {
         let actual = parse::<StatementRule>("for (var i = 0 ;; i = i + 1) print i;", &arena);
 
         // constants
-        let zero = Expr::number(0.0).at(13..14);
+        let zero = Expr::number(0.0).at(13..14).alloc(&arena);
         let one = Expr::number(1.0).at(26..27).alloc(&arena);
 
         // initializer
@@ -1133,19 +1160,22 @@ mod tests {
         // increment
         let i = Expr::var("i", &arena).at(22..23).alloc(&arena);
         let add = Expr::add(i, one).at(22..27).alloc(&arena);
-        let incr = Expr::assign("i", add, &arena).at(18..27);
+        let incr = Expr::assign("i", add, &arena).at(18..27).alloc(&arena);
 
         // body
-        let i = Expr::var("i", &arena).at(35..36);
+        let i = Expr::var("i", &arena).at(35..36).alloc(&arena);
         let body = Stmt::print(i).at(29..37);
-        let body = Stmt::block(vec![body]).at(29..37);
+        let block = [body];
+        let body = Stmt::block(&block).at(29..37);
 
         // desugar body
-        let body = Stmt::block(vec![body, Stmt::expression(incr).at(18..27)]).at(29..37);
-        let body = Stmt::while_(Expr::tru().at(16..17), body).at(29..37);
-        let body = Stmt::block(vec![init, body]).at(0..37);
+        let block = [body, Stmt::expression(incr).at(18..27)];
+        let body = Stmt::block(&block).at(29..37).alloc(&arena);
+        let body = Stmt::while_(Expr::tru().at(16..17).alloc(&arena), body).at(29..37);
+        let block = [init, body];
+        let body = Stmt::block(&block).at(0..37);
 
-        assert_eq!(actual, vec![body]);
+        assert_eq!(actual, &[body]);
     }
 
     #[test]
@@ -1159,23 +1189,25 @@ mod tests {
 
         // condition
         let i = Expr::var("i", &arena).at(7..8).alloc(&arena);
-        let cond = Expr::less_than(i, ten).at(7..13);
+        let cond = Expr::less_than(i, ten).at(7..13).alloc(&arena);
 
         // increment
         let i = Expr::var("i", &arena).at(19..20).alloc(&arena);
         let add = Expr::add(i, one).at(19..24).alloc(&arena);
-        let incr = Expr::assign("i", add, &arena).at(15..24);
+        let incr = Expr::assign("i", add, &arena).at(15..24).alloc(&arena);
 
         // body
-        let i = Expr::var("i", &arena).at(32..33);
+        let i = Expr::var("i", &arena).at(32..33).alloc(&arena);
         let body = Stmt::print(i).at(26..34);
-        let body = Stmt::block(vec![body]).at(26..34);
+        let block = [body];
+        let body = Stmt::block(&block).at(26..34);
 
         // desugar body
-        let body = Stmt::block(vec![body, Stmt::expression(incr).at(15..24)]).at(26..34);
+        let block = [body, Stmt::expression(incr).at(15..24)];
+        let body = Stmt::block(&block).at(26..34).alloc(&arena);
         let body = Stmt::while_(cond, body).at(0..34);
 
-        assert_eq!(actual, vec![body]);
+        assert_eq!(actual, &[body]);
     }
 
     #[test]
@@ -1187,7 +1219,7 @@ mod tests {
         );
 
         // constants
-        let zero = Expr::number(0.0).at(13..14);
+        let zero = Expr::number(0.0).at(13..14).alloc(&arena);
         let ten = Expr::number(10.0).at(20..22).alloc(&arena);
         let one1 = Expr::number(1.0).at(32..33).alloc(&arena);
         let one2 = Expr::number(1.0).at(55..56).alloc(&arena);
@@ -1197,25 +1229,32 @@ mod tests {
 
         // condition
         let i = Expr::var("i", &arena).at(16..17).alloc(&arena);
-        let cond = Expr::less_than(i, ten).at(16..22);
+        let cond = Expr::less_than(i, ten).at(16..22).alloc(&arena);
 
         // increment
         let i = Expr::var("i", &arena).at(28..29).alloc(&arena);
         let add = Expr::add(i, one1).at(28..33).alloc(&arena);
-        let incr = Expr::assign("i", add, &arena).at(24..33);
+        let incr = Expr::assign("i", add, &arena).at(24..33).alloc(&arena);
 
         // body
-        let i = Expr::var("i", &arena).at(43..44);
+        let i = Expr::var("i", &arena).at(43..44).alloc(&arena);
         let print = Stmt::print(i).at(37..45);
-        let assign = Stmt::var(Node::new("i", 50..51), Expr::neg(one2).at(54..56)).at(46..57);
-        let body = Stmt::block(vec![print, assign]).at(35..59);
+        let assign = Stmt::var(
+            Node::new("i", 50..51),
+            Expr::neg(one2).at(54..56).alloc(&arena),
+        )
+        .at(46..57);
+        let block = [print, assign];
+        let body = Stmt::block(&block).at(35..59);
 
         // desugar body
-        let body = Stmt::block(vec![body, Stmt::expression(incr).at(24..33)]).at(35..59);
+        let block = [body, Stmt::expression(incr).at(24..33)];
+        let body = Stmt::block(&block).at(35..59).alloc(&arena);
         let body = Stmt::while_(cond, body).at(35..59);
-        let body = Stmt::block(vec![init, body]).at(0..59);
+        let block = [init, body];
+        let body = Stmt::block(&block).at(0..59);
 
-        assert_eq!(actual, vec![body]);
+        assert_eq!(actual, &[body]);
     }
 
     #[test]

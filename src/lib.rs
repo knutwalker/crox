@@ -29,7 +29,9 @@ pub use call::{Callable, Function};
 pub use context::{Context, InterpreterContext};
 pub use env::{Environment, Scope, Scoped};
 pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result, TooMany};
-pub use expr::{BinaryOp, Expr, ExprNode, FunctionDef, Literal, LogicalOp, UnaryOp, Var};
+pub use expr::{
+    BinaryOp, BoxedExpr, Expr, ExprNode, FunctionDef, Literal, LogicalOp, UnaryOp, Var,
+};
 pub use interp::{expr_interpreter, stmt_interpreter, Interpreter, InterpreterError};
 pub use node::{Ident, Node, Spannable};
 pub use oop::{Class, Instance, InstanceLike, IntoValue, MutInstanceLike};
