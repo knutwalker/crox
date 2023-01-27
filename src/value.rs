@@ -209,18 +209,18 @@ impl PartialEq for Value<'_> {
             (Self::Number(lhs), Self::Number(rhs)) => lhs == rhs,
             (Self::Str(lhs), Self::Str(rhs)) => lhs == rhs,
             (Self::Callable(lhs), Self::Callable(rhs)) => {
-                let lhs = &**lhs as *const _ as *const ();
-                let rhs = &**rhs as *const _ as *const ();
+                let lhs = std::ptr::addr_of!(**lhs).cast::<()>();
+                let rhs = std::ptr::addr_of!(**rhs).cast::<()>();
                 std::ptr::eq(lhs, rhs)
             }
             (Self::Fn(lhs), Self::Fn(rhs)) => {
-                let lhs = &**lhs as *const _ as *const ();
-                let rhs = &**rhs as *const _ as *const ();
+                let lhs = std::ptr::addr_of!(**lhs).cast::<()>();
+                let rhs = std::ptr::addr_of!(**rhs).cast::<()>();
                 std::ptr::eq(lhs, rhs)
             }
             (Self::Class(lhs), Self::Class(rhs)) => {
-                let lhs = &**lhs as *const _;
-                let rhs = &**rhs as *const _;
+                let lhs = std::ptr::addr_of!(**lhs);
+                let rhs = std::ptr::addr_of!(**rhs);
                 std::ptr::eq(lhs, rhs)
             }
             _ => false,

@@ -536,23 +536,21 @@ impl<'a> SourceScanError<'a> {
         let line_offset = until_source
             .bytes()
             .rposition(|b| b == b'\n')
-            .map(|p| p + 1)
-            .unwrap_or(0);
+            .map_or(0, |p| p + 1);
         let line_number = until_source.lines().count();
         let offset = offset - line_offset;
 
         let next_line = source[line_offset..]
             .bytes()
             .position(|b| b == b'\n')
-            .map(|p| p + line_offset)
-            .unwrap_or(source.len());
+            .map_or(source.len(), |p| p + line_offset);
         let line = &source[line_offset..next_line];
 
         Self {
-            kind,
             line,
             offset,
             line_number,
+            kind,
             fancy,
         }
     }

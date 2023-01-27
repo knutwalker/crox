@@ -1,5 +1,18 @@
 #![warn(clippy::all, rust_2018_idioms)]
 #![warn(clippy::uninlined_format_args)]
+#![warn(clippy::pedantic)]
+#![allow(
+    clippy::doc_markdown,
+    clippy::enum_glob_use,
+    clippy::let_underscore_drop,
+    clippy::match_same_arms,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::module_name_repetitions,
+    clippy::must_use_candidate,
+    clippy::return_self_not_must_use,
+    clippy::single_match_else
+)]
 
 mod builtin;
 mod call;
@@ -121,7 +134,7 @@ pub fn run_as_evaluator(fancy: bool, mut out: impl Write, err: impl Write, conte
     let arena = Bump::new();
     let ctx = InterpreterContext::new(env, &arena, &mut out);
     match eval_with_env(ctx, content) {
-        Ok(ast) => print_ast(out, None, ast),
+        Ok(ast) => print_ast(out, None, &ast),
         Err(e) => report_error(fancy, err, e),
     };
 }
@@ -132,12 +145,12 @@ pub struct Config {
     pub show_timings: bool,
 }
 
-pub fn print_ast(mut out: impl Write, config: impl Into<Option<Config>>, ast: Ast<'_>) {
+pub fn print_ast(mut out: impl Write, config: impl Into<Option<Config>>, ast: &Ast<'_>) {
     let config = config.into().unwrap_or_default();
     try_print_ast(&mut out, config, ast).unwrap();
 }
 
-fn try_print_ast(mut out: impl Write, config: Config, ast: Ast<'_>) -> std::io::Result<()> {
+fn try_print_ast(mut out: impl Write, config: Config, ast: &Ast<'_>) -> std::io::Result<()> {
     if config.show_timings {
         writeln!(out, "Lexing: {:?}", ast.timings.lex)?;
         writeln!(out, "Parsing: {:?}", ast.timings.parse)?;

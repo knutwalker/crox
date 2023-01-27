@@ -31,10 +31,10 @@ impl TimingsBuilder {
     pub fn new() -> Self {
         Self {
             timings: Timings {
-                lex: Default::default(),
-                parse: Default::default(),
-                resolve: Default::default(),
-                interpret: Default::default(),
+                lex: Duration::default(),
+                parse: Duration::default(),
+                resolve: Duration::default(),
+                interpret: Duration::default(),
             },
         }
     }

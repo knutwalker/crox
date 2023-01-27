@@ -256,19 +256,18 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     fn property_def(&mut self, start: Span) -> Result<Node<FunctionDef<'a>>> {
-        self.function_body(Vec::new(), start, start)
+        self.function_body(&[], start, start)
     }
 
     fn function_def(&mut self, start: Span) -> Result<Node<FunctionDef<'a>>> {
-        let params =
-            self.parens_list::<_, Parameters>(start, true, |this, span| this.ident(span))?;
+        let params = self.parens_list::<_, Parameters>(start, true, Parser::ident)?;
 
-        self.function_body(params.item, start, params.span)
+        self.function_body(&params.item, start, params.span)
     }
 
     fn function_body(
         &mut self,
-        params: Vec<Node<&'a str>>,
+        params: &[Node<&'a str>],
         fn_start: Span,
         body_start: Span,
     ) -> Result<Node<FunctionDef<'a>>> {
@@ -276,7 +275,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let body = self.block(open_brace)?;
         let span = fn_start.union(body.span);
 
-        let params = self.arena.alloc_slice_copy(&params);
+        let params = self.arena.alloc_slice_copy(params);
         let body = self.arena.alloc_slice_clone(&body.item);
         Ok(Node::new(FunctionDef::new(params, body), span))
     }

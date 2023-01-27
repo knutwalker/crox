@@ -31,6 +31,7 @@ impl<T> EnumSet<T> {
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 impl<T: ValueEnum> EnumSet<T> {
     /// Returns `true` if the value was added to this set, `false` if it was already present.
     pub fn insert(&mut self, value: T) -> bool {
@@ -94,20 +95,21 @@ impl<T: ValueEnum> Iterator for TokensIter<T> {
     fn next(&mut self) -> Option<Self::Item> {
         let bits = self.bits?.get();
         self.bits = NonZeroU64::new(bits ^ (bits & (!bits + 1)));
+        #[allow(clippy::cast_possible_truncation)]
         let ord = bits.trailing_zeros() as u8;
         // SAFETY: we only add valid values to the set
         Some(unsafe { T::from_ord(ord) })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let count = self.bits.map_or(0, |b| b.get()).count_ones() as usize;
+        let count = self.bits.map_or(0, NonZeroU64::get).count_ones() as usize;
         (count, Some(count))
     }
 }
 
 impl<T: ValueEnum> ExactSizeIterator for TokensIter<T> {
     fn len(&self) -> usize {
-        self.bits.map_or(0, |b| b.get()).count_ones() as usize
+        self.bits.map_or(0, NonZeroU64::get).count_ones() as usize
     }
 }
 

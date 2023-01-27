@@ -37,12 +37,12 @@ impl Frontend {
         let ctx = InterpreterContext::new(self.env.clone(), self.arena, &mut out);
 
         match crox::run_with_env(ctx, line) {
-            Ok(res) => crox::print_ast(out, config, res),
+            Ok(res) => crox::print_ast(out, config, &res),
             Err(e) => match e.errors() {
                 [e] if is_semicolon_instead_of_eof(e) => {
                     let ctx = InterpreterContext::new(self.env.clone(), self.arena, &mut out);
                     match crox::eval_with_env(ctx, line) {
-                        Ok(res) => crox::print_ast(out, config, res),
+                        Ok(res) => crox::print_ast(out, config, &res),
                         Err(e) => report_error(err, e),
                     }
                 }

@@ -65,14 +65,14 @@ impl<'a, V> Environment<'a, V> {
 
 impl Environment<'_> {
     pub fn print_vars(&self, out: impl Write) {
-        self.inner.print_vars(out)
+        self.inner.print_vars(out);
     }
 }
 
 impl<'a> Default for Environment<'a> {
     fn default() -> Self {
         Self {
-            inner: Rc::new(InnerEnv::global(|b| b.to_value())),
+            inner: Rc::new(InnerEnv::global(Builtins::to_value)),
         }
     }
 }
@@ -149,8 +149,7 @@ impl Scoped {
 
     pub fn get_at_offset(&self, offset: i32) -> Option<Scope> {
         match self.get() {
-            Scope::Global => None,
-            Scope::Local => None,
+            Scope::Local | Scope::Global => None,
             Scope::Enclosing { distance } => Some(Scope::Enclosing {
                 distance: distance.checked_add_signed(offset)?,
             }),
@@ -348,7 +347,7 @@ impl<'a, V: Display> EnvValues<'a, V> {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
-    use Scope::*;
+    use Scope::{Global, Local};
 
     #[test]
     fn test_get_on_empty() {

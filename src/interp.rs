@@ -1,7 +1,7 @@
 use crate::{
     BinaryOp, Callable, Class, ClassDecl, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule,
-    Function, InterpreterContext, LogicalOp, Node, Span, StatementRule, Stmt, StmtNode, Type,
-    TypeSet, UnaryOp, Value, Valued, Var,
+    Function, InterpreterContext, LogicalOp, Node, Scoped, Span, StatementRule, Stmt, StmtNode,
+    Type, TypeSet, UnaryOp, Value, Valued, Var,
 };
 use std::{marker::PhantomData, rc::Rc};
 
@@ -94,8 +94,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                     expr.as_ref()
                         .map(|e| Self::eval_expr(ctx, e.item, e.span))
                         .transpose()?
-                        .map(|v| v.item)
-                        .unwrap_or(Value::Nil),
+                        .map_or(Value::Nil, |v| v.item),
                 ))
             }
             Stmt::Var { name, initializer } => {
@@ -115,7 +114,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 }
             }
             Stmt::Block { stmts } => {
-                ctx.run_with_new_scope(|ctx| Self::eval_stmts_in_scope(ctx, stmts))?
+                ctx.run_with_new_scope(|ctx| Self::eval_stmts_in_scope(ctx, stmts))?;
             }
         }
 
@@ -222,49 +221,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 .get("this", scope.get())
                 .map_err(|e| CroxErrorKind::from(e).at(span))?,
             Expr::Super { method, scope } => {
-                let superclass = ctx
-                    .env
-                    .get("super", scope.get())
-                    .map_err(|e| CroxErrorKind::from(e).at(span))?;
-
-                let this_scope = scope.get_at_offset(-1).unwrap_or_else(|| {
-                    panic!("[ICE] scope for `super` needs to be properly resolved, but it was {scope:?}")
-                });
-
-                let this = ctx
-                    .env
-                    .get("this", this_scope)
-                    .map_err(|e| CroxErrorKind::from(e).at(span))?;
-
-                let method = match &superclass {
-                    Value::Class(superclass) => {
-                        let method_fn = superclass
-                            .lookup(method.item)
-                            .into_method(method.item, method.span)?;
-                        Node::new(method_fn, method.span)
-                    }
-                    _ => {
-                        return Err(CroxErrorKind::InvalidType {
-                            expected: TypeSet::from(Type::Class),
-                            actual: superclass.typ(),
-                        }
-                        .at(span))
-                    }
-                };
-
-                let this = match this {
-                    Value::Instance(instance) => instance,
-                    _ => {
-                        return Err(CroxErrorKind::InvalidType {
-                            expected: TypeSet::from(Type::Instance),
-                            actual: this.typ(),
-                        }
-                        .at(span))
-                    }
-                };
-
-                let value = Value::from(method.item.bind(this));
-                return Ok(Valued::new(value, method.span));
+                return Self::eval_super(ctx, scope, span, method);
             }
             Expr::Group { expr } => Self::eval_expr(ctx, expr.item, expr.span)?.item,
         };
@@ -272,12 +229,12 @@ impl<'a, 'o> Interpreter<'a, 'o> {
         Ok(Valued::new(value, span))
     }
 
-    fn class_new<'env, 'out>(
-        ctx: &mut InterpreterContext<'env, 'out>,
-        name: &'env str,
-        class: &ClassDecl<'env>,
-        superclass: Option<Node<Rc<Class<'env>>>>,
-    ) -> Value<'env> {
+    fn class_new(
+        ctx: &mut InterpreterContext<'a, 'o>,
+        name: &'a str,
+        class: &ClassDecl<'a>,
+        superclass: Option<Node<Rc<Class<'a>>>>,
+    ) -> Value<'a> {
         let class_members = class.members().map(ctx.arena, |m| {
             let name = m.item.name.item;
             let fun = m.item.fun;
@@ -287,6 +244,52 @@ impl<'a, 'o> Interpreter<'a, 'o> {
 
         let class = Class::new(name, superclass, class_members);
         Value::from(class)
+    }
+
+    fn eval_super(
+        ctx: &mut InterpreterContext<'a, 'o>,
+        scope: &Scoped,
+        span: Span,
+        method: &Node<&'a str>,
+    ) -> crate::Result<Node<Value<'a>>> {
+        let superclass = ctx
+            .env
+            .get("super", scope.get())
+            .map_err(|e| CroxErrorKind::from(e).at(span))?;
+        let this_scope = scope.get_at_offset(-1).unwrap_or_else(|| {
+            panic!("[ICE] scope for `super` needs to be properly resolved, but it was {scope:?}")
+        });
+        let this = ctx
+            .env
+            .get("this", this_scope)
+            .map_err(|e| CroxErrorKind::from(e).at(span))?;
+        let method = match &superclass {
+            Value::Class(superclass) => {
+                let method_fn = superclass
+                    .lookup(method.item)
+                    .into_method(method.item, method.span)?;
+                Node::new(method_fn, method.span)
+            }
+            _ => {
+                return Err(CroxErrorKind::InvalidType {
+                    expected: TypeSet::from(Type::Class),
+                    actual: superclass.typ(),
+                }
+                .at(span))
+            }
+        };
+        let this = match this {
+            Value::Instance(instance) => instance,
+            _ => {
+                return Err(CroxErrorKind::InvalidType {
+                    expected: TypeSet::from(Type::Instance),
+                    actual: this.typ(),
+                }
+                .at(span))
+            }
+        };
+        let value = Value::from(method.item.bind(this));
+        Ok(Node::new(value, method.span))
     }
 }
 
