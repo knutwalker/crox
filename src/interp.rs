@@ -1,19 +1,17 @@
 use crate::{
-    BinaryOp, Callable, Class, ClassDecl, CroxError, CroxErrorKind, Environment, Expr, ExprNode,
-    ExpressionRule, Function, InterpreterContext, LogicalOp, Node, Span, StatementRule, Stmt,
-    StmtNode, Type, TypeSet, UnaryOp, Value, Valued, Var,
+    BinaryOp, Callable, Class, ClassDecl, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule,
+    Function, InterpreterContext, LogicalOp, Node, Span, StatementRule, Stmt, StmtNode, Type,
+    TypeSet, UnaryOp, Value, Valued, Var,
 };
-use std::{io::Write, marker::PhantomData, rc::Rc};
+use std::{marker::PhantomData, rc::Rc};
 
 pub struct Interpreter<'a, 'o> {
     context: InterpreterContext<'a, 'o>,
 }
 
 impl<'a, 'o> Interpreter<'a, 'o> {
-    pub fn new(out: &'o mut dyn Write, env: Environment<'a>) -> Self {
-        Self {
-            context: InterpreterContext::new(env, out),
-        }
+    fn new(context: InterpreterContext<'a, 'o>) -> Self {
+        Self { context }
     }
 }
 
@@ -333,9 +331,9 @@ pub struct StreamInterpreter<'a, 'e, R, I> {
 }
 
 impl<'a, 'o, R, I> StreamInterpreter<'a, 'o, R, I> {
-    pub fn new(out: &'o mut dyn Write, env: Environment<'a>, tokens: I) -> Self {
+    pub fn new(context: InterpreterContext<'a, 'o>, tokens: I) -> Self {
         Self {
-            interpreter: Interpreter::new(out, env),
+            interpreter: Interpreter::new(context),
             input: tokens,
             _rule: PhantomData,
         }
@@ -343,25 +341,23 @@ impl<'a, 'o, R, I> StreamInterpreter<'a, 'o, R, I> {
 }
 
 pub fn stmt_interpreter<'a: 'o, 'o, I>(
-    out: &'o mut dyn Write,
-    env: Environment<'a>,
+    context: InterpreterContext<'a, 'o>,
     tokens: I,
 ) -> impl Iterator<Item = crate::Result<Valued<'a>>> + 'o
 where
     I: IntoIterator<Item = StmtNode<'a>> + 'o,
 {
-    StreamInterpreter::<StatementRule, _>::new(out, env, tokens.into_iter())
+    StreamInterpreter::<StatementRule, _>::new(context, tokens.into_iter())
 }
 
 pub fn expr_interpreter<'a: 'o, 'o, I>(
-    out: &'o mut dyn Write,
-    env: Environment<'a>,
+    context: InterpreterContext<'a, 'o>,
     tokens: I,
 ) -> impl Iterator<Item = crate::Result<Valued<'a>>> + 'o
 where
     I: IntoIterator<Item = ExprNode<'a>> + 'o,
 {
-    StreamInterpreter::<ExpressionRule, _>::new(out, env, tokens.into_iter())
+    StreamInterpreter::<ExpressionRule, _>::new(context, tokens.into_iter())
 }
 
 impl<'a, 'e, R, I> Iterator for StreamInterpreter<'a, 'e, R, I>

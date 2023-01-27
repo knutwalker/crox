@@ -4,7 +4,8 @@ use std::{
     rc::Rc,
 };
 
-pub type ExprNode<'a> = Node<Rc<Expr<'a>>>;
+pub type ExprNode<'a> = Node<Expr<'a>>;
+type Exp<'a> = Node<&'a Expr<'a>>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr<'a> {
@@ -14,34 +15,34 @@ pub enum Expr<'a> {
     Assignment {
         name: &'a str,
         scope: Scoped,
-        value: ExprNode<'a>,
+        value: Exp<'a>,
     },
     Unary {
         op: UnaryOp,
-        expr: ExprNode<'a>,
+        expr: Exp<'a>,
     },
     Logical {
-        lhs: ExprNode<'a>,
+        lhs: Exp<'a>,
         op: LogicalOp,
-        rhs: ExprNode<'a>,
+        rhs: Exp<'a>,
     },
     Binary {
-        lhs: ExprNode<'a>,
+        lhs: Exp<'a>,
         op: BinaryOp,
-        rhs: ExprNode<'a>,
+        rhs: Exp<'a>,
     },
     Call {
-        callee: ExprNode<'a>,
-        arguments: Rc<[ExprNode<'a>]>,
+        callee: Exp<'a>,
+        arguments: &'a [ExprNode<'a>],
     },
     Get {
-        object: ExprNode<'a>,
+        object: Exp<'a>,
         name: Node<&'a str>,
     },
     Set {
-        object: ExprNode<'a>,
+        object: Exp<'a>,
         name: Node<&'a str>,
-        value: ExprNode<'a>,
+        value: Exp<'a>,
     },
     Super {
         method: Node<&'a str>,
@@ -51,7 +52,7 @@ pub enum Expr<'a> {
         scope: Scoped,
     },
     Group {
-        expr: ExprNode<'a>,
+        expr: Exp<'a>,
     },
 }
 
@@ -84,7 +85,7 @@ impl<'a> Expr<'a> {
         Self::Fun(fun)
     }
 
-    pub fn assign(name: &'a str, value: ExprNode<'a>) -> Self {
+    pub fn assign(name: &'a str, value: Exp<'a>) -> Self {
         Self::Assignment {
             name,
             scope: Scoped::new(),
@@ -92,25 +93,25 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn neg(expr: ExprNode<'a>) -> Self {
+    pub fn neg(expr: Exp<'a>) -> Self {
         Self::Unary {
             op: UnaryOp::Neg,
             expr,
         }
     }
 
-    pub fn not(expr: ExprNode<'a>) -> Self {
+    pub fn not(expr: Exp<'a>) -> Self {
         Self::Unary {
             op: UnaryOp::Not,
             expr,
         }
     }
 
-    pub fn unary(op: UnaryOp, expr: ExprNode<'a>) -> Self {
+    pub fn unary(op: UnaryOp, expr: Exp<'a>) -> Self {
         Self::Unary { op, expr }
     }
 
-    pub fn and(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
+    pub fn and(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
         Self::Logical {
             lhs,
             op: LogicalOp::And,
@@ -118,7 +119,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn or(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
+    pub fn or(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
         Self::Logical {
             lhs,
             op: LogicalOp::Or,
@@ -126,11 +127,11 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn logical(lhs: ExprNode<'a>, op: LogicalOp, rhs: ExprNode<'a>) -> Self {
+    pub fn logical(lhs: Exp<'a>, op: LogicalOp, rhs: Exp<'a>) -> Self {
         Self::Logical { lhs, op, rhs }
     }
 
-    pub fn add(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
+    pub fn add(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::Add,
@@ -138,7 +139,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn sub(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
+    pub fn sub(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::Sub,
@@ -146,7 +147,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn mul(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
+    pub fn mul(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::Mul,
@@ -154,7 +155,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn div(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
+    pub fn div(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::Div,
@@ -162,7 +163,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn equals(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
+    pub fn equals(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::Equals,
@@ -170,7 +171,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn not_equals(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
+    pub fn not_equals(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::NotEquals,
@@ -178,7 +179,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn less_than(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
+    pub fn less_than(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::LessThan,
@@ -186,7 +187,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn less_than_or_equal(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
+    pub fn less_than_or_equal(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::LessThanOrEqual,
@@ -194,7 +195,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn greater_than(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
+    pub fn greater_than(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::GreaterThan,
@@ -202,7 +203,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn greater_than_or_equal(lhs: ExprNode<'a>, rhs: ExprNode<'a>) -> Self {
+    pub fn greater_than_or_equal(lhs: Exp<'a>, rhs: Exp<'a>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::GreaterThanOrEqual,
@@ -210,22 +211,19 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn binary(lhs: ExprNode<'a>, op: BinaryOp, rhs: ExprNode<'a>) -> Self {
+    pub fn binary(lhs: Exp<'a>, op: BinaryOp, rhs: Exp<'a>) -> Self {
         Self::Binary { lhs, op, rhs }
     }
 
-    pub fn call(callee: ExprNode<'a>, arguments: impl Into<Rc<[ExprNode<'a>]>>) -> Self {
-        Self::Call {
-            callee,
-            arguments: arguments.into(),
-        }
+    pub fn call(callee: Exp<'a>, arguments: &'a [ExprNode<'a>]) -> Self {
+        Self::Call { callee, arguments }
     }
 
-    pub fn get(object: ExprNode<'a>, name: Node<&'a str>) -> Self {
+    pub fn get(object: Exp<'a>, name: Node<&'a str>) -> Self {
         Self::Get { object, name }
     }
 
-    pub fn set(object: ExprNode<'a>, name: Node<&'a str>, value: ExprNode<'a>) -> Self {
+    pub fn set(object: Exp<'a>, name: Node<&'a str>, value: Exp<'a>) -> Self {
         Self::Set {
             object,
             name,
@@ -246,12 +244,12 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn group(expr: ExprNode<'a>) -> Self {
+    pub fn group(expr: Exp<'a>) -> Self {
         Self::Group { expr }
     }
 
     pub fn at(self, span: impl Into<Span>) -> ExprNode<'a> {
-        Node::new(Rc::new(self), span)
+        Node::new(self, span)
     }
 }
 

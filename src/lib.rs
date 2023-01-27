@@ -24,6 +24,7 @@ mod value;
 use std::io::Write;
 
 pub use builtin::{Builtins, Clock};
+use bumpalo::Bump;
 pub use call::{Callable, Function};
 pub use context::{Context, InterpreterContext};
 pub use env::{Environment, Scope, Scoped};
@@ -46,46 +47,49 @@ pub use value::{Ast, Value, Valued};
 use crate::error::ErrorsCollector;
 use crate::timing::TimingsBuilder;
 
-pub fn run(out: impl Write, content: &str) -> Result<Ast<'_>, CroxErrors> {
+pub fn run<'a>(
+    mut out: impl Write,
+    arena: &'a Bump,
+    content: &'a str,
+) -> Result<Ast<'a>, CroxErrors> {
     let env = Environment::default();
-    run_with_env(out, env, content)
+    let ctx = InterpreterContext::new(env, arena, &mut out);
+    run_with_env(ctx, content)
 }
 
-pub fn run_with_env<'a>(
-    mut out: impl Write,
-    env: Environment<'a>,
+pub fn run_with_env<'a: 'o, 'o>(
+    ctx: InterpreterContext<'a, 'o>,
     content: &'a str,
 ) -> Result<Ast<'a>, CroxErrors> {
     let mut timings = TimingsBuilder::new();
     let source = scan(content);
     let tokens = timings.lex(|| source.collect_all(content))?;
-    let statements = timings.parse(|| stmt_parser(source, tokens).collect_all(content))?;
-    let resolved = timings.resolve(|| stmt_resolver(statements).collect_all(content))?;
-    let values =
-        timings.interpret(|| stmt_interpreter(&mut out, env, resolved).collect_all(content))?;
+    let statements =
+        timings.parse(|| stmt_parser(source, tokens, ctx.arena).collect_all(content))?;
+    let resolved = timings.resolve(|| stmt_resolver(statements, ctx.arena).collect_all(content))?;
+    let values = timings.interpret(|| stmt_interpreter(ctx, resolved).collect_all(content))?;
     Ok(Ast::new(values, timings.build()))
 }
 
-pub fn eval_with_env<'a>(
-    mut out: impl Write,
-    env: Environment<'a>,
+pub fn eval_with_env<'a: 'o, 'o>(
+    ctx: InterpreterContext<'a, 'o>,
     content: &'a str,
 ) -> Result<Ast<'a>, CroxErrors> {
     let mut timings = TimingsBuilder::new();
     let source = scan(content);
     let tokens = timings.lex(|| source.collect_all(content))?;
-    let statements = timings.parse(|| expr_parser(source, tokens).collect_all(content))?;
-    let resolved = timings.resolve(|| expr_resolver(statements).collect_all(content))?;
-    let values =
-        timings.interpret(|| expr_interpreter(&mut out, env, resolved).collect_all(content))?;
+    let statements =
+        timings.parse(|| expr_parser(source, tokens, ctx.arena).collect_all(content))?;
+    let resolved = timings.resolve(|| expr_resolver(statements, ctx.arena).collect_all(content))?;
+    let values = timings.interpret(|| expr_interpreter(ctx, resolved).collect_all(content))?;
     Ok(Ast::new(values, timings.build()))
 }
 
-pub fn parse(content: &str) -> Result<Vec<StmtNode<'_>>, CroxErrors> {
+pub fn parse<'a>(content: &'a str, arena: &'a Bump) -> Result<Vec<StmtNode<'a>>, CroxErrors> {
     let source = scan(content);
     let tokens = source.collect_all(content)?;
-    let statements = stmt_parser(source, tokens).collect_all(content)?;
-    let resolved = stmt_resolver(statements).collect_all(content)?;
+    let statements = stmt_parser(source, tokens, arena).collect_all(content)?;
+    let resolved = stmt_resolver(statements, arena).collect_all(content)?;
     Ok(resolved)
 }
 
@@ -93,13 +97,14 @@ pub fn scan(content: &str) -> Source<'_> {
     scanner::Source::new(content)
 }
 
-pub fn run_as_script(
+pub fn run_as_script<'a>(
     fancy: bool,
     out: impl Write,
     err: impl Write,
-    content: &str,
-) -> Result<Ast<'_>, i32> {
-    run(out, content).map_err(move |e| {
+    arena: &'a Bump,
+    content: &'a str,
+) -> Result<Ast<'a>, i32> {
+    run(out, arena, content).map_err(move |e| {
         let scope = e.scope();
         report_error(fancy, err, e);
         match scope {
@@ -111,10 +116,12 @@ pub fn run_as_script(
 
 pub fn run_as_evaluator(fancy: bool, mut out: impl Write, err: impl Write, content: &str) {
     let env = Environment::default();
-    match eval_with_env(&mut out, env, content) {
+    let arena = Bump::new();
+    let ctx = InterpreterContext::new(env, &arena, &mut out);
+    match eval_with_env(ctx, content) {
         Ok(ast) => print_ast(out, None, ast),
         Err(e) => report_error(fancy, err, e),
-    }
+    };
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
@@ -167,9 +174,11 @@ mod tests {
 
     #[test]
     fn test_unreached_undefined_does_not_trigger_error() {
+        let arena = Bump::new();
         let mut out = Vec::new();
         let res = run(
             &mut out,
+            &arena,
             r#"
 if (false) {
   print notDefined;
@@ -185,9 +194,11 @@ print "ok";
 
     #[test]
     fn test_loop_var_shadowing_does_not_affect_loop_var() {
+        let arena = Bump::new();
         let mut out = Vec::new();
         let res = run(
             &mut out,
+            &arena,
             r#"
 for (var i = 0; i < 1; i = i + 1) {
   print i;
@@ -203,7 +214,12 @@ for (var i = 0; i < 1; i = i + 1) {
 
     #[test]
     fn allow_shadowing_parameters() {
-        let source = r#"
+        let arena = Bump::new();
+        let mut out = Vec::new();
+        let res = run(
+            &mut out,
+            &arena,
+            r#"
 fun foo(a) {
     print a; // expect foo
     var a = "bar";
@@ -211,10 +227,8 @@ fun foo(a) {
 }
 
 foo("foo");
-       "#;
-
-        let mut out = Vec::new();
-        let res = run(&mut out, source);
+       "#,
+        );
 
         assert!(res.is_ok());
         assert_eq!(String::from_utf8(out).unwrap().trim(), "foo\nbar");

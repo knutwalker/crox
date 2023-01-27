@@ -4,18 +4,21 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use bumpalo::Bump;
+
 use crate::{Environment, Value};
 
 pub type InterpreterContext<'a, 'out> = Context<'a, &'out mut dyn Write>;
 
 pub struct Context<'source, Data, V = Value<'source>> {
     pub env: Environment<'source, V>,
+    pub arena: &'source Bump,
     pub data: Data,
 }
 
 impl<'source, Data, V> Context<'source, Data, V> {
-    pub fn new(env: Environment<'source, V>, data: Data) -> Self {
-        Self { env, data }
+    pub fn new(env: Environment<'source, V>, arena: &'source Bump, data: Data) -> Self {
+        Self { env, arena, data }
     }
 
     pub fn run_with_new_scope<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {

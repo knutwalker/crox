@@ -43,32 +43,39 @@ use crate::{
     FunctionKind, Node, Range, Result, Source, Span, StatementRule, Stmt, StmtNode, Token,
     TokenSet, TokenType, TooMany, UnaryOp, Var,
 };
+use bumpalo::Bump;
 use std::{iter::Peekable, marker::PhantomData};
 use TokenType::*;
 
 type Tok = (TokenType, Span);
 
-pub fn expr_parser<I>(
-    source: Source<'_>,
+pub fn expr_parser<'a, I>(
+    source: Source<'a>,
     tokens: I,
-) -> Parser<'_, ExpressionRule, UnpackToken<I::IntoIter>>
+    arena: &'a Bump,
+) -> Parser<'a, ExpressionRule, UnpackToken<I::IntoIter>>
 where
     I: IntoIterator<Item = Token>,
 {
-    any_parser(source, tokens)
+    any_parser(source, tokens, arena)
 }
 
-pub fn stmt_parser<I>(
-    source: Source<'_>,
+pub fn stmt_parser<'a, I>(
+    source: Source<'a>,
     tokens: I,
-) -> Parser<'_, StatementRule, UnpackToken<I::IntoIter>>
+    arena: &'a Bump,
+) -> Parser<'a, StatementRule, UnpackToken<I::IntoIter>>
 where
     I: IntoIterator<Item = Token>,
 {
-    any_parser(source, tokens)
+    any_parser(source, tokens, arena)
 }
 
-fn any_parser<R, I>(source: Source<'_>, tokens: I) -> Parser<'_, R, UnpackToken<I::IntoIter>>
+fn any_parser<'a, R, I>(
+    source: Source<'a>,
+    tokens: I,
+    arena: &'a Bump,
+) -> Parser<'a, R, UnpackToken<I::IntoIter>>
 where
     I: IntoIterator<Item = Token>,
 {
@@ -76,12 +83,13 @@ where
         inner: tokens.into_iter(),
     }
     .peekable();
-    Parser::new(source, tokens)
+    Parser::new(source, tokens, arena)
 }
 
 pub struct Parser<'a, R, T: Iterator<Item = Tok>> {
     source: Source<'a>,
     tokens: Peekable<T>,
+    arena: &'a Bump,
     _rule: PhantomData<R>,
 }
 
@@ -116,18 +124,21 @@ macro_rules! bin_op {
                 None => break,
             };
             let rhs = $this.$descent()?;
-            let span = lhs.span.union(rhs.span);
-            lhs = Expr::binary(lhs, op, rhs).at(span);
+            let left = lhs.alloc(&$this.arena);
+            let right = rhs.alloc(&$this.arena);
+            let span = left.span.union(right.span);
+            lhs = Expr::binary(left, op, right).at(span);
         }
         Ok(lhs)
     }};
 }
 
 impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
-    fn new(source: Source<'a>, tokens: Peekable<T>) -> Self {
+    fn new(source: Source<'a>, tokens: Peekable<T>, arena: &'a Bump) -> Self {
         Self {
             source,
             tokens,
+            arena,
             _rule: PhantomData,
         }
     }
@@ -464,9 +475,15 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         if peek!(self, Equal) {
             let value = self.assignment()?;
             let span = expr.span.union(value.span);
-            let assign = match &*expr.item {
-                Expr::Var(Var { name, .. }) => Expr::assign(name, value),
-                Expr::Get { object, name } => Expr::set(object.clone(), *name, value),
+            let assign = match &expr.item {
+                Expr::Var(Var { name, .. }) => {
+                    let value = value.alloc(self.arena);
+                    Expr::assign(name, value)
+                }
+                Expr::Get { object, name } => {
+                    let value = value.alloc(self.arena);
+                    Expr::set(*object, *name, value)
+                }
                 _ => {
                     return Err(CroxErrorKind::InvalidAssignmentTarget.at(expr.span));
                 }
@@ -484,8 +501,10 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
         while peek!(self, Or) {
             let right = self.logic_and()?;
-            let span = expr.span.union(right.span);
-            expr = Expr::or(expr, right).at(span);
+            let left = expr.alloc(self.arena);
+            let right = right.alloc(self.arena);
+            let span = left.span.union(right.span);
+            expr = Expr::or(left, right).at(span);
         }
 
         Ok(expr)
@@ -497,8 +516,10 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
         while peek!(self, And) {
             let right = self.equality()?;
-            let span = expr.span.union(right.span);
-            expr = Expr::and(expr, right).at(span);
+            let left = expr.alloc(self.arena);
+            let right = right.alloc(self.arena);
+            let span = left.span.union(right.span);
+            expr = Expr::and(left, right).at(span);
         }
 
         Ok(expr)
@@ -546,6 +567,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         }) {
             Some((op, span)) => {
                 let inner = self.unary()?;
+                let inner = inner.alloc(self.arena);
                 let span = span.union(inner.span);
                 Ok(Expr::unary(op, inner).at(span))
             }
@@ -561,13 +583,16 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             let next = peek!(self, {
                 (LeftParen, span) => {
                     let (args, end) = self.arguments(span)?;
-                    let span = expr.span.union(end);
-                    expr = Expr::call(expr, args).at(span);
+                    let args = self.arena.alloc_slice_fill_iter(args);
+                    let inner = expr.alloc(self.arena);
+                    let span = inner.span.union(end);
+                    expr = Expr::call(inner, args).at(span);
                 },
                 (Dot, span) => {
                     let name = self.ident(span)?;
-                    let span = expr.span.union(name.span);
-                    expr = Expr::get(expr, name).at(span);
+                    let inner = expr.alloc(self.arena);
+                    let span = inner.span.union(name.span);
+                    expr = Expr::get(inner, name).at(span);
                 },
             });
             if next.is_none() {
@@ -591,6 +616,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let (node, span) = match self.tokens.next() {
             Some((LeftParen, span)) => {
                 let inner = self.expression()?;
+                let inner = inner.alloc(self.arena);
                 let end_span = self.expect(RightParen, EndOfInput::Unclosed(LeftParen, span))?;
                 (Expr::group(inner), Span::from(span.union(end_span)))
             }
@@ -882,23 +908,24 @@ mod tests {
 
     use pretty_assertions::assert_eq;
 
-    fn parse<T: ParserRule>(source: &str) -> Vec<T::Parsed<'_>> {
+    fn parse<'a, T: ParserRule>(source: &'a str, arena: &'a Bump) -> Vec<T::Parsed<'a>> {
         let source = Source::new(source);
         let tokens = source.scan_all().unwrap();
 
-        let parser = any_parser::<T, _>(source, tokens);
+        let parser = any_parser::<T, _>(source, tokens, arena);
         parser.collect::<Result<Vec<_>>>().unwrap()
     }
 
     #[test]
     fn test_parse1() {
-        let actual = parse::<ExpressionRule>("6 / 3 - 1");
+        let arena = Bump::new();
+        let actual = parse::<ExpressionRule>("6 / 3 - 1", &arena);
 
-        let lhs = Expr::number(6.0).at(0..1);
-        let rhs = Expr::number(3.0).at(4..5);
-        let div = Expr::binary(lhs, BinaryOp::Div, rhs).at(0..5);
+        let lhs = Expr::number(6.0).at(0..1).alloc(&arena);
+        let rhs = Expr::number(3.0).at(4..5).alloc(&arena);
+        let div = Expr::binary(lhs, BinaryOp::Div, rhs).at(0..5).alloc(&arena);
 
-        let rhs = Expr::number(1.0).at(8..9);
+        let rhs = Expr::number(1.0).at(8..9).alloc(&arena);
         let sub = Expr::binary(div, BinaryOp::Sub, rhs).at(0..9);
 
         assert_eq!(actual, vec![sub]);
@@ -906,13 +933,14 @@ mod tests {
 
     #[test]
     fn test_parse2() {
-        let actual = parse::<ExpressionRule>("6 - 3 / 1");
+        let arena = Bump::new();
+        let actual = parse::<ExpressionRule>("6 - 3 / 1", &arena);
 
-        let first = Expr::number(6.0).at(0..1);
+        let first = Expr::number(6.0).at(0..1).alloc(&arena);
 
-        let lhs = Expr::number(3.0).at(4..5);
-        let rhs = Expr::number(1.0).at(8..9);
-        let div = Expr::binary(lhs, BinaryOp::Div, rhs).at(4..9);
+        let lhs = Expr::number(3.0).at(4..5).alloc(&arena);
+        let rhs = Expr::number(1.0).at(8..9).alloc(&arena);
+        let div = Expr::binary(lhs, BinaryOp::Div, rhs).at(4..9).alloc(&arena);
 
         let sub = Expr::binary(first, BinaryOp::Sub, div).at(0..9);
 
@@ -921,7 +949,8 @@ mod tests {
 
     #[test]
     fn test_parse_stmt1() {
-        let actual = parse::<StatementRule>("print 1;");
+        let arena = Bump::new();
+        let actual = parse::<StatementRule>("print 1;", &arena);
 
         let expected = Stmt::print(Expr::number(1.0).at(6..7)).at(0..8);
         assert_eq!(actual, vec![expected]);
@@ -929,16 +958,17 @@ mod tests {
 
     #[test]
     fn test_parse_stmt2() {
-        let actual = parse::<StatementRule>("print 1 + 3 + 3 + 7;");
+        let arena = Bump::new();
+        let actual = parse::<StatementRule>("print 1 + 3 + 3 + 7;", &arena);
 
-        let one = Expr::number(1.0).at(6..7);
-        let three = Expr::number(3.0).at(10..11);
-        let sum = Expr::add(one, three).at(6..11);
+        let one = Expr::number(1.0).at(6..7).alloc(&arena);
+        let three = Expr::number(3.0).at(10..11).alloc(&arena);
+        let sum = Expr::add(one, three).at(6..11).alloc(&arena);
 
-        let three = Expr::number(3.0).at(14..15);
-        let sum = Expr::add(sum, three).at(6..15);
+        let three = Expr::number(3.0).at(14..15).alloc(&arena);
+        let sum = Expr::add(sum, three).at(6..15).alloc(&arena);
 
-        let seven = Expr::number(7.0).at(18..19);
+        let seven = Expr::number(7.0).at(18..19).alloc(&arena);
         let sum = Expr::add(sum, seven).at(6..19);
 
         let expected = Stmt::print(sum).at(0..20);
@@ -947,7 +977,8 @@ mod tests {
 
     #[test]
     fn test_parse_block() {
-        let actual = parse::<StatementRule>("{ print 1; print 2; }");
+        let arena = Bump::new();
+        let actual = parse::<StatementRule>("{ print 1; print 2; }", &arena);
 
         let one = Expr::number(1.0).at(8..9);
         let two = Expr::number(2.0).at(17..18);
@@ -961,10 +992,11 @@ mod tests {
 
     #[test]
     fn test_parse_eq() {
-        let actual = parse::<ExpressionRule>("1 == 2");
+        let arena = Bump::new();
+        let actual = parse::<ExpressionRule>("1 == 2", &arena);
 
-        let one = Expr::number(1.0).at(0..1);
-        let two = Expr::number(2.0).at(5..6);
+        let one = Expr::number(1.0).at(0..1).alloc(&arena);
+        let two = Expr::number(2.0).at(5..6).alloc(&arena);
 
         let expected = Expr::equals(one, two).at(0..6);
         assert_eq!(actual, vec![expected]);
@@ -972,10 +1004,11 @@ mod tests {
 
     #[test]
     fn test_parse_not_eq() {
-        let actual = parse::<ExpressionRule>("1 != 2");
+        let arena = Bump::new();
+        let actual = parse::<ExpressionRule>("1 != 2", &arena);
 
-        let one = Expr::number(1.0).at(0..1);
-        let two = Expr::number(2.0).at(5..6);
+        let one = Expr::number(1.0).at(0..1).alloc(&arena);
+        let two = Expr::number(2.0).at(5..6).alloc(&arena);
 
         let expected = Expr::not_equals(one, two).at(0..6);
         assert_eq!(actual, vec![expected]);
@@ -983,23 +1016,24 @@ mod tests {
 
     #[test]
     fn test_for_desugar() {
-        let actual = parse::<StatementRule>("for (var i = 0; i < 10; i = i + 1) print i;");
+        let arena = Bump::new();
+        let actual = parse::<StatementRule>("for (var i = 0; i < 10; i = i + 1) print i;", &arena);
 
         // constants
         let zero = Expr::number(0.0).at(13..14);
-        let ten = Expr::number(10.0).at(20..22);
-        let one = Expr::number(1.0).at(32..33);
+        let ten = Expr::number(10.0).at(20..22).alloc(&arena);
+        let one = Expr::number(1.0).at(32..33).alloc(&arena);
 
         // initializer
         let init = Stmt::var("i".at(9..10), Some(zero)).at(5..15);
 
         // condition
-        let i = Expr::var("i").at(16..17);
+        let i = Expr::var("i").at(16..17).alloc(&arena);
         let cond = Expr::less_than(i, ten).at(16..22);
 
         // increment
-        let i = Expr::var("i").at(28..29);
-        let add = Expr::add(i, one).at(28..33);
+        let i = Expr::var("i").at(28..29).alloc(&arena);
+        let add = Expr::add(i, one).at(28..33).alloc(&arena);
         let incr = Expr::assign("i", add).at(24..33);
 
         // body
@@ -1017,24 +1051,27 @@ mod tests {
 
     #[test]
     fn test_for_desugar_block() {
-        let actual =
-            parse::<StatementRule>("for (var i = 0; i < 10; i = i + 1) { print i; print i; }");
+        let arena = Bump::new();
+        let actual = parse::<StatementRule>(
+            "for (var i = 0; i < 10; i = i + 1) { print i; print i; }",
+            &arena,
+        );
 
         // constants
         let zero = Expr::number(0.0).at(13..14);
-        let ten = Expr::number(10.0).at(20..22);
-        let one = Expr::number(1.0).at(32..33);
+        let ten = Expr::number(10.0).at(20..22).alloc(&arena);
+        let one = Expr::number(1.0).at(32..33).alloc(&arena);
 
         // initializer
         let init = Stmt::var("i".at(9..10), Some(zero)).at(5..15);
 
         // condition
-        let i = Expr::var("i").at(16..17);
+        let i = Expr::var("i").at(16..17).alloc(&arena);
         let cond = Expr::less_than(i, ten).at(16..22);
 
         // increment
-        let i = Expr::var("i").at(28..29);
-        let add = Expr::add(i, one).at(28..33);
+        let i = Expr::var("i").at(28..29).alloc(&arena);
+        let add = Expr::add(i, one).at(28..33).alloc(&arena);
         let incr = Expr::assign("i", add).at(24..33);
 
         // body
@@ -1054,17 +1091,18 @@ mod tests {
 
     #[test]
     fn test_for_desugar_no_increment() {
-        let actual = parse::<StatementRule>("for (var i = 0; i < 10; ) print i;");
+        let arena = Bump::new();
+        let actual = parse::<StatementRule>("for (var i = 0; i < 10; ) print i;", &arena);
 
         // constants
         let zero = Expr::number(0.0).at(13..14);
-        let ten = Expr::number(10.0).at(20..22);
+        let ten = Expr::number(10.0).at(20..22).alloc(&arena);
 
         // initializer
         let init = Stmt::var("i".at(9..10), Some(zero)).at(5..15);
 
         // condition
-        let i = Expr::var("i").at(16..17);
+        let i = Expr::var("i").at(16..17).alloc(&arena);
         let cond = Expr::less_than(i, ten).at(16..22);
 
         // body
@@ -1080,18 +1118,19 @@ mod tests {
 
     #[test]
     fn test_for_desugar_no_condition() {
-        let actual = parse::<StatementRule>("for (var i = 0 ;; i = i + 1) print i;");
+        let arena = Bump::new();
+        let actual = parse::<StatementRule>("for (var i = 0 ;; i = i + 1) print i;", &arena);
 
         // constants
         let zero = Expr::number(0.0).at(13..14);
-        let one = Expr::number(1.0).at(26..27);
+        let one = Expr::number(1.0).at(26..27).alloc(&arena);
 
         // initializer
         let init = Stmt::var("i".at(9..10), Some(zero)).at(5..16);
 
         // increment
-        let i = Expr::var("i").at(22..23);
-        let add = Expr::add(i, one).at(22..27);
+        let i = Expr::var("i").at(22..23).alloc(&arena);
+        let add = Expr::add(i, one).at(22..27).alloc(&arena);
         let incr = Expr::assign("i", add).at(18..27);
 
         // body
@@ -1109,19 +1148,20 @@ mod tests {
 
     #[test]
     fn test_for_desugar_no_initializer() {
-        let actual = parse::<StatementRule>("for (; i < 10; i = i + 1) print i;");
+        let arena = Bump::new();
+        let actual = parse::<StatementRule>("for (; i < 10; i = i + 1) print i;", &arena);
 
         // constants
-        let ten = Expr::number(10.0).at(11..13);
-        let one = Expr::number(1.0).at(23..24);
+        let ten = Expr::number(10.0).at(11..13).alloc(&arena);
+        let one = Expr::number(1.0).at(23..24).alloc(&arena);
 
         // condition
-        let i = Expr::var("i").at(7..8);
+        let i = Expr::var("i").at(7..8).alloc(&arena);
         let cond = Expr::less_than(i, ten).at(7..13);
 
         // increment
-        let i = Expr::var("i").at(19..20);
-        let add = Expr::add(i, one).at(19..24);
+        let i = Expr::var("i").at(19..20).alloc(&arena);
+        let add = Expr::add(i, one).at(19..24).alloc(&arena);
         let incr = Expr::assign("i", add).at(15..24);
 
         // body
@@ -1138,25 +1178,28 @@ mod tests {
 
     #[test]
     fn test_for_desugar_block_shadow() {
-        let actual =
-            parse::<StatementRule>("for (var i = 0; i < 10; i = i + 1) { print i; var i = -1; }");
+        let arena = Bump::new();
+        let actual = parse::<StatementRule>(
+            "for (var i = 0; i < 10; i = i + 1) { print i; var i = -1; }",
+            &arena,
+        );
 
         // constants
         let zero = Expr::number(0.0).at(13..14);
-        let ten = Expr::number(10.0).at(20..22);
-        let one1 = Expr::number(1.0).at(32..33);
-        let one2 = Expr::number(1.0).at(55..56);
+        let ten = Expr::number(10.0).at(20..22).alloc(&arena);
+        let one1 = Expr::number(1.0).at(32..33).alloc(&arena);
+        let one2 = Expr::number(1.0).at(55..56).alloc(&arena);
 
         // initializer
         let init = Stmt::var("i".at(9..10), Some(zero)).at(5..15);
 
         // condition
-        let i = Expr::var("i").at(16..17);
+        let i = Expr::var("i").at(16..17).alloc(&arena);
         let cond = Expr::less_than(i, ten).at(16..22);
 
         // increment
-        let i = Expr::var("i").at(28..29);
-        let add = Expr::add(i, one1).at(28..33);
+        let i = Expr::var("i").at(28..29).alloc(&arena);
+        let add = Expr::add(i, one1).at(28..33).alloc(&arena);
         let incr = Expr::assign("i", add).at(24..33);
 
         // body
@@ -1175,10 +1218,11 @@ mod tests {
 
     #[test]
     fn test_invalid_var_target_synchronizes() {
+        let arena = Bump::new();
         let source = Source::new("var nil = 42;");
         let tokens = source.scan_all().unwrap();
 
-        let parser = any_parser::<StatementRule, _>(source, tokens);
+        let parser = any_parser::<StatementRule, _>(source, tokens, &arena);
         let actual = parser.collect::<Vec<_>>();
 
         assert_eq!(

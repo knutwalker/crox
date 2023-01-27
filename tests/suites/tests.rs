@@ -6,6 +6,7 @@ use std::{
 
 use crate::suites::{LangLevel, State, Suite, SuiteResult};
 
+use bumpalo::Bump;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
@@ -212,6 +213,7 @@ impl Test {
     }
 
     fn run_script(&self, lang: LangLevel) -> (String, String) {
+        let arena = Bump::new();
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
 
@@ -231,7 +233,8 @@ impl Test {
                 crox::run_as_evaluator(false, &mut stdout, &mut stderr, &self.content);
             }
             LangLevel::Interpreted | LangLevel::Compiled => {
-                let _res = crox::run_as_script(false, &mut stdout, &mut stderr, &self.content);
+                let _res =
+                    crox::run_as_script(false, &mut stdout, &mut stderr, &arena, &self.content);
             }
         };
 

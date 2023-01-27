@@ -1,3 +1,5 @@
+use bumpalo::Bump;
+
 use crate::{
     ClassDecl, Context, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule, FunctionDef,
     Result, Scoped, Span, StatementRule, Stmt, StmtNode, Var,
@@ -12,16 +14,10 @@ pub struct Resolver<'a> {
 pub type ResolveContext<'a> = Context<'a, Current, ()>;
 
 impl<'a> Resolver<'a> {
-    pub fn new() -> Self {
+    pub fn new(arena: &'a Bump) -> Self {
         Self {
-            ctx: ResolveContext::new(Environment::empty(), Current::default()),
+            ctx: ResolveContext::new(Environment::empty(), arena, Current::default()),
         }
-    }
-}
-
-impl<'a> Default for Resolver<'a> {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -274,27 +270,33 @@ pub struct StreamResolver<'a, R, I> {
 }
 
 impl<'a, R, I> StreamResolver<'a, R, I> {
-    pub fn new(tokens: I) -> Self {
+    pub fn new(tokens: I, arena: &'a Bump) -> Self {
         Self {
-            resolver: Resolver::new(),
+            resolver: Resolver::new(arena),
             input: tokens,
             _rule: PhantomData,
         }
     }
 }
 
-pub fn stmt_resolver<'a, I>(tokens: I) -> impl Iterator<Item = Result<StmtNode<'a>>>
+pub fn stmt_resolver<'a, I>(
+    tokens: I,
+    arena: &'a Bump,
+) -> impl Iterator<Item = Result<StmtNode<'a>>>
 where
     I: IntoIterator<Item = StmtNode<'a>>,
 {
-    StreamResolver::<StatementRule, _>::new(tokens.into_iter())
+    StreamResolver::<StatementRule, _>::new(tokens.into_iter(), arena)
 }
 
-pub fn expr_resolver<'a, I>(tokens: I) -> impl Iterator<Item = Result<ExprNode<'a>>>
+pub fn expr_resolver<'a, I>(
+    tokens: I,
+    arena: &'a Bump,
+) -> impl Iterator<Item = Result<ExprNode<'a>>>
 where
     I: IntoIterator<Item = ExprNode<'a>>,
 {
-    StreamResolver::<ExpressionRule, _>::new(tokens.into_iter())
+    StreamResolver::<ExpressionRule, _>::new(tokens.into_iter(), arena)
 }
 
 impl<'a, R, I> Iterator for StreamResolver<'a, R, I>

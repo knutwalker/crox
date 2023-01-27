@@ -1,3 +1,5 @@
+use bumpalo::Bump;
+
 use crate::Span;
 use std::fmt::Debug;
 
@@ -19,6 +21,11 @@ impl<T> Node<T> {
 
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Node<U> {
         Node::new(f(self.item), self.span)
+    }
+
+    pub fn alloc(self, arena: &Bump) -> Node<&'_ T> {
+        let item = arena.alloc(self.item);
+        Node::new(item, self.span)
     }
 }
 

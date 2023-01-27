@@ -6,6 +6,7 @@ use std::{
     string::ToString,
 };
 
+use bumpalo::Bump;
 use chrono::Utc;
 use clap::{Arg, ArgMatches, Command};
 use core::ops::{ControlFlow, Deref, DerefMut, Index};
@@ -818,8 +819,8 @@ impl reedline::Validator for Validator {
         if line.starts_with(':') || line.is_empty() {
             return ValidationResult::Complete;
         }
-
-        match crox::parse(line) {
+        let arena = Bump::new();
+        match crox::parse(line, &arena) {
             Ok(_) => ValidationResult::Complete,
             Err(e) => match e.errors() {
                 [e] if is_incomplete(e) => ValidationResult::Incomplete,
