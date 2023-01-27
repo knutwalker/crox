@@ -65,7 +65,7 @@ impl<'a> Resolver<'a> {
     pub fn resolve_stmt(ctx: &mut ResolveContext<'a>, stmt: &Stmt<'a>, span: Span) -> Result {
         match stmt {
             Stmt::Expression { expr } => {
-                Self::resolve_expr(ctx, &expr.item, expr.span)?;
+                Self::resolve_expr(ctx, expr.item, expr.span)?;
             }
             Stmt::Class(class) => {
                 ctx.env.define(class.name.item, ());
@@ -75,7 +75,7 @@ impl<'a> Resolver<'a> {
                         return Err(CroxErrorKind::InheritsSelf.at(superclass.span));
                     }
 
-                    Self::resolve_local(&mut guard, superclass.item.name, &superclass.item.scope);
+                    Self::resolve_local(&mut guard, superclass.item.name, superclass.item.scope);
 
                     let new_data = guard.data.with_class(ClassKind::Subclass);
                     let mut inner_guard = guard.swap_data(new_data);
@@ -97,14 +97,14 @@ impl<'a> Resolver<'a> {
                 then_,
                 else_,
             } => {
-                Self::resolve_expr(ctx, &condition.item, condition.span)?;
-                Self::resolve_stmt(ctx, &then_.item, then_.span)?;
+                Self::resolve_expr(ctx, condition.item, condition.span)?;
+                Self::resolve_stmt(ctx, then_.item, then_.span)?;
                 if let Some(else_) = else_ {
-                    Self::resolve_stmt(ctx, &else_.item, else_.span)?;
+                    Self::resolve_stmt(ctx, else_.item, else_.span)?;
                 }
             }
             Stmt::Print { expr } => {
-                Self::resolve_expr(ctx, &expr.item, expr.span)?;
+                Self::resolve_expr(ctx, expr.item, expr.span)?;
             }
             Stmt::Return { expr } => {
                 if ctx.data.scope == ScopeKind::TopLevel {
@@ -114,20 +114,20 @@ impl<'a> Resolver<'a> {
                     if ctx.data.scope == ScopeKind::Initializer {
                         return Err(CroxErrorKind::ReturnFromInitializer.at(span));
                     }
-                    Self::resolve_expr(ctx, &expr.item, expr.span)?;
+                    Self::resolve_expr(ctx, expr.item, expr.span)?;
                 }
             }
             Stmt::Var { name, initializer } => {
                 // The book splits this into two steps to make shadowing an error.
                 // In Crox, we allow shadowing.
                 if let Some(init) = initializer.as_ref() {
-                    Self::resolve_expr(ctx, &init.item, init.span)?;
+                    Self::resolve_expr(ctx, init.item, init.span)?;
                 }
                 ctx.env.define_local(name.item, ());
             }
             Stmt::While { condition, body } => {
-                Self::resolve_expr(ctx, &condition.item, condition.span)?;
-                Self::resolve_stmt(ctx, &body.item, body.span)?;
+                Self::resolve_expr(ctx, condition.item, condition.span)?;
+                Self::resolve_stmt(ctx, body.item, body.span)?;
             }
             Stmt::Block { stmts } => {
                 ctx.run_with_new_scope(|ctx| Self::resolve_stmts_in_scope(ctx, stmts))?;
@@ -142,36 +142,36 @@ impl<'a> Resolver<'a> {
             Expr::Var(Var { name, scope }) => Self::resolve_local(ctx, name, scope),
             Expr::Fun(func) => Self::resolve_function(ctx, func, ScopeKind::Function)?,
             Expr::Assignment { name, scope, value } => {
-                Self::resolve_expr(ctx, &value.item, value.span)?;
+                Self::resolve_expr(ctx, value.item, value.span)?;
                 Self::resolve_local(ctx, name, scope);
             }
             Expr::Unary { expr, .. } => {
-                Self::resolve_expr(ctx, &expr.item, expr.span)?;
+                Self::resolve_expr(ctx, expr.item, expr.span)?;
             }
             Expr::Logical { lhs, rhs, .. } => {
-                Self::resolve_expr(ctx, &lhs.item, lhs.span)?;
-                Self::resolve_expr(ctx, &rhs.item, rhs.span)?;
+                Self::resolve_expr(ctx, lhs.item, lhs.span)?;
+                Self::resolve_expr(ctx, rhs.item, rhs.span)?;
             }
             Expr::Binary { lhs, rhs, .. } => {
-                Self::resolve_expr(ctx, &lhs.item, lhs.span)?;
-                Self::resolve_expr(ctx, &rhs.item, rhs.span)?;
+                Self::resolve_expr(ctx, lhs.item, lhs.span)?;
+                Self::resolve_expr(ctx, rhs.item, rhs.span)?;
             }
             Expr::Call { callee, arguments } => {
-                Self::resolve_expr(ctx, &callee.item, callee.span)?;
+                Self::resolve_expr(ctx, callee.item, callee.span)?;
                 arguments
                     .iter()
                     .try_for_each(|arg| Self::resolve_expr(ctx, &arg.item, arg.span))?;
             }
             Expr::Get { object, name: _ } => {
-                Self::resolve_expr(ctx, &object.item, object.span)?;
+                Self::resolve_expr(ctx, object.item, object.span)?;
             }
             Expr::Set {
                 object,
                 name: _,
                 value,
             } => {
-                Self::resolve_expr(ctx, &value.item, value.span)?;
-                Self::resolve_expr(ctx, &object.item, object.span)?;
+                Self::resolve_expr(ctx, value.item, value.span)?;
+                Self::resolve_expr(ctx, object.item, object.span)?;
             }
             Expr::Super { method: _, scope } => {
                 match ctx.data.class {
@@ -193,7 +193,7 @@ impl<'a> Resolver<'a> {
                 Self::resolve_local(ctx, "this", scope);
             }
             Expr::Group { expr } => {
-                Self::resolve_expr(ctx, &expr.item, expr.span)?;
+                Self::resolve_expr(ctx, expr.item, expr.span)?;
             }
         };
         Ok(())
@@ -219,7 +219,7 @@ impl<'a> Resolver<'a> {
                     .define_local_unique(param.item, ())
                     .map_err(|e| CroxErrorKind::from(e).at(param.span))?;
             }
-            Self::resolve_stmts_in_scope(&mut guard, &func.body)?;
+            Self::resolve_stmts_in_scope(&mut guard, func.body)?;
             Ok(())
         })
     }

@@ -55,7 +55,7 @@ impl<'a> Function<'a> {
         Self {
             name: self.name,
             is_init: self.is_init,
-            fun: self.fun.clone(),
+            fun: self.fun,
             closure: env,
         }
     }
@@ -77,7 +77,7 @@ impl<'a> Callable<'a> for Function<'a> {
                 ctx.env.define(param.item, arg.clone());
             }
 
-            let res = Interpreter::eval_stmts_in_scope(ctx, &self.fun.body);
+            let res = Interpreter::eval_stmts_in_scope(ctx, self.fun.body);
             let res = match res {
                 Ok(()) => Value::Nil,
                 Err(InterpreterError::Return(val)) => val,
