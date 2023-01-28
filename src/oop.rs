@@ -5,8 +5,7 @@ use std::{
 };
 
 use crate::{
-    Callable, CroxErrorKind, Function, InterpreterContext, Members, Node, Result, Span, Type,
-    TypeSet, Value,
+    Callable, CroxErrorKind, Function, InterpreterContext, Members, Node, Result, Span, Value,
 };
 
 #[derive(Clone)]
@@ -42,18 +41,16 @@ impl<'a> Callable<'a> for Class<'a> {
         span: Span,
     ) -> Result<Value<'a>> {
         let instance = Instance::new(self.clone());
-        let instance = Rc::new(instance);
+        let instance = ctx.arena.alloc(instance);
         if let Some(initializer) = self.method_lookup("init") {
-            initializer
-                .bind(Rc::clone(&instance))
-                .call(ctx, args, span)?;
+            initializer.bind(instance).call(ctx, args, span)?;
         }
         Ok(Value::Instance(instance))
     }
 }
 
-#[derive(Clone)]
 pub struct Instance<'a> {
+    // TODO: replace with &'a Class<'a>
     class: Class<'a>,
     fields: RefCell<HashMap<&'a str, Value<'a>>>,
 }
@@ -110,7 +107,7 @@ impl<'a> Class<'a> {
             .and_then(|sc| sc.item.method_lookup(name))
     }
 
-    fn class_method_lookup(&self, name: &'a str) -> Option<&'a Function<'a>> {
+    pub fn class_method_lookup(&self, name: &'a str) -> Option<&'a Function<'a>> {
         let method = self.members.class_methods().find(|m| m.name == name);
         if let Some(&method) = method {
             return Some(method);
@@ -123,7 +120,7 @@ impl<'a> Class<'a> {
 }
 
 impl<'a> Instance<'a> {
-    fn lookup(&self, name: &'a str) -> Lookup<'_, 'a> {
+    pub fn lookup(&self, name: &'a str) -> Lookup<'_, 'a> {
         let field = self.fields.borrow();
         let field = Ref::filter_map(field, |f| f.get(name));
         if let Ok(field) = field {
@@ -132,54 +129,9 @@ impl<'a> Instance<'a> {
 
         self.class.lookup(name)
     }
-}
 
-pub trait InstanceLike<'env> {
-    fn get(
-        &self,
-        ctx: &mut InterpreterContext<'env, '_>,
-        name: &Node<&'env str>,
-        caller: Span,
-    ) -> Result<Value<'env>>;
-}
-
-pub trait MutInstanceLike<'a> {
-    fn set(&self, name: &'a str, value: Value<'a>);
-}
-
-impl<'env> InstanceLike<'env> for Rc<Instance<'env>> {
-    fn get(
-        &self,
-        ctx: &mut InterpreterContext<'env, '_>,
-        name: &Node<&'env str>,
-        caller: Span,
-    ) -> Result<Value<'env>> {
-        self.lookup(name.item).into_value(ctx, self, name, caller)
-    }
-}
-
-impl<'a> MutInstanceLike<'a> for Rc<Instance<'a>> {
-    fn set(&self, name: &'a str, value: Value<'a>) {
+    pub fn insert(&self, name: &'a str, value: Value<'a>) {
         self.fields.borrow_mut().insert(name, value);
-    }
-}
-
-impl<'env> InstanceLike<'env> for Rc<Class<'env>> {
-    fn get(
-        &self,
-        _ctx: &mut InterpreterContext<'env, '_>,
-        name: &Node<&'env str>,
-        caller: Span,
-    ) -> Result<Value<'env>> {
-        let method = self.class_method_lookup(name.item);
-        if let Some(method) = method {
-            return Ok(Value::Fn(method));
-        }
-        Err(CroxErrorKind::InvalidType {
-            expected: TypeSet::from(Type::Instance),
-            actual: Type::Class,
-        }
-        .at(caller))
     }
 }
 
@@ -211,21 +163,21 @@ impl<'a, 'env> Lookup<'a, 'env> {
         }
     }
 
-    fn into_value(
+    pub fn into_value(
         self,
         ctx: &mut InterpreterContext<'env, '_>,
-        instance: &Rc<Instance<'env>>,
+        instance: &'env Instance<'env>,
         name: &Node<&'env str>,
         caller: Span,
     ) -> Result<Value<'env>> {
         match self {
             Lookup::Field(field) => Ok(field.clone()),
             Lookup::Property(property) => {
-                let property = property.bind(Rc::clone(instance));
+                let property = property.bind(instance);
                 property.call(ctx, &[], caller)
             }
             Lookup::Method(method) => {
-                let method = method.bind(Rc::clone(instance));
+                let method = method.bind(instance);
                 let method = ctx.arena.alloc(method);
                 Ok(Value::from(&*method))
             }

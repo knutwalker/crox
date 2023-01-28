@@ -201,8 +201,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
             }
             Expr::Get { object, name } => {
                 let object = Self::eval_expr(ctx, object.item, object.span)?;
-                let instance = object.item.as_instance(span)?;
-                instance.get(ctx, name, span)?
+                object.item.get(ctx, name, span)?
             }
             Expr::Set {
                 object,
@@ -210,10 +209,8 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 value,
             } => {
                 let object = Self::eval_expr(ctx, object.item, object.span)?;
-                let instance = object.item.as_mut_instance(span)?;
                 let value = Self::eval_expr(ctx, value.item, value.span)?.item;
-                instance.set(name.item, value.clone());
-
+                object.item.set(name.item, || value.clone(), span)?;
                 value
             }
             Expr::This { scope } => ctx

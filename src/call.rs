@@ -49,7 +49,7 @@ impl<'a> Function<'a> {
         }
     }
 
-    pub fn bind(&self, instance: Rc<Instance<'a>>) -> Self {
+    pub fn bind(&self, instance: &'a Instance<'a>) -> Self {
         let closure = self.closure.new_scope();
         closure.define("this", Value::Instance(instance));
         Self {

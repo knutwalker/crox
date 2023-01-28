@@ -47,7 +47,7 @@ pub use expr::{
 };
 pub use interp::{Interpreter, InterpreterError};
 pub use node::{Ident, Node, Spannable};
-pub use oop::{Class, Instance, InstanceLike, MutInstanceLike};
+pub use oop::{Class, Instance};
 pub use rule::{ExpressionRule, StatementRule};
 pub use scanner::Source;
 pub use stmt::{ClassDecl, FunctionDecl, FunctionKind, Members, Stmt, StmtNode};

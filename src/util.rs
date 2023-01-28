@@ -139,6 +139,12 @@ impl<T: ValueEnum> From<T> for EnumSet<T> {
     }
 }
 
+impl<T: ValueEnum, const N: usize> From<[T; N]> for EnumSet<T> {
+    fn from(value: [T; N]) -> Self {
+        Self::from_iter(value)
+    }
+}
+
 impl<T: ValueEnum> FromIterator<T> for EnumSet<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iterator: I) -> Self {
         let mut set = Self::empty();

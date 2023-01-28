@@ -1,6 +1,6 @@
 use crate::{
-    Bump, Callable, Class, CroxErrorKind, Function, Instance, InstanceLike, Literal,
-    MutInstanceLike, Node, Result, Span, Timings, Type, TypeSet,
+    Bump, Callable, Class, CroxError, CroxErrorKind, Function, Instance, InterpreterContext,
+    Literal, Node, Result, Span, Timings, Type, TypeSet,
 };
 
 use std::{cmp::Ordering, fmt, ops::Deref, rc::Rc};
@@ -13,40 +13,48 @@ pub enum Value<'a> {
     Number(f64),
     Str(&'a str),
     Fn(&'a Function<'a>),
-    Instance(Rc<Instance<'a>>),
+    Instance(&'a Instance<'a>),
     Class(Rc<Class<'a>>),
     Callable(Rc<dyn Callable<'a>>),
 }
 
 type BinOpResult<'a> = Result<Value<'a>, Result<CroxErrorKind, CroxErrorKind>>;
 
-impl<'a> Value<'a> {
-    pub fn as_instance(&self, span: Span) -> Result<&dyn InstanceLike<'a>> {
+impl<'env> Value<'env> {
+    pub fn get(
+        &self,
+        ctx: &mut InterpreterContext<'env, '_>,
+        name: &Node<&'env str>,
+        caller: Span,
+    ) -> Result<Value<'env>> {
         match self {
-            Value::Instance(instance) => Ok(instance),
-            Value::Class(class) => Ok(class),
-            _ => Err(CroxErrorKind::InvalidType {
-                expected: TypeSet::from(Type::Instance),
-                actual: self.typ(),
-            }
-            .at(span)
-            .with_payload(format!("{self:?}"))),
+            Value::Instance(instance) => instance
+                .lookup(name.item)
+                .into_value(ctx, instance, name, caller),
+            Value::Class(class) => class
+                .class_method_lookup(name.item)
+                .map(Value::Fn)
+                .ok_or_else(|| self.invalid_type(caller, Type::Instance)),
+            _ => Err(self.invalid_type(caller, Type::Instance)),
         }
     }
 
-    pub fn as_mut_instance(&self, span: Span) -> Result<&dyn MutInstanceLike<'a>> {
+    pub fn set(
+        &self,
+        name: &'env str,
+        value: impl FnOnce() -> Value<'env>,
+        caller: Span,
+    ) -> Result<()> {
         match self {
-            Value::Instance(instance) => Ok(instance),
-            _ => Err(CroxErrorKind::InvalidType {
-                expected: TypeSet::from(Type::Instance),
-                actual: self.typ(),
+            Value::Instance(instance) => {
+                instance.insert(name, value());
+                Ok(())
             }
-            .at(span)
-            .with_payload(format!("{self:?}"))),
+            _ => Err(self.invalid_type(caller, Type::Instance)),
         }
     }
 
-    pub fn as_callable(&self, span: Span) -> Result<&dyn Callable<'a>> {
+    pub fn as_callable(&self, span: Span) -> Result<&dyn Callable<'env>> {
         match self {
             Value::Fn(fun) => Ok(&**fun),
             Value::Callable(fun) => Ok(&**fun),
@@ -70,6 +78,15 @@ impl<'a> Value<'a> {
         }
     }
 
+    fn invalid_type(&self, span: Span, expected: impl Into<TypeSet>) -> CroxError {
+        CroxErrorKind::InvalidType {
+            expected: expected.into(),
+            actual: self.typ(),
+        }
+        .at(span)
+        .with_payload(format!("{self:?}"))
+    }
+
     pub fn as_bool(&self) -> bool {
         match self {
             Self::Bool(b) => *b,
@@ -88,7 +105,7 @@ impl<'a> Value<'a> {
         (!b).into()
     }
 
-    pub fn add(&self, rhs: &Self, arena: Option<&'a Bump>) -> BinOpResult<'a> {
+    pub fn add(&self, rhs: &Self, arena: Option<&'env Bump>) -> BinOpResult<'env> {
         match (self, rhs) {
             (lhs, rhs @ Self::Str(_)) | (lhs @ Self::Str(_), rhs) => {
                 let value = format!("{lhs}{rhs}");
@@ -113,15 +130,15 @@ impl<'a> Value<'a> {
         }
     }
 
-    pub fn sub(&self, rhs: &Self) -> BinOpResult<'a> {
+    pub fn sub(&self, rhs: &Self) -> BinOpResult<'env> {
         Self::num_op(self, rhs, |lhs, rhs| lhs - rhs)
     }
 
-    pub fn mul(&self, rhs: &Self) -> BinOpResult<'a> {
+    pub fn mul(&self, rhs: &Self) -> BinOpResult<'env> {
         Self::num_op(self, rhs, |lhs, rhs| lhs * rhs)
     }
 
-    pub fn div(&self, rhs: &Self) -> BinOpResult<'a> {
+    pub fn div(&self, rhs: &Self) -> BinOpResult<'env> {
         Self::num_op(self, rhs, |lhs, rhs| lhs / rhs)
     }
 
@@ -133,7 +150,7 @@ impl<'a> Value<'a> {
         (self != other).into()
     }
 
-    pub fn lt(&self, other: &Self) -> BinOpResult<'a> {
+    pub fn lt(&self, other: &Self) -> BinOpResult<'env> {
         self.partial_cmp(other)
             .map(|ord| Self::from(ord == Ordering::Less))
             .ok_or_else(|| {
@@ -144,7 +161,7 @@ impl<'a> Value<'a> {
             })
     }
 
-    pub fn gt(&self, other: &Self) -> BinOpResult<'a> {
+    pub fn gt(&self, other: &Self) -> BinOpResult<'env> {
         self.partial_cmp(other)
             .map(|ord| Self::from(ord == Ordering::Greater))
             .ok_or_else(|| {
@@ -155,7 +172,7 @@ impl<'a> Value<'a> {
             })
     }
 
-    pub fn lte(&self, other: &Self) -> BinOpResult<'a> {
+    pub fn lte(&self, other: &Self) -> BinOpResult<'env> {
         self.partial_cmp(other)
             .map(|ord| Self::from(ord != Ordering::Greater))
             .ok_or_else(|| {
@@ -166,7 +183,7 @@ impl<'a> Value<'a> {
             })
     }
 
-    pub fn gte(&self, other: &Self) -> BinOpResult<'a> {
+    pub fn gte(&self, other: &Self) -> BinOpResult<'env> {
         self.partial_cmp(other)
             .map(|ord| Self::from(ord != Ordering::Less))
             .ok_or_else(|| {
@@ -177,7 +194,7 @@ impl<'a> Value<'a> {
             })
     }
 
-    fn num_op(lhs: &Self, rhs: &Self, num_op: impl FnOnce(f64, f64) -> f64) -> BinOpResult<'a> {
+    fn num_op(lhs: &Self, rhs: &Self, num_op: impl FnOnce(f64, f64) -> f64) -> BinOpResult<'env> {
         let lhs = lhs.as_num().map_err(Ok)?;
         let rhs = rhs.as_num().map_err(Err)?;
         Ok(num_op(lhs, rhs).into())
