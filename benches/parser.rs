@@ -1,13 +1,21 @@
-#![cfg(benches)]
-#![feature(test)]
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 
-extern crate test;
-use test::Bencher;
+fn parser_benchmarks(c: &mut Criterion) {
+    let mut parser = c.benchmark_group("Parser");
 
-#[bench]
-fn crox_parser(b: &mut Bencher) {
     let input = include_str!("../tests/scanner/classes.crox");
-    let arena = crox::Bump::new();
-    b.bytes = input.len() as u64;
-    b.iter(|| crox::parse(input, &arena))
+    parser.throughput(Throughput::Bytes(input.len() as u64));
+
+    parser.bench_function("scanner", |b| {
+        b.iter(|| crox::scan(input).scan_all().unwrap());
+    });
+    parser.bench_function("parser", |b| {
+        let arena = crox::Bump::new();
+        b.iter(|| crox::parse(input, &arena))
+    });
+
+    parser.finish();
 }
+
+criterion_group!(benches, parser_benchmarks);
+criterion_main!(benches);

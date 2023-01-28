@@ -205,3 +205,7 @@ Temporary Items
 
 # Example crox files
 examples/*.crox
+
+# Generated flamegraphs
+flamegraph.svg
+
