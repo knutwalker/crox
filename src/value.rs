@@ -1,6 +1,6 @@
 use crate::{
     Bump, Callable, Class, CroxError, CroxErrorKind, Function, Instance, InterpreterContext,
-    Literal, Node, Result, Span, Timings, Type, TypeSet,
+    Literal, Node, Range, Result, Span, Timings, Type, TypeSet,
 };
 
 use std::{cmp::Ordering, fmt, ops::Deref, rc::Rc};
@@ -17,8 +17,6 @@ pub enum Value<'a> {
     Class(Rc<Class<'a>>),
     Callable(Rc<dyn Callable<'a>>),
 }
-
-type BinOpResult<'a> = Result<Value<'a>, Result<CroxErrorKind, CroxErrorKind>>;
 
 impl<'env> Value<'env> {
     pub fn get(
@@ -59,32 +57,15 @@ impl<'env> Value<'env> {
             Value::Fn(fun) => Ok(&**fun),
             Value::Callable(fun) => Ok(&**fun),
             Value::Class(class) => Ok(&**class),
-            _ => Err(CroxErrorKind::InvalidType {
-                expected: TypeSet::from(Type::Callable),
-                actual: self.typ(),
-            }
-            .at(span)
-            .with_payload(format!("{self:?}"))),
+            _ => Err(self.invalid_type(span, Type::Callable)),
         }
     }
 
-    pub fn as_num(&self) -> Result<f64, CroxErrorKind> {
+    pub fn as_num(&self, span: impl Into<Range>) -> Result<f64> {
         match self {
             Self::Number(n) => Ok(*n),
-            otherwise => Err(CroxErrorKind::InvalidType {
-                expected: TypeSet::from(Type::Number),
-                actual: otherwise.typ(),
-            }),
+            _ => Err(self.invalid_type(span, Type::Number)),
         }
-    }
-
-    fn invalid_type(&self, span: Span, expected: impl Into<TypeSet>) -> CroxError {
-        CroxErrorKind::InvalidType {
-            expected: expected.into(),
-            actual: self.typ(),
-        }
-        .at(span)
-        .with_payload(format!("{self:?}"))
     }
 
     pub fn as_bool(&self) -> bool {
@@ -95,8 +76,8 @@ impl<'env> Value<'env> {
         }
     }
 
-    pub fn neg(&self) -> Result<Self, CroxErrorKind> {
-        let num = self.as_num()?;
+    pub fn neg(&self, span: impl Into<Range>) -> Result<Self> {
+        let num = self.as_num(span)?;
         Ok((-num).into())
     }
 
@@ -105,8 +86,14 @@ impl<'env> Value<'env> {
         (!b).into()
     }
 
-    pub fn add(&self, rhs: &Self, arena: Option<&'env Bump>) -> BinOpResult<'env> {
-        match (self, rhs) {
+    pub fn add(
+        &self,
+        rhs: &Node<Self>,
+        left: impl Into<Range>,
+        arena: Option<&'env Bump>,
+    ) -> Result<Self> {
+        let right = rhs.span;
+        match (self, &rhs.item) {
             (lhs, rhs @ Self::Str(_)) | (lhs @ Self::Str(_), rhs) => {
                 let value = format!("{lhs}{rhs}");
                 let value = match arena {
@@ -116,30 +103,27 @@ impl<'env> Value<'env> {
                 Ok(Value::from(value.as_str()))
             }
             (Self::Number(lhs), rhs) => {
-                let rhs = rhs.as_num().map_err(Err)?;
+                let rhs = rhs.as_num(right)?;
                 Ok((lhs + rhs).into())
             }
             (lhs, Self::Number(rhs)) => {
-                let lhs = lhs.as_num().map_err(Ok)?;
+                let lhs = lhs.as_num(left)?;
                 Ok((lhs + rhs).into())
             }
-            (lhs, _) => Err(Ok(CroxErrorKind::InvalidType {
-                expected: TypeSet::from_iter([Type::Number, Type::String]),
-                actual: lhs.typ(),
-            })),
+            _ => Err(self.invalid_type(left, [Type::Number, Type::String])),
         }
     }
 
-    pub fn sub(&self, rhs: &Self) -> BinOpResult<'env> {
-        Self::num_op(self, rhs, |lhs, rhs| lhs - rhs)
+    pub fn sub(&self, rhs: &Node<Self>, left: impl Into<Range>) -> Result<Self> {
+        Self::num_op(self, rhs, left, |lhs, rhs| lhs - rhs)
     }
 
-    pub fn mul(&self, rhs: &Self) -> BinOpResult<'env> {
-        Self::num_op(self, rhs, |lhs, rhs| lhs * rhs)
+    pub fn mul(&self, rhs: &Node<Self>, left: impl Into<Range>) -> Result<Self> {
+        Self::num_op(self, rhs, left, |lhs, rhs| lhs * rhs)
     }
 
-    pub fn div(&self, rhs: &Self) -> BinOpResult<'env> {
-        Self::num_op(self, rhs, |lhs, rhs| lhs / rhs)
+    pub fn div(&self, rhs: &Node<Self>, left: impl Into<Range>) -> Result<Self> {
+        Self::num_op(self, rhs, left, |lhs, rhs| lhs / rhs)
     }
 
     pub fn eq(&self, other: &Self) -> Self {
@@ -150,54 +134,48 @@ impl<'env> Value<'env> {
         (self != other).into()
     }
 
-    pub fn lt(&self, other: &Self) -> BinOpResult<'env> {
-        self.partial_cmp(other)
+    pub fn lt(&self, other: &Node<Self>) -> Result<Self> {
+        self.partial_cmp(&other.item)
             .map(|ord| Self::from(ord == Ordering::Less))
-            .ok_or_else(|| {
-                Err(CroxErrorKind::InvalidType {
-                    expected: self.typ().into(),
-                    actual: other.typ(),
-                })
-            })
+            .ok_or_else(|| other.item.invalid_type(other.span, self.typ()))
     }
 
-    pub fn gt(&self, other: &Self) -> BinOpResult<'env> {
-        self.partial_cmp(other)
+    pub fn gt(&self, other: &Node<Self>) -> Result<Self> {
+        self.partial_cmp(&other.item)
             .map(|ord| Self::from(ord == Ordering::Greater))
-            .ok_or_else(|| {
-                Err(CroxErrorKind::InvalidType {
-                    expected: self.typ().into(),
-                    actual: other.typ(),
-                })
-            })
+            .ok_or_else(|| other.item.invalid_type(other.span, self.typ()))
     }
 
-    pub fn lte(&self, other: &Self) -> BinOpResult<'env> {
-        self.partial_cmp(other)
+    pub fn lte(&self, other: &Node<Self>) -> Result<Self> {
+        self.partial_cmp(&other.item)
             .map(|ord| Self::from(ord != Ordering::Greater))
-            .ok_or_else(|| {
-                Err(CroxErrorKind::InvalidType {
-                    expected: self.typ().into(),
-                    actual: other.typ(),
-                })
-            })
+            .ok_or_else(|| other.item.invalid_type(other.span, self.typ()))
     }
 
-    pub fn gte(&self, other: &Self) -> BinOpResult<'env> {
-        self.partial_cmp(other)
+    pub fn gte(&self, other: &Node<Self>) -> Result<Self> {
+        self.partial_cmp(&other.item)
             .map(|ord| Self::from(ord != Ordering::Less))
-            .ok_or_else(|| {
-                Err(CroxErrorKind::InvalidType {
-                    expected: self.typ().into(),
-                    actual: other.typ(),
-                })
-            })
+            .ok_or_else(|| other.item.invalid_type(other.span, self.typ()))
     }
 
-    fn num_op(lhs: &Self, rhs: &Self, num_op: impl FnOnce(f64, f64) -> f64) -> BinOpResult<'env> {
-        let lhs = lhs.as_num().map_err(Ok)?;
-        let rhs = rhs.as_num().map_err(Err)?;
+    fn num_op(
+        lhs: &Self,
+        rhs: &Node<Self>,
+        left: impl Into<Range>,
+        num_op: impl FnOnce(f64, f64) -> f64,
+    ) -> Result<Self> {
+        let lhs = lhs.as_num(left)?;
+        let rhs = rhs.item.as_num(rhs.span)?;
         Ok(num_op(lhs, rhs).into())
+    }
+
+    fn invalid_type(&self, span: impl Into<Range>, expected: impl Into<TypeSet>) -> CroxError {
+        CroxErrorKind::InvalidType {
+            expected: expected.into(),
+            actual: self.typ(),
+        }
+        .at(span)
+        .with_payload(format!("{self:?}"))
     }
 }
 

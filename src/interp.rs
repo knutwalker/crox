@@ -142,7 +142,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
             Expr::Unary { op, expr } => {
                 let value = Self::eval_expr(ctx, expr.item, expr.span)?.item;
                 match op {
-                    UnaryOp::Neg => value.neg().map_err(|e| e.at(expr.span))?,
+                    UnaryOp::Neg => value.neg(expr.span)?,
                     UnaryOp::Not => value.not(),
                 }
             }
@@ -159,23 +159,17 @@ impl<'a, 'o> Interpreter<'a, 'o> {
             Expr::Binary { lhs, op, rhs } => {
                 let lhs = Self::eval_expr(ctx, lhs.item, lhs.span)?;
                 let rhs = Self::eval_expr(ctx, rhs.item, rhs.span)?;
-                let to_error = |e: crate::Result<CroxErrorKind, CroxErrorKind>| match e {
-                    Ok(e) => e.at(lhs.span),
-                    Err(e) => e.at(rhs.span),
-                };
-                let lhs = lhs.item;
-                let rhs = rhs.item;
                 match op {
-                    BinaryOp::Equals => lhs.eq(&rhs),
-                    BinaryOp::NotEquals => lhs.not_eq(&rhs),
-                    BinaryOp::LessThan => lhs.lt(&rhs).map_err(to_error)?,
-                    BinaryOp::LessThanOrEqual => lhs.lte(&rhs).map_err(to_error)?,
-                    BinaryOp::GreaterThan => lhs.gt(&rhs).map_err(to_error)?,
-                    BinaryOp::GreaterThanOrEqual => lhs.gte(&rhs).map_err(to_error)?,
-                    BinaryOp::Add => lhs.add(&rhs, Some(ctx.arena)).map_err(to_error)?,
-                    BinaryOp::Sub => lhs.sub(&rhs).map_err(to_error)?,
-                    BinaryOp::Mul => lhs.mul(&rhs).map_err(to_error)?,
-                    BinaryOp::Div => lhs.div(&rhs).map_err(to_error)?,
+                    BinaryOp::Equals => lhs.item.eq(&rhs.item),
+                    BinaryOp::NotEquals => lhs.item.not_eq(&rhs.item),
+                    BinaryOp::LessThan => lhs.item.lt(&rhs)?,
+                    BinaryOp::LessThanOrEqual => lhs.item.lte(&rhs)?,
+                    BinaryOp::GreaterThan => lhs.item.gt(&rhs)?,
+                    BinaryOp::GreaterThanOrEqual => lhs.item.gte(&rhs)?,
+                    BinaryOp::Add => lhs.item.add(&rhs, lhs.span, Some(ctx.arena))?,
+                    BinaryOp::Sub => lhs.item.sub(&rhs, lhs.span)?,
+                    BinaryOp::Mul => lhs.item.mul(&rhs, lhs.span)?,
+                    BinaryOp::Div => lhs.item.div(&rhs, lhs.span)?,
                 }
             }
             Expr::Call { callee, arguments } => {
@@ -425,106 +419,109 @@ mod tests {
     #[test]
     fn test_add_nums() {
         let lhs = Value::Number(42.0);
-        let rhs = Value::Number(24.0);
-        let result = lhs.add(&rhs, None);
+        let rhs = Value::Number(24.0).at(3..7);
+        let result = lhs.add(&rhs, 1..3, None);
         assert_eq!(result, Ok(Value::Number(66.0)));
     }
 
     #[test]
     fn test_add_num_to_bool() {
         let lhs = Value::Number(42.0);
-        let rhs = Value::Bool(true);
-        let result = lhs.add(&rhs, None);
+        let rhs = Value::Bool(true).at(3..7);
+        let result = lhs.add(&rhs, 1..3, None);
         assert_eq!(
             result,
-            Err(Err(CroxErrorKind::InvalidType {
+            Err(CroxErrorKind::InvalidType {
                 expected: TypeSet::from(Type::Number),
                 actual: Type::Bool,
-            }))
+            }
+            .at(3..7))
         );
     }
 
     #[test]
     fn test_add_bool_to_num() {
         let lhs = Value::Bool(true);
-        let rhs = Value::Number(42.0);
-        let result = lhs.add(&rhs, None);
+        let rhs = Value::Number(42.0).at(3..7);
+        let result = lhs.add(&rhs, 1..3, None);
         assert_eq!(
             result,
-            Err(Ok(CroxErrorKind::InvalidType {
+            Err(CroxErrorKind::InvalidType {
                 expected: TypeSet::from(Type::Number),
                 actual: Type::Bool,
-            }))
+            }
+            .at(1..3))
         );
     }
 
     #[test]
     fn test_add_bool_to_bool() {
         let lhs = Value::Bool(true);
-        let rhs = Value::Bool(false);
-        let result = lhs.add(&rhs, None);
+        let rhs = Value::Bool(false).at(3..7);
+        let result = lhs.add(&rhs, 1..3, None);
         assert_eq!(
             result,
-            Err(Ok(CroxErrorKind::InvalidType {
+            Err(CroxErrorKind::InvalidType {
                 expected: TypeSet::from_iter([Type::Number, Type::String]),
                 actual: Type::Bool,
-            }))
+            }
+            .at(1..3))
         );
     }
 
     #[test]
     fn test_add_str_to_str() {
         let lhs = Value::from("foo");
-        let rhs = Value::from("bar");
-        let result = lhs.add(&rhs, None);
+        let rhs = Value::from("bar").at(3..7);
+        let result = lhs.add(&rhs, 1..3, None);
         assert_eq!(result, Ok(Value::from("foobar")));
     }
 
     #[test]
     fn test_add_str_to_num() {
         let lhs = Value::from("foo");
-        let rhs = Value::Number(42.0);
-        let result = lhs.add(&rhs, None);
+        let rhs = Value::Number(42.0).at(3..7);
+        let result = lhs.add(&rhs, 1..3, None);
         assert_eq!(result, Ok(Value::from("foo42")));
     }
 
     #[test]
     fn test_add_num_to_str() {
         let lhs = Value::Number(42.0);
-        let rhs = Value::from("foo");
-        let result = lhs.add(&rhs, None);
+        let rhs = Value::from("foo").at(3..7);
+        let result = lhs.add(&rhs, 1..3, None);
         assert_eq!(result, Ok(Value::from("42foo")));
     }
 
     #[test]
     fn test_add_str_to_bool() {
         let lhs = Value::from("foo");
-        let rhs = Value::Bool(true);
-        let result = lhs.add(&rhs, None);
+        let rhs = Value::Bool(true).at(3..7);
+        let result = lhs.add(&rhs, 1..3, None);
         assert_eq!(result, Ok(Value::from("footrue")));
     }
 
     #[test]
     fn test_add_bool_to_str() {
         let lhs = Value::Bool(true);
-        let rhs = Value::from("foo");
-        let result = lhs.add(&rhs, None);
+        let rhs = Value::from("foo").at(3..7);
+        let result = lhs.add(&rhs, 1..3, None);
         assert_eq!(result, Ok(Value::from("truefoo")));
     }
 
     #[test]
     fn test_add_str_to_nil() {
         let lhs = Value::from("foo");
-        let rhs = Value::Nil;
-        let result = lhs.add(&rhs, None);
+        let rhs = Value::Nil.at(3..7);
+        let result = lhs.add(&rhs, 1..3, None);
         assert_eq!(result, Ok(Value::from("foonil")));
     }
 
     #[test]
     fn test_add_nil_to_str() {
         let lhs = Value::Nil;
-        let rhs = Value::from("foo");
-        let result = lhs.add(&rhs, None);
+        let rhs = Value::from("foo").at(3..7);
+        let result = lhs.add(&rhs, 1..3, None);
         assert_eq!(result, Ok(Value::from("nilfoo")));
     }
 }
