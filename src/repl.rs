@@ -6,12 +6,11 @@ use std::{
     string::ToString,
 };
 
-use bumpalo::Bump;
 use chrono::Utc;
 use clap::{Arg, ArgMatches, Command};
 use core::ops::{ControlFlow, Deref, DerefMut, Index};
 use crossterm::style::Color;
-use crox::{Config, CroxError, CroxErrorKind, TokenType};
+use crox::{Bump, Config, CroxError, CroxErrorKind, TokenType};
 use directories::ProjectDirs;
 use reedline::{
     default_emacs_keybindings, ColumnarMenu, DefaultHinter, EditCommand, Emacs, KeyCode,

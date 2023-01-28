@@ -50,13 +50,13 @@ impl<'a> Function<'a> {
     }
 
     pub fn bind(&self, instance: Rc<Instance<'a>>) -> Self {
-        let env = self.closure.new_scope();
-        env.define("this", Value::Instance(instance));
+        let closure = self.closure.new_scope();
+        closure.define("this", Value::Instance(instance));
         Self {
             name: self.name,
             is_init: self.is_init,
             fun: self.fun,
-            closure: env,
+            closure,
         }
     }
 }

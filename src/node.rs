@@ -1,6 +1,4 @@
-use bumpalo::Bump;
-
-use crate::Span;
+use crate::{Bump, Span};
 use std::fmt::Debug;
 
 pub type Ident<'a> = Node<&'a str>;
@@ -12,7 +10,7 @@ pub struct Node<T> {
 }
 
 impl<T> Node<T> {
-    pub fn new(item: T, span: impl Into<Span>) -> Self {
+    fn new(item: T, span: impl Into<Span>) -> Self {
         Self {
             item,
             span: span.into(),
@@ -35,7 +33,7 @@ pub trait Spannable: Sized {
     }
 }
 
-impl<'a> Spannable for &'a str {}
+impl<T> Spannable for T {}
 
 impl<T: Debug> Debug for Node<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

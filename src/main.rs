@@ -38,8 +38,6 @@ use std::{
     path::Path,
 };
 
-use bumpalo::Bump;
-
 fn main() {
     let ec = match run() {
         Ok(ec) => ec,
@@ -110,7 +108,7 @@ fn open_script(file: Option<impl AsRef<Path>>) -> io::Result<Option<String>> {
 }
 
 fn run_script(content: &str) -> crox::Result<(), i32> {
-    let arena = Bump::new();
+    let arena = crox::Bump::new();
     let ast = crox::run_as_script(true, std::io::stdout(), std::io::stderr(), &arena, content)?;
     crox::print_ast(std::io::stdout(), None, &ast);
     Ok(())

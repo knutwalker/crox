@@ -36,31 +36,35 @@ mod value;
 
 use std::io::Write;
 
-pub use builtin::{Builtins, Clock};
-use bumpalo::Bump;
+pub use builtin::Builtins;
+pub use bumpalo::Bump;
 pub use call::{Callable, Function};
 pub use context::{Context, InterpreterContext};
 pub use env::{Environment, Scope, Scoped};
-pub use error::{CroxError, CroxErrorKind, CroxErrorScope, CroxErrors, Result, TooMany};
+pub use error::{CroxError, CroxErrorKind, CroxErrors, Result, TooMany};
 pub use expr::{
     BinaryOp, BoxedExpr, Expr, ExprNode, FunctionDef, Literal, LogicalOp, UnaryOp, Var,
 };
-pub use interp::{expr_interpreter, stmt_interpreter, Interpreter, InterpreterError};
+pub use interp::{Interpreter, InterpreterError};
 pub use node::{Ident, Node, Spannable};
-pub use oop::{Class, Instance, InstanceLike, IntoValue, MutInstanceLike};
-pub use parser::{expr_parser, stmt_parser, Parser};
-pub use resolver::{expr_resolver, stmt_resolver, Resolver};
+pub use oop::{Class, Instance, InstanceLike, MutInstanceLike};
 pub use rule::{ExpressionRule, StatementRule};
-pub use scanner::{Scanner, Source};
+pub use scanner::Source;
 pub use stmt::{ClassDecl, FunctionDecl, FunctionKind, Members, Stmt, StmtNode};
 pub use timing::Timings;
-pub use token::{Range, Span, Spanned, Token, TokenSet, TokenType};
+pub use token::{Range, Span, Token, TokenSet, TokenType};
 pub use typer::{Type, TypeSet};
 pub use util::{EnumSet, ValueEnum};
-pub use value::{Ast, Value, Valued};
+pub use value::{Value, Valued};
 
-use crate::error::ErrorsCollector;
-use crate::timing::TimingsBuilder;
+use crate::{
+    error::{CroxErrorScope, ErrorsCollector},
+    interp::{expr_interpreter, stmt_interpreter},
+    parser::{expr_parser, stmt_parser},
+    resolver::{expr_resolver, stmt_resolver},
+    timing::TimingsBuilder,
+    value::Ast,
+};
 
 pub fn run<'a>(
     mut out: impl Write,

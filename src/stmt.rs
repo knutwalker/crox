@@ -1,6 +1,4 @@
-use bumpalo::Bump;
-
-use crate::{BoxedExpr, FunctionDef, Node, Span, Var};
+use crate::{BoxedExpr, Bump, FunctionDef, Ident, Node, Var};
 use std::fmt::Debug;
 
 pub type StmtNode<'a> = Node<Stmt<'a>>;
@@ -25,7 +23,7 @@ pub enum Stmt<'a> {
         expr: Option<BoxedExpr<'a>>,
     },
     Var {
-        name: Node<&'a str>,
+        name: Ident<'a>,
         initializer: Option<BoxedExpr<'a>>,
     },
     While {
@@ -43,14 +41,14 @@ impl<'a> Stmt<'a> {
     }
 
     pub fn class(
-        name: Node<&'a str>,
+        name: Ident<'a>,
         superclass: Option<Node<Var<'a>>>,
         members: &'a mut [Node<FunctionDecl<'a>>],
     ) -> Self {
         Self::Class(ClassDecl::new(name, superclass, members))
     }
 
-    pub fn fun(name: Node<&'a str>, kind: FunctionKind, fun: FunctionDef<'a>) -> FunctionDecl<'a> {
+    pub fn fun(name: Ident<'a>, kind: FunctionKind, fun: FunctionDef<'a>) -> FunctionDecl<'a> {
         FunctionDecl { name, kind, fun }
     }
 
@@ -78,7 +76,7 @@ impl<'a> Stmt<'a> {
         Self::Return { expr: expr.into() }
     }
 
-    pub fn var(name: Node<&'a str>, initializer: impl Into<Option<BoxedExpr<'a>>>) -> Self {
+    pub fn var(name: Ident<'a>, initializer: impl Into<Option<BoxedExpr<'a>>>) -> Self {
         Self::Var {
             name,
             initializer: initializer.into(),
@@ -92,22 +90,18 @@ impl<'a> Stmt<'a> {
     pub fn block(stmts: &'a [StmtNode<'a>]) -> Self {
         Self::Block { stmts }
     }
-
-    pub fn at(self, span: impl Into<Span>) -> StmtNode<'a> {
-        Node::new(self, span)
-    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ClassDecl<'a> {
-    pub name: Node<&'a str>,
+    pub name: Ident<'a>,
     pub superclass: Option<Node<Var<'a>>>,
     members: Members<'a, Node<FunctionDecl<'a>>>,
 }
 
 impl<'a> ClassDecl<'a> {
     pub fn new(
-        name: Node<&'a str>,
+        name: Ident<'a>,
         superclass: Option<Node<Var<'a>>>,
         members: &'a mut [Node<FunctionDecl<'a>>],
     ) -> Self {
@@ -126,7 +120,7 @@ impl<'a> ClassDecl<'a> {
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct FunctionDecl<'a> {
-    pub name: Node<&'a str>,
+    pub name: Ident<'a>,
     pub kind: FunctionKind,
     pub fun: FunctionDef<'a>,
 }

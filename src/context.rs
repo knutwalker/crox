@@ -4,9 +4,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use bumpalo::Bump;
-
-use crate::{Environment, Value};
+use crate::{Bump, Environment, Value};
 
 pub type InterpreterContext<'a, 'out> = Context<'a, &'out mut dyn Write>;
 

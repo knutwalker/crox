@@ -6,7 +6,6 @@ use std::{
 
 use crate::suites::{LangLevel, State, Suite, SuiteResult};
 
-use bumpalo::Bump;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
@@ -213,7 +212,7 @@ impl Test {
     }
 
     fn run_script(&self, lang: LangLevel) -> (String, String) {
-        let arena = Bump::new();
+        let arena = crox::Bump::new();
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
 

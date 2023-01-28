@@ -1,6 +1,4 @@
-use bumpalo::Bump;
-
-use crate::{Node, Scoped, Span, StmtNode};
+use crate::{Bump, Ident, Node, Scoped, StmtNode};
 use std::fmt::{Debug, Display};
 
 pub type ExprNode<'a> = Node<Expr<'a>>;
@@ -36,15 +34,15 @@ pub enum Expr<'a> {
     },
     Get {
         object: BoxedExpr<'a>,
-        name: Node<&'a str>,
+        name: Ident<'a>,
     },
     Set {
         object: BoxedExpr<'a>,
-        name: Node<&'a str>,
+        name: Ident<'a>,
         value: BoxedExpr<'a>,
     },
     Super {
-        method: Node<&'a str>,
+        method: Ident<'a>,
         scope: &'a Scoped,
     },
     This {
@@ -218,11 +216,11 @@ impl<'a> Expr<'a> {
         Self::Call { callee, arguments }
     }
 
-    pub fn get(object: BoxedExpr<'a>, name: Node<&'a str>) -> Self {
+    pub fn get(object: BoxedExpr<'a>, name: Ident<'a>) -> Self {
         Self::Get { object, name }
     }
 
-    pub fn set(object: BoxedExpr<'a>, name: Node<&'a str>, value: BoxedExpr<'a>) -> Self {
+    pub fn set(object: BoxedExpr<'a>, name: Ident<'a>, value: BoxedExpr<'a>) -> Self {
         Self::Set {
             object,
             name,
@@ -230,7 +228,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn super_(method: Node<&'a str>, arena: &'a Bump) -> Self {
+    pub fn super_(method: Ident<'a>, arena: &'a Bump) -> Self {
         Self::Super {
             method,
             scope: arena.alloc(Scoped::new()),
@@ -245,10 +243,6 @@ impl<'a> Expr<'a> {
 
     pub fn group(expr: BoxedExpr<'a>) -> Self {
         Self::Group { expr }
-    }
-
-    pub fn at(self, span: impl Into<Span>) -> ExprNode<'a> {
-        Node::new(self, span)
     }
 }
 
@@ -278,12 +272,12 @@ impl<'a> Var<'a> {
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct FunctionDef<'a> {
-    pub params: &'a [Node<&'a str>],
+    pub params: &'a [Ident<'a>],
     pub body: &'a [StmtNode<'a>],
 }
 
 impl<'a> FunctionDef<'a> {
-    pub fn new(params: &'a [Node<&'a str>], body: &'a [StmtNode<'a>]) -> Self {
+    pub fn new(params: &'a [Ident<'a>], body: &'a [StmtNode<'a>]) -> Self {
         Self { params, body }
     }
 }

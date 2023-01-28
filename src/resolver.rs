@@ -1,8 +1,6 @@
-use bumpalo::Bump;
-
 use crate::{
-    ClassDecl, Context, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule, FunctionDef,
-    Result, Scoped, Span, StatementRule, Stmt, StmtNode, Var,
+    Bump, ClassDecl, Context, CroxErrorKind, Environment, Expr, ExprNode, ExpressionRule,
+    FunctionDef, Result, Scoped, Span, StatementRule, Stmt, StmtNode, Var,
 };
 use std::marker::PhantomData;
 
@@ -249,10 +247,6 @@ impl<'a> Resolver<'a> {
 }
 
 impl<'a> Resolver<'a> {
-    pub fn resolve_own_stmts_in_scope(&mut self, stmts: &[StmtNode<'a>]) -> Result {
-        Self::resolve_stmts_in_scope(&mut self.ctx, stmts)
-    }
-
     pub fn resolve_own_stmt(&mut self, stmt: &StmtNode<'a>) -> Result {
         Self::resolve_stmt(&mut self.ctx, &stmt.item, stmt.span)
     }

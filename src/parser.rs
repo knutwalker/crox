@@ -39,11 +39,10 @@
 //!  parameters := IDENTIFIER ( "," IDENTIFIER )* ;
 //!```
 use crate::{
-    BinaryOp, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule, FunctionDecl, FunctionDef,
-    FunctionKind, Node, Range, Result, Source, Span, StatementRule, Stmt, StmtNode, Token,
-    TokenSet, TokenType, TooMany, UnaryOp, Var,
+    BinaryOp, Bump, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule, FunctionDecl,
+    FunctionDef, FunctionKind, Ident, Node, Range, Result, Source, Span, Spannable, StatementRule,
+    Stmt, StmtNode, Token, TokenSet, TokenType, TooMany, UnaryOp, Var,
 };
-use bumpalo::Bump;
 use std::{iter::Peekable, marker::PhantomData};
 use TokenType::*;
 
@@ -234,7 +233,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let fn_def = self.function_def(name.span)?;
         let span = start.union(fn_def.span);
 
-        Ok(Node::new(Stmt::fun(name, kind, fn_def.item), span))
+        Ok(Stmt::fun(name, kind, fn_def.item).at(span))
     }
 
     ///    property := IDENTIFIER block ;
@@ -251,7 +250,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         };
 
         let span = start.union(fn_def.span);
-        let fn_item = Node::new(Stmt::fun(name, is_property, fn_def.item), span);
+        let fn_item = Stmt::fun(name, is_property, fn_def.item).at(span);
         Ok(fn_item)
     }
 
@@ -267,7 +266,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
     fn function_body(
         &mut self,
-        params: &[Node<&'a str>],
+        params: &[Ident<'a>],
         fn_start: Span,
         body_start: Span,
     ) -> Result<Node<FunctionDef<'a>>> {
@@ -277,7 +276,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
         let params = self.arena.alloc_slice_copy(params);
         let body = self.arena.alloc_slice_clone(&body.item);
-        Ok(Node::new(FunctionDef::new(params, body), span))
+        Ok(FunctionDef::new(params, body).at(span))
     }
 
     ///     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
@@ -482,7 +481,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
             };
         };
 
-        Ok(Node::new(stmts, start.union(end)))
+        Ok(stmts.at(start.union(end)))
     }
 
     ///  expression := assignment ;
@@ -708,10 +707,10 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         }
     }
 
-    fn ident(&mut self, span: Span) -> Result<Node<&'a str>> {
+    fn ident(&mut self, span: Span) -> Result<Ident<'a>> {
         let span = self.expect(Identifier, EndOfInput::expected(Identifier, span))?;
         let identifier = self.source.slice(span);
-        Ok(Node::new(identifier, span))
+        Ok(identifier.at(span))
     }
 
     fn parens_list<A, K: IntoTooMany>(
@@ -746,7 +745,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         let right_paren = self.expect(RightParen, EndOfInput::Unclosed(LeftParen, left_paren))?;
         let args = args.finish()?;
 
-        Ok(Node::new(args, right_paren))
+        Ok(args.at(right_paren))
     }
 }
 
@@ -1240,11 +1239,7 @@ mod tests {
         // body
         let i = Expr::var("i", &arena).at(43..44).alloc(&arena);
         let print = Stmt::print(i).at(37..45);
-        let assign = Stmt::var(
-            Node::new("i", 50..51),
-            Expr::neg(one2).at(54..56).alloc(&arena),
-        )
-        .at(46..57);
+        let assign = Stmt::var("i".at(50..51), Expr::neg(one2).at(54..56).alloc(&arena)).at(46..57);
         let block = [print, assign];
         let body = Stmt::block(&block).at(35..59);
 

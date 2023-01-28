@@ -1,8 +1,7 @@
 use std::io::Write;
 
-use bumpalo::Bump;
 use crox::{
-    Config, CroxError, CroxErrorKind, CroxErrors, Environment, InterpreterContext, TokenType,
+    Bump, Config, CroxError, CroxErrorKind, CroxErrors, Environment, InterpreterContext, TokenType,
 };
 
 pub struct Frontend {

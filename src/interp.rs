@@ -1,7 +1,7 @@
 use crate::{
     BinaryOp, Callable, Class, ClassDecl, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule,
-    Function, InterpreterContext, LogicalOp, Node, Scoped, Span, StatementRule, Stmt, StmtNode,
-    Type, TypeSet, UnaryOp, Value, Valued, Var,
+    Function, Ident, InterpreterContext, LogicalOp, Node, Scoped, Span, Spannable, StatementRule,
+    Stmt, StmtNode, Type, TypeSet, UnaryOp, Value, Valued, Var,
 };
 use std::{marker::PhantomData, rc::Rc};
 
@@ -43,7 +43,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                         let superclass = s.map(|s| Rc::new(Expr::Var(s)));
                         let superclass = Self::eval_expr(ctx, &superclass.item, superclass.span)?;
                         match superclass.item {
-                            Value::Class(class) => Ok(Node::new(class, superclass.span)),
+                            Value::Class(class) => Ok(class.at(superclass.span)),
                             _ => Err(CroxErrorKind::SuperClassIsNotAClass.at(s.span)),
                         }
                     })
@@ -118,7 +118,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
             }
         }
 
-        Ok(Valued::new(Value::Nil, span))
+        Ok(Value::Nil.at(span))
     }
 
     pub fn eval_expr(
@@ -226,7 +226,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
             Expr::Group { expr } => Self::eval_expr(ctx, expr.item, expr.span)?.item,
         };
 
-        Ok(Valued::new(value, span))
+        Ok(value.at(span))
     }
 
     fn class_new(
@@ -250,7 +250,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
         ctx: &mut InterpreterContext<'a, 'o>,
         scope: &Scoped,
         span: Span,
-        method: &Node<&'a str>,
+        method: &Ident<'a>,
     ) -> crate::Result<Node<Value<'a>>> {
         let superclass = ctx
             .env
@@ -268,7 +268,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 let method_fn = superclass
                     .lookup(method.item)
                     .into_method(method.item, method.span)?;
-                Node::new(method_fn, method.span)
+                method_fn.at(method.span)
             }
             _ => {
                 return Err(CroxErrorKind::InvalidType {
@@ -288,8 +288,11 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 .at(span))
             }
         };
-        let value = Value::from(method.item.bind(this));
-        Ok(Node::new(value, method.span))
+
+        let span = method.span;
+        let method = method.item.bind(this);
+        let value = Value::from(method);
+        Ok(value.at(span))
     }
 }
 
@@ -408,7 +411,7 @@ impl InterpreterRule for StatementRule {
     ) -> crate::Result<Self::Interpreted<'a>> {
         match interpreter.eval_own_stmt(&input.item, input.span) {
             Ok(value) => Ok(value),
-            Err(InterpreterError::Return(value)) => Ok(Valued::new(value, input.span)),
+            Err(InterpreterError::Return(value)) => Ok(value.at(input.span)),
             Err(InterpreterError::Err(e)) => Err(e),
         }
     }
