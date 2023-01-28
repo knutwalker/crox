@@ -202,7 +202,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
             Expr::Get { object, name } => {
                 let object = Self::eval_expr(ctx, object.item, object.span)?;
                 let instance = object.item.as_instance(span)?;
-                instance.get(name, span)?.into_value(ctx, span)?
+                instance.get(ctx, name, span)?
             }
             Expr::Set {
                 object,
@@ -238,8 +238,8 @@ impl<'a, 'o> Interpreter<'a, 'o> {
         let class_members = class.members().map(ctx.arena, |m| {
             let name = m.item.name.item;
             let fun = m.item.fun;
-            let fun = Function::method(name, fun, ctx.env.clone());
-            Rc::new(fun)
+            let method = Function::method(name, fun, ctx.env.clone());
+            &*ctx.arena.alloc(method)
         });
 
         let class = Class::new(name, superclass, class_members);
@@ -291,6 +291,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
 
         let span = method.span;
         let method = method.item.bind(this);
+        let method = &*ctx.arena.alloc(method);
         let value = Value::from(method);
         Ok(value.at(span))
     }

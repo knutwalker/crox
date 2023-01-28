@@ -12,7 +12,7 @@ pub enum Value<'a> {
     Bool(bool),
     Number(f64),
     Str(Cow<'a, str>),
-    Fn(Rc<Function<'a>>),
+    Fn(&'a Function<'a>),
     Instance(Rc<Instance<'a>>),
     Class(Rc<Class<'a>>),
     Callable(Rc<dyn Callable<'a>>),
@@ -285,9 +285,9 @@ impl From<String> for Value<'_> {
     }
 }
 
-impl<'a> From<Function<'a>> for Value<'a> {
-    fn from(value: Function<'a>) -> Self {
-        Self::Fn(Rc::new(value))
+impl<'a> From<&'a Function<'a>> for Value<'a> {
+    fn from(value: &'a Function<'a>) -> Self {
+        Self::Fn(value)
     }
 }
 
