@@ -172,7 +172,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                     BinaryOp::LessThanOrEqual => lhs.lte(&rhs).map_err(to_error)?,
                     BinaryOp::GreaterThan => lhs.gt(&rhs).map_err(to_error)?,
                     BinaryOp::GreaterThanOrEqual => lhs.gte(&rhs).map_err(to_error)?,
-                    BinaryOp::Add => lhs.add(&rhs).map_err(to_error)?,
+                    BinaryOp::Add => lhs.add(&rhs, Some(ctx.arena)).map_err(to_error)?,
                     BinaryOp::Sub => lhs.sub(&rhs).map_err(to_error)?,
                     BinaryOp::Mul => lhs.mul(&rhs).map_err(to_error)?,
                     BinaryOp::Div => lhs.div(&rhs).map_err(to_error)?,
@@ -429,7 +429,7 @@ mod tests {
     fn test_add_nums() {
         let lhs = Value::Number(42.0);
         let rhs = Value::Number(24.0);
-        let result = lhs.add(&rhs);
+        let result = lhs.add(&rhs, None);
         assert_eq!(result, Ok(Value::Number(66.0)));
     }
 
@@ -437,7 +437,7 @@ mod tests {
     fn test_add_num_to_bool() {
         let lhs = Value::Number(42.0);
         let rhs = Value::Bool(true);
-        let result = lhs.add(&rhs);
+        let result = lhs.add(&rhs, None);
         assert_eq!(
             result,
             Err(Err(CroxErrorKind::InvalidType {
@@ -451,7 +451,7 @@ mod tests {
     fn test_add_bool_to_num() {
         let lhs = Value::Bool(true);
         let rhs = Value::Number(42.0);
-        let result = lhs.add(&rhs);
+        let result = lhs.add(&rhs, None);
         assert_eq!(
             result,
             Err(Ok(CroxErrorKind::InvalidType {
@@ -465,7 +465,7 @@ mod tests {
     fn test_add_bool_to_bool() {
         let lhs = Value::Bool(true);
         let rhs = Value::Bool(false);
-        let result = lhs.add(&rhs);
+        let result = lhs.add(&rhs, None);
         assert_eq!(
             result,
             Err(Ok(CroxErrorKind::InvalidType {
@@ -479,7 +479,7 @@ mod tests {
     fn test_add_str_to_str() {
         let lhs = Value::from("foo");
         let rhs = Value::from("bar");
-        let result = lhs.add(&rhs);
+        let result = lhs.add(&rhs, None);
         assert_eq!(result, Ok(Value::from("foobar")));
     }
 
@@ -487,7 +487,7 @@ mod tests {
     fn test_add_str_to_num() {
         let lhs = Value::from("foo");
         let rhs = Value::Number(42.0);
-        let result = lhs.add(&rhs);
+        let result = lhs.add(&rhs, None);
         assert_eq!(result, Ok(Value::from("foo42")));
     }
 
@@ -495,7 +495,7 @@ mod tests {
     fn test_add_num_to_str() {
         let lhs = Value::Number(42.0);
         let rhs = Value::from("foo");
-        let result = lhs.add(&rhs);
+        let result = lhs.add(&rhs, None);
         assert_eq!(result, Ok(Value::from("42foo")));
     }
 
@@ -503,7 +503,7 @@ mod tests {
     fn test_add_str_to_bool() {
         let lhs = Value::from("foo");
         let rhs = Value::Bool(true);
-        let result = lhs.add(&rhs);
+        let result = lhs.add(&rhs, None);
         assert_eq!(result, Ok(Value::from("footrue")));
     }
 
@@ -511,7 +511,7 @@ mod tests {
     fn test_add_bool_to_str() {
         let lhs = Value::Bool(true);
         let rhs = Value::from("foo");
-        let result = lhs.add(&rhs);
+        let result = lhs.add(&rhs, None);
         assert_eq!(result, Ok(Value::from("truefoo")));
     }
 
@@ -519,7 +519,7 @@ mod tests {
     fn test_add_str_to_nil() {
         let lhs = Value::from("foo");
         let rhs = Value::Nil;
-        let result = lhs.add(&rhs);
+        let result = lhs.add(&rhs, None);
         assert_eq!(result, Ok(Value::from("foonil")));
     }
 
@@ -527,7 +527,7 @@ mod tests {
     fn test_add_nil_to_str() {
         let lhs = Value::Nil;
         let rhs = Value::from("foo");
-        let result = lhs.add(&rhs);
+        let result = lhs.add(&rhs, None);
         assert_eq!(result, Ok(Value::from("nilfoo")));
     }
 }

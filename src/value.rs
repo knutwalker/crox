@@ -1,9 +1,9 @@
 use crate::{
-    Callable, Class, CroxErrorKind, Function, Instance, InstanceLike, Literal, MutInstanceLike,
-    Node, Result, Span, Timings, Type, TypeSet,
+    Bump, Callable, Class, CroxErrorKind, Function, Instance, InstanceLike, Literal,
+    MutInstanceLike, Node, Result, Span, Timings, Type, TypeSet,
 };
 
-use std::{borrow::Cow, cmp::Ordering, fmt, ops::Deref, rc::Rc};
+use std::{cmp::Ordering, fmt, ops::Deref, rc::Rc};
 
 #[derive(Clone, Debug, Default)]
 pub enum Value<'a> {
@@ -11,7 +11,7 @@ pub enum Value<'a> {
     Nil,
     Bool(bool),
     Number(f64),
-    Str(Cow<'a, str>),
+    Str(&'a str),
     Fn(&'a Function<'a>),
     Instance(Rc<Instance<'a>>),
     Class(Rc<Class<'a>>),
@@ -88,10 +88,15 @@ impl<'a> Value<'a> {
         (!b).into()
     }
 
-    pub fn add(&self, rhs: &Self) -> BinOpResult<'a> {
+    pub fn add(&self, rhs: &Self, arena: Option<&'a Bump>) -> BinOpResult<'a> {
         match (self, rhs) {
             (lhs, rhs @ Self::Str(_)) | (lhs @ Self::Str(_), rhs) => {
-                Ok(format!("{lhs}{rhs}").into())
+                let value = format!("{lhs}{rhs}");
+                let value = match arena {
+                    Some(arena) => arena.alloc(value),
+                    None => Box::leak(Box::new(value)),
+                };
+                Ok(Value::from(value.as_str()))
             }
             (Self::Number(lhs), rhs) => {
                 let rhs = rhs.as_num().map_err(Err)?;
@@ -275,13 +280,7 @@ impl From<bool> for Value<'_> {
 
 impl<'a> From<&'a str> for Value<'a> {
     fn from(s: &'a str) -> Self {
-        Self::Str(s.into())
-    }
-}
-
-impl From<String> for Value<'_> {
-    fn from(s: String) -> Self {
-        Self::Str(s.into())
+        Self::Str(s)
     }
 }
 
