@@ -14,7 +14,7 @@ pub enum Value<'a> {
     Str(&'a str),
     Fn(&'a Function<'a>),
     Instance(&'a Instance<'a>),
-    Class(Rc<Class<'a>>),
+    Class(&'a Class<'a>),
     Callable(Rc<dyn Callable<'a>>),
 }
 
@@ -285,9 +285,9 @@ impl<'a> From<&'a Function<'a>> for Value<'a> {
     }
 }
 
-impl<'a> From<Class<'a>> for Value<'a> {
-    fn from(value: Class<'a>) -> Self {
-        Self::Class(Rc::new(value))
+impl<'a> From<&'a Class<'a>> for Value<'a> {
+    fn from(value: &'a Class<'a>) -> Self {
+        Self::Class(value)
     }
 }
 

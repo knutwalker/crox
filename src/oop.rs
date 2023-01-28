@@ -1,24 +1,23 @@
 use std::{
     cell::{Ref, RefCell},
     collections::HashMap,
-    rc::Rc,
 };
 
 use crate::{
     Callable, CroxErrorKind, Function, InterpreterContext, Members, Node, Result, Span, Value,
 };
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct Class<'a> {
     pub name: &'a str,
-    superclass: Option<Node<Rc<Class<'a>>>>,
+    superclass: Option<Node<&'a Class<'a>>>,
     members: Members<'a, &'a Function<'a>>,
 }
 
 impl<'a> Class<'a> {
     pub fn new(
         name: &'a str,
-        superclass: Option<Node<Rc<Class<'a>>>>,
+        superclass: Option<Node<&'a Class<'a>>>,
         members: Members<'a, &'a Function<'a>>,
     ) -> Self {
         Self {
@@ -40,7 +39,7 @@ impl<'a> Callable<'a> for Class<'a> {
         args: &[Value<'a>],
         span: Span,
     ) -> Result<Value<'a>> {
-        let instance = Instance::new(self.clone());
+        let instance = Instance::new(*self);
         let instance = ctx.alloc(instance);
         if let Some(initializer) = self.method_lookup("init") {
             initializer.bind(instance).call(ctx, args, span)?;

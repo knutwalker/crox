@@ -3,7 +3,7 @@ use crate::{
     Function, Ident, InterpreterContext, LogicalOp, Node, Scoped, Span, Spannable, StatementRule,
     Stmt, StmtNode, Type, TypeSet, UnaryOp, Value, Valued, Var,
 };
-use std::{marker::PhantomData, rc::Rc};
+use std::marker::PhantomData;
 
 pub struct Interpreter<'a, 'o> {
     context: InterpreterContext<'a, 'o>,
@@ -40,7 +40,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                     .superclass
                     .as_ref()
                     .map(|s| {
-                        let superclass = s.map(|s| Rc::new(Expr::Var(s)));
+                        let superclass = s.map(Expr::Var);
                         let superclass = Self::eval_expr(ctx, &superclass.item, superclass.span)?;
                         match superclass.item {
                             Value::Class(class) => Ok(class.at(superclass.span)),
@@ -52,9 +52,9 @@ impl<'a, 'o> Interpreter<'a, 'o> {
                 let name = class.name.item;
                 ctx.env.define(name, Value::Nil);
 
-                let class = if let Some(the_superclass) = superclass.as_ref().cloned() {
+                let class = if let Some(the_superclass) = superclass {
                     ctx.run_with_new_scope(|ctx| {
-                        let the_superclass = Rc::clone(&the_superclass.item);
+                        let the_superclass = the_superclass.item;
                         let the_superclass = Value::Class(the_superclass);
                         ctx.env.define("super", the_superclass);
 
@@ -224,7 +224,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
         ctx: &mut InterpreterContext<'a, 'o>,
         name: &'a str,
         class: &ClassDecl<'a>,
-        superclass: Option<Node<Rc<Class<'a>>>>,
+        superclass: Option<Node<&'a Class<'a>>>,
     ) -> Value<'a> {
         let class_members = class.members().map(ctx.arena, |m| {
             let name = m.item.name.item;
@@ -234,6 +234,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
         });
 
         let class = Class::new(name, superclass, class_members);
+        let class = ctx.alloc(class);
         Value::from(class)
     }
 
