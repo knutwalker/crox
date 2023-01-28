@@ -3,9 +3,7 @@ use std::{
     collections::HashMap,
 };
 
-use crate::{
-    Callable, CroxErrorKind, Function, InterpreterContext, Members, Node, Result, Span, Value,
-};
+use crate::{CroxErrorKind, Function, InterpreterContext, Members, Node, Result, Span, Value};
 
 #[derive(Copy, Clone)]
 pub struct Class<'env> {
@@ -26,15 +24,12 @@ impl<'env> Class<'env> {
             members,
         }
     }
-}
 
-impl<'env> Callable<'env> for Class<'env> {
-    fn arity(&self) -> usize {
-        self.method_lookup("init").map_or(0, Callable::arity)
+    pub fn arity(&self) -> usize {
+        self.method_lookup("init").map_or(0, Function::arity)
     }
 
-    // TODO: replace with call on Value
-    fn call(
+    pub fn call(
         &self,
         ctx: &mut InterpreterContext<'env, '_>,
         args: &[Value<'env>],
@@ -171,7 +166,7 @@ impl<'a, 'env> Lookup<'a, 'env> {
         caller: Span,
     ) -> Result<Value<'env>> {
         match self {
-            Lookup::Field(field) => Ok(field.clone()),
+            Lookup::Field(field) => Ok(*field),
             Lookup::Property(property) => {
                 let property = property.bind(instance);
                 property.call(ctx, &[], caller)

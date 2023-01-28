@@ -1,9 +1,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::Callable;
-use crate::{InterpreterContext, Result, Span, Value};
+use crate::{Result, Value};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum Builtins {
     Clock,
 }
@@ -15,36 +14,32 @@ impl Builtins {
         }
     }
 
-    pub fn to_value<'env>(self) -> Value<'env> {
+    pub fn arity(&self) -> usize {
         match self {
-            Self::Clock => Clock.to_value(),
+            Builtins::Clock => 0,
         }
     }
-}
 
-#[derive(Copy, Clone)]
-pub struct Clock;
-
-impl<'env> Callable<'env> for Clock {
-    fn arity(&self) -> usize {
-        0
+    pub fn call<'env>(&self) -> Result<Value<'env>> {
+        match self {
+            Builtins::Clock => Ok(SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0.0, |d| d.as_secs_f64())
+                .into()),
+        }
     }
 
-    fn call(
-        &self,
-        _ctx: &mut InterpreterContext<'env, '_>,
-        _args: &[Value<'env>],
-        _span: Span,
-    ) -> Result<Value<'env>> {
-        Ok(SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0.0, |d| d.as_secs_f64())
-            .into())
+    pub fn to_value<'env>(self) -> Value<'env> {
+        Value::Builtin(self)
     }
 }
 
-impl std::fmt::Debug for Clock {
+impl std::fmt::Debug for Builtins {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<builtin clock>")
+        match self {
+            Self::Clock => {
+                write!(f, "<builtin clock>")
+            }
+        }
     }
 }

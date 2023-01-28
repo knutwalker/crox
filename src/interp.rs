@@ -1,7 +1,7 @@
 use crate::{
-    BinaryOp, Callable, Class, ClassDecl, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule,
-    Function, Ident, InterpreterContext, LogicalOp, Node, Scoped, Span, Spannable, StatementRule,
-    Stmt, StmtNode, Type, TypeSet, UnaryOp, Value, Valued, Var,
+    BinaryOp, Class, ClassDecl, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule, Function,
+    Ident, InterpreterContext, LogicalOp, Node, Scoped, Span, Spannable, StatementRule, Stmt,
+    StmtNode, Type, TypeSet, UnaryOp, Value, Valued, Var,
 };
 use std::marker::PhantomData;
 
@@ -68,7 +68,8 @@ impl<'env, 'out> Interpreter<'env, 'out> {
             Stmt::Function(func) => {
                 let name = func.name.item;
                 let func = Function::new(name, func.fun, ctx.env.clone());
-                let func = func.to_value();
+                let func = ctx.alloc(func);
+                let func = Value::from(func);
                 ctx.env.define(name, func);
             }
             Stmt::If {
@@ -132,7 +133,11 @@ impl<'env, 'out> Interpreter<'env, 'out> {
                 .env
                 .get(name, scope.get())
                 .map_err(|e| CroxErrorKind::from(e).at(span))?,
-            Expr::Fun(func) => Function::new("<anon>", *func, ctx.env.clone()).to_value(),
+            Expr::Fun(func) => {
+                let func = Function::new("<anon>", *func, ctx.env.clone());
+                let func = ctx.alloc(func);
+                Value::from(func)
+            }
             Expr::Assignment { name, scope, value } => {
                 let value = Self::eval_expr(ctx, value.item, value.span)?.item;
                 ctx.env
@@ -204,7 +209,7 @@ impl<'env, 'out> Interpreter<'env, 'out> {
             } => {
                 let object = Self::eval_expr(ctx, object.item, object.span)?;
                 let value = Self::eval_expr(ctx, value.item, value.span)?.item;
-                object.item.set(name.item, || value.clone(), span)?;
+                object.item.set(name.item, value, span)?;
                 value
             }
             Expr::This { scope } => ctx

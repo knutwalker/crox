@@ -1,11 +1,11 @@
 use crate::{
-    Bump, Callable, Class, CroxError, CroxErrorKind, Function, Instance, InterpreterContext,
-    Literal, Node, Range, Result, Span, Timings, Type, TypeSet,
+    Builtins, Bump, Callable, Class, CroxError, CroxErrorKind, Function, Instance,
+    InterpreterContext, Literal, Node, Range, Result, Span, Timings, Type, TypeSet,
 };
 
-use std::{cmp::Ordering, fmt, ops::Deref, rc::Rc};
+use std::{cmp::Ordering, fmt, ops::Deref};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default)]
 pub enum Value<'env> {
     #[default]
     Nil,
@@ -15,7 +15,7 @@ pub enum Value<'env> {
     Fn(&'env Function<'env>),
     Instance(&'env Instance<'env>),
     Class(&'env Class<'env>),
-    Callable(Rc<dyn Callable<'env>>),
+    Builtin(Builtins),
 }
 
 impl<'env> Value<'env> {
@@ -26,37 +26,32 @@ impl<'env> Value<'env> {
         caller: Span,
     ) -> Result<Value<'env>> {
         match self {
-            Value::Instance(instance) => instance
+            Self::Instance(instance) => instance
                 .lookup(name.item)
                 .into_value(ctx, instance, name, caller),
-            Value::Class(class) => class
+            Self::Class(class) => class
                 .class_method_lookup(name.item)
-                .map(Value::Fn)
+                .map(Self::Fn)
                 .ok_or_else(|| self.invalid_type(caller, Type::Instance)),
             _ => Err(self.invalid_type(caller, Type::Instance)),
         }
     }
 
-    pub fn set(
-        &self,
-        name: &'env str,
-        value: impl FnOnce() -> Value<'env>,
-        caller: Span,
-    ) -> Result<()> {
+    pub fn set(&self, name: &'env str, value: Value<'env>, caller: Span) -> Result<()> {
         match self {
-            Value::Instance(instance) => {
-                instance.insert(name, value());
+            Self::Instance(instance) => {
+                instance.insert(name, value);
                 Ok(())
             }
             _ => Err(self.invalid_type(caller, Type::Instance)),
         }
     }
 
-    pub fn as_callable(&self, span: Span) -> Result<&dyn Callable<'env>> {
+    pub fn as_callable(&self, span: Span) -> Result<Callable<'env>> {
         match self {
-            Value::Fn(fun) => Ok(&**fun),
-            Value::Callable(fun) => Ok(&**fun),
-            Value::Class(class) => Ok(&**class),
+            Self::Fn(fun) => Ok(Callable::Fn(fun)),
+            Self::Class(class) => Ok(Callable::Class(class)),
+            Self::Builtin(builtins) => Ok(Callable::Builtin(*builtins)),
             _ => Err(self.invalid_type(span, Type::Callable)),
         }
     }
@@ -208,11 +203,7 @@ impl PartialEq for Value<'_> {
             (Self::Bool(lhs), Self::Bool(rhs)) => lhs == rhs,
             (Self::Number(lhs), Self::Number(rhs)) => lhs == rhs,
             (Self::Str(lhs), Self::Str(rhs)) => lhs == rhs,
-            (Self::Callable(lhs), Self::Callable(rhs)) => {
-                let lhs = std::ptr::addr_of!(**lhs).cast::<()>();
-                let rhs = std::ptr::addr_of!(**rhs).cast::<()>();
-                std::ptr::eq(lhs, rhs)
-            }
+            (Self::Builtin(lhs), Self::Builtin(rhs)) => lhs == rhs,
             (Self::Fn(lhs), Self::Fn(rhs)) => {
                 let lhs = std::ptr::addr_of!(**lhs).cast::<()>();
                 let rhs = std::ptr::addr_of!(**rhs).cast::<()>();
@@ -235,7 +226,7 @@ impl PartialOrd for Value<'_> {
             (Self::Str(s), Self::Str(o)) => s.partial_cmp(o),
             (Self::Bool(b), Self::Bool(o)) => b.partial_cmp(o),
             (Self::Nil, Self::Nil) => Some(Ordering::Equal),
-            (Self::Callable(_), Self::Callable(_)) if self == other => Some(Ordering::Equal),
+            (Self::Builtin(_), Self::Builtin(_)) if self == other => Some(Ordering::Equal),
             (Self::Fn(_), Self::Fn(_)) if self == other => Some(Ordering::Equal),
             (Self::Class(_), Self::Class(_)) if self == other => Some(Ordering::Equal),
             _ => None,
@@ -299,7 +290,7 @@ impl fmt::Display for Value<'_> {
             Value::Number(n) => fmt::Display::fmt(n, f),
             Value::Str(s) => fmt::Display::fmt(s, f),
             Value::Fn(fun) => fmt::Debug::fmt(fun, f),
-            Value::Callable(fun) => fmt::Debug::fmt(fun, f),
+            Value::Builtin(fun) => fmt::Debug::fmt(fun, f),
             Value::Instance(inst) => fmt::Debug::fmt(inst, f),
             Value::Class(inst) => fmt::Debug::fmt(inst, f),
         }
