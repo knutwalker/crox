@@ -46,6 +46,15 @@ impl<'source, Data, V> Context<'source, Data, V> {
     }
 }
 
+impl<'source, 'out> InterpreterContext<'source, 'out> {
+    pub fn alloc<T>(&self, value: T) -> &'source T {
+        self.arena.alloc(value)
+    }
+    pub fn alloc_mut<T>(&self, value: T) -> &'source mut T {
+        self.arena.alloc(value)
+    }
+}
+
 impl<'source, Data, V: Debug> Debug for Context<'source, Data, V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Context")

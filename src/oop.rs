@@ -41,7 +41,7 @@ impl<'a> Callable<'a> for Class<'a> {
         span: Span,
     ) -> Result<Value<'a>> {
         let instance = Instance::new(self.clone());
-        let instance = ctx.arena.alloc(instance);
+        let instance = ctx.alloc(instance);
         if let Some(initializer) = self.method_lookup("init") {
             initializer.bind(instance).call(ctx, args, span)?;
         }
@@ -178,8 +178,8 @@ impl<'a, 'env> Lookup<'a, 'env> {
             }
             Lookup::Method(method) => {
                 let method = method.bind(instance);
-                let method = ctx.arena.alloc(method);
-                Ok(Value::from(&*method))
+                let method = ctx.alloc(method);
+                Ok(Value::from(method))
             }
             Lookup::ClassMethod => Err(CroxErrorKind::ClassMemberOnInstance {
                 name: name.item.to_owned(),

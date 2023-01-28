@@ -230,7 +230,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
             let name = m.item.name.item;
             let fun = m.item.fun;
             let method = Function::method(name, fun, ctx.env.clone());
-            &*ctx.arena.alloc(method)
+            ctx.alloc(method)
         });
 
         let class = Class::new(name, superclass, class_members);
@@ -282,7 +282,7 @@ impl<'a, 'o> Interpreter<'a, 'o> {
 
         let span = method.span;
         let method = method.item.bind(this);
-        let method = &*ctx.arena.alloc(method);
+        let method = ctx.alloc(method);
         let value = Value::from(method);
         Ok(value.at(span))
     }
