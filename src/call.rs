@@ -5,16 +5,16 @@ use crate::{
     InterpreterError, Result, Scope, Span, Value,
 };
 
-pub trait Callable<'a>: std::fmt::Debug + 'a {
+pub trait Callable<'env>: std::fmt::Debug + 'env {
     fn arity(&self) -> usize;
     fn call(
         &self,
-        ctx: &mut InterpreterContext<'a, '_>,
-        args: &[Value<'a>],
+        ctx: &mut InterpreterContext<'env, '_>,
+        args: &[Value<'env>],
         span: Span,
-    ) -> Result<Value<'a>>;
+    ) -> Result<Value<'env>>;
 
-    fn to_value(self) -> Value<'a>
+    fn to_value(self) -> Value<'env>
     where
         Self: Sized,
     {
@@ -23,15 +23,15 @@ pub trait Callable<'a>: std::fmt::Debug + 'a {
 }
 
 #[derive(Clone)]
-pub struct Function<'a> {
-    pub name: &'a str,
+pub struct Function<'env> {
+    pub name: &'env str,
     is_init: bool,
-    fun: FunctionDef<'a>,
-    closure: Environment<'a>,
+    fun: FunctionDef<'env>,
+    closure: Environment<'env>,
 }
 
-impl<'a> Function<'a> {
-    pub fn new(name: &'a str, fun: FunctionDef<'a>, closure: Environment<'a>) -> Self {
+impl<'env> Function<'env> {
+    pub fn new(name: &'env str, fun: FunctionDef<'env>, closure: Environment<'env>) -> Self {
         Self {
             name,
             fun,
@@ -40,7 +40,7 @@ impl<'a> Function<'a> {
         }
     }
 
-    pub fn method(name: &'a str, fun: FunctionDef<'a>, closure: Environment<'a>) -> Self {
+    pub fn method(name: &'env str, fun: FunctionDef<'env>, closure: Environment<'env>) -> Self {
         Self {
             name,
             fun,
@@ -49,7 +49,7 @@ impl<'a> Function<'a> {
         }
     }
 
-    pub fn bind(&self, instance: &'a Instance<'a>) -> Self {
+    pub fn bind(&self, instance: &'env Instance<'env>) -> Self {
         let closure = self.closure.new_scope();
         closure.define("this", Value::Instance(instance));
         Self {
@@ -61,17 +61,17 @@ impl<'a> Function<'a> {
     }
 }
 
-impl<'a> Callable<'a> for Function<'a> {
+impl<'env> Callable<'env> for Function<'env> {
     fn arity(&self) -> usize {
         self.fun.params.len()
     }
 
     fn call(
         &self,
-        ctx: &mut InterpreterContext<'a, '_>,
-        args: &[Value<'a>],
+        ctx: &mut InterpreterContext<'env, '_>,
+        args: &[Value<'env>],
         span: Span,
-    ) -> Result<Value<'a>> {
+    ) -> Result<Value<'env>> {
         ctx.run_with_scope(self.closure.new_scope(), |ctx| {
             for (param, arg) in self.fun.params.iter().zip(args) {
                 ctx.env.define(param.item, arg.clone());
@@ -95,7 +95,7 @@ impl<'a> Callable<'a> for Function<'a> {
     }
 }
 
-impl<'a> std::fmt::Debug for Function<'a> {
+impl<'env> std::fmt::Debug for Function<'env> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<fn {}>", self.name)
     }

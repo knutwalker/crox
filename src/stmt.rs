@@ -1,58 +1,62 @@
 use crate::{BoxedExpr, Bump, FunctionDef, Ident, Node, Var};
 use std::fmt::Debug;
 
-pub type StmtNode<'a> = Node<Stmt<'a>>;
-pub type BoxedStmt<'a> = Node<&'a Stmt<'a>>;
+pub type StmtNode<'env> = Node<Stmt<'env>>;
+pub type BoxedStmt<'env> = Node<&'env Stmt<'env>>;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Stmt<'a> {
+pub enum Stmt<'env> {
     Expression {
-        expr: BoxedExpr<'a>,
+        expr: BoxedExpr<'env>,
     },
-    Class(ClassDecl<'a>),
-    Function(FunctionDecl<'a>),
+    Class(ClassDecl<'env>),
+    Function(FunctionDecl<'env>),
     If {
-        condition: BoxedExpr<'a>,
-        then_: BoxedStmt<'a>,
-        else_: Option<BoxedStmt<'a>>,
+        condition: BoxedExpr<'env>,
+        then_: BoxedStmt<'env>,
+        else_: Option<BoxedStmt<'env>>,
     },
     Print {
-        expr: BoxedExpr<'a>,
+        expr: BoxedExpr<'env>,
     },
     Return {
-        expr: Option<BoxedExpr<'a>>,
+        expr: Option<BoxedExpr<'env>>,
     },
     Var {
-        name: Ident<'a>,
-        initializer: Option<BoxedExpr<'a>>,
+        name: Ident<'env>,
+        initializer: Option<BoxedExpr<'env>>,
     },
     While {
-        condition: BoxedExpr<'a>,
-        body: BoxedStmt<'a>,
+        condition: BoxedExpr<'env>,
+        body: BoxedStmt<'env>,
     },
     Block {
-        stmts: &'a [StmtNode<'a>],
+        stmts: &'env [StmtNode<'env>],
     },
 }
 
-impl<'a> Stmt<'a> {
-    pub fn expression(expr: BoxedExpr<'a>) -> Self {
+impl<'env> Stmt<'env> {
+    pub fn expression(expr: BoxedExpr<'env>) -> Self {
         Self::Expression { expr }
     }
 
     pub fn class(
-        name: Ident<'a>,
-        superclass: Option<Node<Var<'a>>>,
-        members: &'a mut [Node<FunctionDecl<'a>>],
+        name: Ident<'env>,
+        superclass: Option<Node<Var<'env>>>,
+        members: &'env mut [Node<FunctionDecl<'env>>],
     ) -> Self {
         Self::Class(ClassDecl::new(name, superclass, members))
     }
 
-    pub fn fun(name: Ident<'a>, kind: FunctionKind, fun: FunctionDef<'a>) -> FunctionDecl<'a> {
+    pub fn fun(
+        name: Ident<'env>,
+        kind: FunctionKind,
+        fun: FunctionDef<'env>,
+    ) -> FunctionDecl<'env> {
         FunctionDecl { name, kind, fun }
     }
 
-    pub fn if_(condition: BoxedExpr<'a>, then_: BoxedStmt<'a>) -> Self {
+    pub fn if_(condition: BoxedExpr<'env>, then_: BoxedStmt<'env>) -> Self {
         Self::If {
             condition,
             then_,
@@ -60,7 +64,11 @@ impl<'a> Stmt<'a> {
         }
     }
 
-    pub fn if_else(condition: BoxedExpr<'a>, then_: BoxedStmt<'a>, else_: BoxedStmt<'a>) -> Self {
+    pub fn if_else(
+        condition: BoxedExpr<'env>,
+        then_: BoxedStmt<'env>,
+        else_: BoxedStmt<'env>,
+    ) -> Self {
         Self::If {
             condition,
             then_,
@@ -68,42 +76,42 @@ impl<'a> Stmt<'a> {
         }
     }
 
-    pub fn print(expr: BoxedExpr<'a>) -> Self {
+    pub fn print(expr: BoxedExpr<'env>) -> Self {
         Self::Print { expr }
     }
 
-    pub fn return_(expr: impl Into<Option<BoxedExpr<'a>>>) -> Self {
+    pub fn return_(expr: impl Into<Option<BoxedExpr<'env>>>) -> Self {
         Self::Return { expr: expr.into() }
     }
 
-    pub fn var(name: Ident<'a>, initializer: impl Into<Option<BoxedExpr<'a>>>) -> Self {
+    pub fn var(name: Ident<'env>, initializer: impl Into<Option<BoxedExpr<'env>>>) -> Self {
         Self::Var {
             name,
             initializer: initializer.into(),
         }
     }
 
-    pub fn while_(condition: BoxedExpr<'a>, body: BoxedStmt<'a>) -> Self {
+    pub fn while_(condition: BoxedExpr<'env>, body: BoxedStmt<'env>) -> Self {
         Self::While { condition, body }
     }
 
-    pub fn block(stmts: &'a [StmtNode<'a>]) -> Self {
+    pub fn block(stmts: &'env [StmtNode<'env>]) -> Self {
         Self::Block { stmts }
     }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct ClassDecl<'a> {
-    pub name: Ident<'a>,
-    pub superclass: Option<Node<Var<'a>>>,
-    members: Members<'a, Node<FunctionDecl<'a>>>,
+pub struct ClassDecl<'env> {
+    pub name: Ident<'env>,
+    pub superclass: Option<Node<Var<'env>>>,
+    members: Members<'env, Node<FunctionDecl<'env>>>,
 }
 
-impl<'a> ClassDecl<'a> {
+impl<'env> ClassDecl<'env> {
     pub fn new(
-        name: Ident<'a>,
-        superclass: Option<Node<Var<'a>>>,
-        members: &'a mut [Node<FunctionDecl<'a>>],
+        name: Ident<'env>,
+        superclass: Option<Node<Var<'env>>>,
+        members: &'env mut [Node<FunctionDecl<'env>>],
     ) -> Self {
         let members = Members::new(members, |m| m.item.kind);
         Self {
@@ -113,16 +121,16 @@ impl<'a> ClassDecl<'a> {
         }
     }
 
-    pub fn members(&self) -> &Members<'a, Node<FunctionDecl<'a>>> {
+    pub fn members(&self) -> &Members<'env, Node<FunctionDecl<'env>>> {
         &self.members
     }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct FunctionDecl<'a> {
-    pub name: Ident<'a>,
+pub struct FunctionDecl<'env> {
+    pub name: Ident<'env>,
     pub kind: FunctionKind,
-    pub fun: FunctionDef<'a>,
+    pub fun: FunctionDef<'env>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -136,14 +144,14 @@ pub enum FunctionKind {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Members<'a, T> {
-    members: &'a [T],
+pub struct Members<'env, T> {
+    members: &'env [T],
     methods: usize,
     class_methods: usize,
 }
 
-impl<'a, T> Members<'a, T> {
-    pub fn new(members: &'a mut [T], to_kind: impl Fn(&T) -> FunctionKind) -> Self {
+impl<'env, T> Members<'env, T> {
+    pub fn new(members: &'env mut [T], to_kind: impl Fn(&T) -> FunctionKind) -> Self {
         members.sort_by_key(|m| to_kind(m));
 
         let (methods, class_methods) =
@@ -177,7 +185,7 @@ impl<'a, T> Members<'a, T> {
         self.members[self.class_methods..].iter()
     }
 
-    pub fn map<U>(&self, arena: &'a Bump, map: impl FnMut(&T) -> U) -> Members<'a, U> {
+    pub fn map<U>(&self, arena: &'env Bump, map: impl FnMut(&T) -> U) -> Members<'env, U> {
         let members = self.members.iter().map(map);
         let members = arena.alloc_slice_fill_iter(members);
 

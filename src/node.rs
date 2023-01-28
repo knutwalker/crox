@@ -1,7 +1,7 @@
 use crate::{Bump, Span};
 use std::fmt::Debug;
 
-pub type Ident<'a> = Node<&'a str>;
+pub type Ident<'env> = Node<&'env str>;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct Node<T> {

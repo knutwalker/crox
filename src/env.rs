@@ -8,11 +8,11 @@ use std::{
 use crate::{Builtins, CroxErrorKind, Value};
 
 #[derive(Clone, Debug)]
-pub struct Environment<'a, V = Value<'a>> {
-    inner: Rc<InnerEnv<'a, V>>,
+pub struct Environment<'env, V = Value<'env>> {
+    inner: Rc<InnerEnv<'env, V>>,
 }
 
-impl<'a, V: Clone> Environment<'a, V> {
+impl<'env, V: Clone> Environment<'env, V> {
     pub fn get<'x>(&self, name: &'x str, scope: Scope) -> Result<V, Error<'x>> {
         self.inner.get(name, scope)
     }
@@ -22,26 +22,26 @@ impl<'a, V: Clone> Environment<'a, V> {
     }
 }
 
-impl<'a, V> Environment<'a, V> {
+impl<'env, V> Environment<'env, V> {
     pub fn empty() -> Self {
         Self {
             inner: Rc::new(InnerEnv::empty()),
         }
     }
 
-    pub fn define(&self, name: &'a str, value: impl Into<Option<V>>) {
+    pub fn define(&self, name: &'env str, value: impl Into<Option<V>>) {
         self.inner.define(name, value);
     }
 
-    pub fn define_local(&self, name: &'a str, value: impl Into<Option<V>>) -> bool {
+    pub fn define_local(&self, name: &'env str, value: impl Into<Option<V>>) -> bool {
         self.inner.define_local(name, value)
     }
 
     pub fn define_local_unique(
         &self,
-        name: &'a str,
+        name: &'env str,
         value: impl Into<Option<V>>,
-    ) -> Result<bool, Error<'a>> {
+    ) -> Result<bool, Error<'env>> {
         self.inner.define_local_unique(name, value)
     }
 
@@ -69,7 +69,7 @@ impl Environment<'_> {
     }
 }
 
-impl<'a> Default for Environment<'a> {
+impl<'env> Default for Environment<'env> {
     fn default() -> Self {
         Self {
             inner: Rc::new(InnerEnv::global(Builtins::to_value)),
@@ -77,7 +77,7 @@ impl<'a> Default for Environment<'a> {
     }
 }
 
-impl<'a, V> Environment<'a, V> {
+impl<'env, V> Environment<'env, V> {
     pub fn global(globals: impl Fn(Builtins) -> V) -> Self {
         Self {
             inner: Rc::new(InnerEnv::global(globals)),
@@ -86,14 +86,14 @@ impl<'a, V> Environment<'a, V> {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Error<'a> {
-    Undefined(&'a str),
-    Uninitialized(&'a str),
-    Duplicate(&'a str),
+pub enum Error<'env> {
+    Undefined(&'env str),
+    Uninitialized(&'env str),
+    Duplicate(&'env str),
 }
 
-impl<'a> From<Error<'a>> for CroxErrorKind {
-    fn from(e: Error<'a>) -> Self {
+impl<'env> From<Error<'env>> for CroxErrorKind {
+    fn from(e: Error<'env>) -> Self {
         match e {
             Error::Undefined(name) => CroxErrorKind::UndefinedVariable {
                 name: name.to_owned(),
@@ -167,15 +167,15 @@ impl Default for Scoped {
     }
 }
 
-type Enclosing<'a, V> = Option<Rc<InnerEnv<'a, V>>>;
+type Enclosing<'env, V> = Option<Rc<InnerEnv<'env, V>>>;
 
 #[derive(Debug)]
-struct InnerEnv<'a, V> {
-    enclosing: Enclosing<'a, V>,
-    values: RefCell<EnvValues<'a, V>>,
+struct InnerEnv<'env, V> {
+    enclosing: Enclosing<'env, V>,
+    values: RefCell<EnvValues<'env, V>>,
 }
 
-impl<'a, V> InnerEnv<'a, V> {
+impl<'env, V> InnerEnv<'env, V> {
     fn empty() -> Self {
         Self {
             enclosing: None,
@@ -190,11 +190,11 @@ impl<'a, V> InnerEnv<'a, V> {
         }
     }
 
-    fn define(&self, name: &'a str, value: impl Into<Option<V>>) {
+    fn define(&self, name: &'env str, value: impl Into<Option<V>>) {
         self.values.borrow_mut().define(name, value);
     }
 
-    fn define_local(&self, name: &'a str, value: impl Into<Option<V>>) -> bool {
+    fn define_local(&self, name: &'env str, value: impl Into<Option<V>>) -> bool {
         if self.enclosing.is_none() {
             return false;
         }
@@ -204,9 +204,9 @@ impl<'a, V> InnerEnv<'a, V> {
 
     fn define_local_unique(
         &self,
-        name: &'a str,
+        name: &'env str,
         value: impl Into<Option<V>>,
-    ) -> Result<bool, Error<'a>> {
+    ) -> Result<bool, Error<'env>> {
         if self.enclosing.is_none() {
             return Ok(false);
         }
@@ -233,12 +233,12 @@ impl<'a, V> InnerEnv<'a, V> {
         self.ancestors().nth(scope)
     }
 
-    fn ancestors(&self) -> impl Iterator<Item = &InnerEnv<'a, V>> + '_ {
+    fn ancestors(&self) -> impl Iterator<Item = &InnerEnv<'env, V>> + '_ {
         std::iter::successors(Some(self), |this| this.enclosing.as_deref())
     }
 }
 
-impl<'a, V: Clone> InnerEnv<'a, V> {
+impl<'env, V: Clone> InnerEnv<'env, V> {
     fn get<'x>(&self, name: &'x str, scope: Scope) -> Result<V, Error<'x>> {
         match scope.scope() {
             Some(scope) => match self.resolve(scope) {
@@ -270,7 +270,7 @@ impl<'a, V: Clone> InnerEnv<'a, V> {
     }
 }
 
-impl<'a, V: Display> InnerEnv<'a, V> {
+impl<'env, V: Display> InnerEnv<'env, V> {
     fn print_vars(&self, mut out: impl Write) {
         for this in self.ancestors() {
             this.values.borrow().print_vars(&mut out);
@@ -279,12 +279,12 @@ impl<'a, V: Display> InnerEnv<'a, V> {
 }
 
 #[derive(Clone, Debug)]
-struct EnvValues<'a, V> {
-    names: Vec<&'a str>,
+struct EnvValues<'env, V> {
+    names: Vec<&'env str>,
     values: Vec<Option<V>>,
 }
 
-impl<'a, V> EnvValues<'a, V> {
+impl<'env, V> EnvValues<'env, V> {
     fn empty() -> Self {
         Self {
             names: Vec::new(),
@@ -299,16 +299,16 @@ impl<'a, V> EnvValues<'a, V> {
         }
     }
 
-    fn define(&mut self, name: &'a str, value: impl Into<Option<V>>) {
+    fn define(&mut self, name: &'env str, value: impl Into<Option<V>>) {
         self.names.push(name);
         self.values.push(value.into());
     }
 
     fn define_unique(
         &mut self,
-        name: &'a str,
+        name: &'env str,
         value: impl Into<Option<V>>,
-    ) -> Result<(), Error<'a>> {
+    ) -> Result<(), Error<'env>> {
         if self.find(name).is_ok() {
             return Err(Error::Duplicate(name));
         }
@@ -333,7 +333,7 @@ impl<'a, V> EnvValues<'a, V> {
     }
 }
 
-impl<'a, V: Display> EnvValues<'a, V> {
+impl<'env, V: Display> EnvValues<'env, V> {
     fn print_vars(&self, mut out: impl Write) {
         for (name, value) in self.names.iter().zip(self.values.iter()) {
             if let Some(value) = value {

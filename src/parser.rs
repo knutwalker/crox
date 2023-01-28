@@ -48,33 +48,33 @@ use TokenType::*;
 
 type Tok = (TokenType, Span);
 
-pub fn expr_parser<'a, I>(
-    source: Source<'a>,
+pub fn expr_parser<'env, I>(
+    source: Source<'env>,
     tokens: I,
-    arena: &'a Bump,
-) -> Parser<'a, ExpressionRule, UnpackToken<I::IntoIter>>
+    arena: &'env Bump,
+) -> Parser<'env, ExpressionRule, UnpackToken<I::IntoIter>>
 where
     I: IntoIterator<Item = Token>,
 {
     any_parser(source, tokens, arena)
 }
 
-pub fn stmt_parser<'a, I>(
-    source: Source<'a>,
+pub fn stmt_parser<'env, I>(
+    source: Source<'env>,
     tokens: I,
-    arena: &'a Bump,
-) -> Parser<'a, StatementRule, UnpackToken<I::IntoIter>>
+    arena: &'env Bump,
+) -> Parser<'env, StatementRule, UnpackToken<I::IntoIter>>
 where
     I: IntoIterator<Item = Token>,
 {
     any_parser(source, tokens, arena)
 }
 
-fn any_parser<'a, R, I>(
-    source: Source<'a>,
+fn any_parser<'env, R, I>(
+    source: Source<'env>,
     tokens: I,
-    arena: &'a Bump,
-) -> Parser<'a, R, UnpackToken<I::IntoIter>>
+    arena: &'env Bump,
+) -> Parser<'env, R, UnpackToken<I::IntoIter>>
 where
     I: IntoIterator<Item = Token>,
 {
@@ -85,10 +85,10 @@ where
     Parser::new(source, tokens, arena)
 }
 
-pub struct Parser<'a, R, T: Iterator<Item = Tok>> {
-    source: Source<'a>,
+pub struct Parser<'env, R, T: Iterator<Item = Tok>> {
+    source: Source<'env>,
     tokens: Peekable<T>,
-    arena: &'a Bump,
+    arena: &'env Bump,
     _rule: PhantomData<R>,
 }
 
@@ -132,8 +132,8 @@ macro_rules! bin_op {
     }};
 }
 
-impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
-    fn new(source: Source<'a>, tokens: Peekable<T>, arena: &'a Bump) -> Self {
+impl<'env, R, T: Iterator<Item = Tok>> Parser<'env, R, T> {
+    fn new(source: Source<'env>, tokens: Peekable<T>, arena: &'env Bump) -> Self {
         Self {
             source,
             tokens,
@@ -143,8 +143,8 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 }
 
-impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
-    fn sync_declaration(&mut self) -> Result<StmtNode<'a>> {
+impl<'env, R, T: Iterator<Item = Tok>> Parser<'env, R, T> {
+    fn sync_declaration(&mut self) -> Result<StmtNode<'env>> {
         match self.declaration() {
             Ok(stmt) => Ok(stmt),
             Err(e) => {
@@ -155,7 +155,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     /// declaration := classDecl | funDecl | varDecl | statement ;
-    fn declaration(&mut self) -> Result<StmtNode<'a>> {
+    fn declaration(&mut self) -> Result<StmtNode<'env>> {
         peek!(self, {
             (Var, span) => self.var_decl(span),
             (Class, span) => self.class_decl(span),
@@ -166,7 +166,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///   classDecl := "class" IDENTIFIER ( "<" IDENTIFIER )? "{" member* "}" ;
-    fn class_decl(&mut self, start: Span) -> Result<StmtNode<'a>> {
+    fn class_decl(&mut self, start: Span) -> Result<StmtNode<'env>> {
         let name = self
             .ident(start)
             .map_err(|c| c.with_payload(ExpectedFn(FunctionKind::Class)))?;
@@ -209,7 +209,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
     ///      member := method | property ;
     ///      method := "class"? function ;
-    fn member(&mut self, start: Span) -> Result<Node<FunctionDecl<'a>>> {
+    fn member(&mut self, start: Span) -> Result<Node<FunctionDecl<'env>>> {
         let class = self.tokens.next_if(|&(token, _)| token == Class);
         match class {
             Some((_, class_span)) => self.function_decl(FunctionKind::ClassMethod, class_span),
@@ -220,12 +220,16 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     ///     funDecl := "fun" function ;
     ///    function := IDENTIFIER "(" parameters? ")" block ;
     ///  parameters := IDENTIFIER ( "," IDENTIFIER )* ;
-    fn fun_decl(&mut self, start: Span) -> Result<StmtNode<'a>> {
+    fn fun_decl(&mut self, start: Span) -> Result<StmtNode<'env>> {
         self.function_decl(FunctionKind::Function, start)
             .map(|f| f.map(Stmt::Function))
     }
 
-    fn function_decl(&mut self, kind: FunctionKind, start: Span) -> Result<Node<FunctionDecl<'a>>> {
+    fn function_decl(
+        &mut self,
+        kind: FunctionKind,
+        start: Span,
+    ) -> Result<Node<FunctionDecl<'env>>> {
         let name = self
             .ident(start)
             .map_err(|c| c.with_payload(ExpectedFn(kind)))?;
@@ -237,7 +241,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///    property := IDENTIFIER block ;
-    fn function_or_property(&mut self, start: Span) -> Result<Node<FunctionDecl<'a>>> {
+    fn function_or_property(&mut self, start: Span) -> Result<Node<FunctionDecl<'env>>> {
         let name = self
             .ident(start)
             .map_err(|c| c.with_payload(ExpectedFn(FunctionKind::Method)))?;
@@ -254,11 +258,11 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         Ok(fn_item)
     }
 
-    fn property_def(&mut self, start: Span) -> Result<Node<FunctionDef<'a>>> {
+    fn property_def(&mut self, start: Span) -> Result<Node<FunctionDef<'env>>> {
         self.function_body(&[], start, start)
     }
 
-    fn function_def(&mut self, start: Span) -> Result<Node<FunctionDef<'a>>> {
+    fn function_def(&mut self, start: Span) -> Result<Node<FunctionDef<'env>>> {
         let params = self.parens_list::<_, Parameters>(start, true, Parser::ident)?;
 
         self.function_body(&params.item, start, params.span)
@@ -266,10 +270,10 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
 
     fn function_body(
         &mut self,
-        params: &[Ident<'a>],
+        params: &[Ident<'env>],
         fn_start: Span,
         body_start: Span,
-    ) -> Result<Node<FunctionDef<'a>>> {
+    ) -> Result<Node<FunctionDef<'env>>> {
         let open_brace = self.expect(LeftBrace, EndOfInput::expected(LeftBrace, body_start))?;
         let body = self.block(open_brace)?;
         let span = fn_start.union(body.span);
@@ -280,7 +284,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///     varDecl := "var" IDENTIFIER ( "=" expression )? ";" ;
-    fn var_decl(&mut self, span: Span) -> Result<StmtNode<'a>> {
+    fn var_decl(&mut self, span: Span) -> Result<StmtNode<'env>> {
         let name = self.ident(span)?;
 
         let init = peek!(self, {
@@ -294,7 +298,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///   statement := exprStmt | forStmt | ifStmt | printStmt | whileStmt | block;
-    fn statement(&mut self) -> Result<StmtNode<'a>> {
+    fn statement(&mut self) -> Result<StmtNode<'env>> {
         let stmt = peek!(self, {
             (For, span) => self.for_statement(span)?,
             (If, span) => self.if_statement(span)?,
@@ -313,7 +317,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///    exprStmt := expression ";" ;
-    fn expr_statement(&mut self) -> Result<StmtNode<'a>> {
+    fn expr_statement(&mut self) -> Result<StmtNode<'env>> {
         let expr = self.expression()?;
         let expr = expr.alloc(self.arena);
         let end_span = self.expect(Semicolon, EndOfInput::expected(Semicolon, expr.span))?;
@@ -323,7 +327,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///     forStmt := "for" "(" ( varDecl | exprStmt | ";" ) expression? ";" expression? ")" statement ;
-    fn for_statement(&mut self, for_span: Span) -> Result<StmtNode<'a>> {
+    fn for_statement(&mut self, for_span: Span) -> Result<StmtNode<'env>> {
         let paren = self.expect(LeftParen, EndOfInput::expected(LeftParen, for_span))?;
 
         // cannot use peek since we don't consume in the catch all case
@@ -403,7 +407,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///      ifStmt := "if" "(" expression ")" statement ( "else" statement )? ;
-    fn if_statement(&mut self, span: Span) -> Result<StmtNode<'a>> {
+    fn if_statement(&mut self, span: Span) -> Result<StmtNode<'env>> {
         self.expect(LeftParen, EndOfInput::expected(LeftParen, span))?;
         let cond = self.expression()?;
         let cond = cond.alloc(self.arena);
@@ -430,7 +434,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///   printStmt := "print" expression ";" ;
-    fn print_statement(&mut self, print_span: Span) -> Result<StmtNode<'a>> {
+    fn print_statement(&mut self, print_span: Span) -> Result<StmtNode<'env>> {
         let expr = self.expression()?;
         let expr = expr.alloc(self.arena);
         let end_span = self.expect(Semicolon, EndOfInput::Unclosed(Print, print_span))?;
@@ -439,7 +443,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///  returnStmt := "return" expression? ";" ;
-    fn return_statement(&mut self, span: Span) -> Result<StmtNode<'a>> {
+    fn return_statement(&mut self, span: Span) -> Result<StmtNode<'env>> {
         let expr = match self.tokens.peek() {
             Some(&(Semicolon, _)) => None,
             Some(_) => Some(self.expression()?.alloc(self.arena)),
@@ -451,7 +455,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///   whileStmt := "while" "(" expression ")" statement ;
-    fn while_statement(&mut self, span: Span) -> Result<StmtNode<'a>> {
+    fn while_statement(&mut self, span: Span) -> Result<StmtNode<'env>> {
         self.expect(LeftParen, EndOfInput::expected(LeftParen, span))?;
         let cond = self.expression()?;
         let cond = cond.alloc(self.arena);
@@ -464,7 +468,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///       block := "{" declaration* "}" ;
-    fn block(&mut self, start: Span) -> Result<Node<Vec<StmtNode<'a>>>> {
+    fn block(&mut self, start: Span) -> Result<Node<Vec<StmtNode<'env>>>> {
         let mut stmts = Vec::new();
 
         let end = loop {
@@ -485,12 +489,12 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///  expression := assignment ;
-    fn expression(&mut self) -> Result<ExprNode<'a>> {
+    fn expression(&mut self) -> Result<ExprNode<'env>> {
         self.assignment()
     }
 
     ///  assignment := ( call "." )? IDENTIFIER "=" assignment | logic_or ;
-    fn assignment(&mut self) -> Result<ExprNode<'a>> {
+    fn assignment(&mut self) -> Result<ExprNode<'env>> {
         let expr = self.logic_or()?;
 
         if peek!(self, Equal) {
@@ -517,7 +521,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///    logic_or := logic_and ( "or" logic_and )* ;
-    fn logic_or(&mut self) -> Result<ExprNode<'a>> {
+    fn logic_or(&mut self) -> Result<ExprNode<'env>> {
         let mut expr = self.logic_and()?;
 
         while peek!(self, Or) {
@@ -532,7 +536,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///   logic_and := equality ( "and" equality )* ;
-    fn logic_and(&mut self) -> Result<ExprNode<'a>> {
+    fn logic_and(&mut self) -> Result<ExprNode<'env>> {
         let mut expr = self.equality()?;
 
         while peek!(self, And) {
@@ -547,7 +551,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///    eqaulity := comparison ( ( "==" | "!=" ) comparison )* ;
-    fn equality(&mut self) -> Result<ExprNode<'a>> {
+    fn equality(&mut self) -> Result<ExprNode<'env>> {
         bin_op!(self, comparison, {
             (BangEqual, _) => BinaryOp::NotEquals,
             (EqualEqual, _) => BinaryOp::Equals,
@@ -555,7 +559,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///  comparison := term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
-    fn comparison(&mut self) -> Result<ExprNode<'a>> {
+    fn comparison(&mut self) -> Result<ExprNode<'env>> {
         bin_op!(self, term, {
             (Greater, _) => BinaryOp::GreaterThan,
             (GreaterEqual, _) => BinaryOp::GreaterThanOrEqual,
@@ -565,7 +569,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///        term := factor ( ( "+" | "-" ) factor )* ;
-    fn term(&mut self) -> Result<ExprNode<'a>> {
+    fn term(&mut self) -> Result<ExprNode<'env>> {
         bin_op!(self, factor, {
             (Plus, _) => BinaryOp::Add,
             (Minus, _) => BinaryOp::Sub,
@@ -573,7 +577,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///      factor := unary ( ( "*" | "/" ) unary )* ;
-    fn factor(&mut self) -> Result<ExprNode<'a>> {
+    fn factor(&mut self) -> Result<ExprNode<'env>> {
         bin_op!(self, unary, {
             (Star, _) => BinaryOp::Mul,
             (Slash, _) => BinaryOp::Div,
@@ -581,7 +585,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///       unary := ( "!" | "-" ) unary | call ;
-    fn unary(&mut self) -> Result<ExprNode<'a>> {
+    fn unary(&mut self) -> Result<ExprNode<'env>> {
         match peek!(self, {
             (Bang, span) => (UnaryOp::Not, span),
             (Minus, span) => (UnaryOp::Neg, span),
@@ -597,7 +601,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///        call := primary ( "(" arguments? ")" | "." IDENTIFIER )* ;
-    fn call(&mut self) -> Result<ExprNode<'a>> {
+    fn call(&mut self) -> Result<ExprNode<'env>> {
         let mut expr = self.primary()?;
 
         loop {
@@ -627,7 +631,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     ///     primary := NUMBER | STRING | IDENTIFIER | funDecl |
     ///                "true" | "false" | "nil" | "this" |
     ///                "(" expression ")" | "super" . IDENTIFIER ;
-    fn primary(&mut self) -> Result<ExprNode<'a>> {
+    fn primary(&mut self) -> Result<ExprNode<'env>> {
         fn expected() -> TokenSet {
             TokenSet::from_iter([
                 LeftParen, String, Number, This, Super, Identifier, Fun, False, Nil, True,
@@ -692,7 +696,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
     }
 
     ///   arguments := expression ( "," expression )* ;
-    fn arguments(&mut self, start: Span) -> Result<(Vec<ExprNode<'a>>, Span)> {
+    fn arguments(&mut self, start: Span) -> Result<(Vec<ExprNode<'env>>, Span)> {
         let args = self.parens_list::<_, Arguments>(start, false, |this, _| this.expression())?;
 
         Ok((args.item, args.span))
@@ -707,7 +711,7 @@ impl<'a, R, T: Iterator<Item = Tok>> Parser<'a, R, T> {
         }
     }
 
-    fn ident(&mut self, span: Span) -> Result<Ident<'a>> {
+    fn ident(&mut self, span: Span) -> Result<Ident<'env>> {
         let span = self.expect(Identifier, EndOfInput::expected(Identifier, span))?;
         let identifier = self.source.slice(span);
         Ok(identifier.at(span))
@@ -766,8 +770,8 @@ impl<R, T: Iterator<Item = Tok>> Parser<'_, R, T> {
     }
 }
 
-impl<'a, T: Iterator<Item = Tok>, R: ParserRule> Iterator for Parser<'a, R, T> {
-    type Item = Result<R::Parsed<'a>>;
+impl<'env, T: Iterator<Item = Tok>, R: ParserRule> Iterator for Parser<'env, R, T> {
+    type Item = Result<R::Parsed<'env>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // check if we are at EOF since the previous iteration
@@ -778,17 +782,17 @@ impl<'a, T: Iterator<Item = Tok>, R: ParserRule> Iterator for Parser<'a, R, T> {
 }
 
 pub trait ParserRule: Sized {
-    type Parsed<'a>;
+    type Parsed<'env>;
 
-    fn rule<'a, T>(parser: &mut Parser<'a, Self, T>) -> Result<Self::Parsed<'a>>
+    fn rule<'env, T>(parser: &mut Parser<'env, Self, T>) -> Result<Self::Parsed<'env>>
     where
         T: Iterator<Item = Tok>;
 }
 
 impl ParserRule for ExpressionRule {
-    type Parsed<'a> = ExprNode<'a>;
+    type Parsed<'env> = ExprNode<'env>;
 
-    fn rule<'a, T>(parser: &mut Parser<'a, Self, T>) -> Result<Self::Parsed<'a>>
+    fn rule<'env, T>(parser: &mut Parser<'env, Self, T>) -> Result<Self::Parsed<'env>>
     where
         T: Iterator<Item = Tok>,
     {
@@ -797,9 +801,9 @@ impl ParserRule for ExpressionRule {
 }
 
 impl ParserRule for StatementRule {
-    type Parsed<'a> = StmtNode<'a>;
+    type Parsed<'env> = StmtNode<'env>;
 
-    fn rule<'a, T>(parser: &mut Parser<'a, Self, T>) -> Result<Self::Parsed<'a>>
+    fn rule<'env, T>(parser: &mut Parser<'env, Self, T>) -> Result<Self::Parsed<'env>>
     where
         T: Iterator<Item = Tok>,
     {
@@ -929,7 +933,7 @@ mod tests {
 
     use pretty_assertions::assert_eq;
 
-    fn parse<'a, T: ParserRule>(source: &'a str, arena: &'a Bump) -> Vec<T::Parsed<'a>> {
+    fn parse<'env, T: ParserRule>(source: &'env str, arena: &'env Bump) -> Vec<T::Parsed<'env>> {
         let source = Source::new(source);
         let tokens = source.scan_all().unwrap();
 

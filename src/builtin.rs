@@ -15,7 +15,7 @@ impl Builtins {
         }
     }
 
-    pub fn to_value<'a>(self) -> Value<'a> {
+    pub fn to_value<'env>(self) -> Value<'env> {
         match self {
             Self::Clock => Clock.to_value(),
         }
@@ -25,17 +25,17 @@ impl Builtins {
 #[derive(Copy, Clone)]
 pub struct Clock;
 
-impl<'a> Callable<'a> for Clock {
+impl<'env> Callable<'env> for Clock {
     fn arity(&self) -> usize {
         0
     }
 
     fn call(
         &self,
-        _ctx: &mut InterpreterContext<'a, '_>,
-        _args: &[Value<'a>],
+        _ctx: &mut InterpreterContext<'env, '_>,
+        _args: &[Value<'env>],
         _span: Span,
-    ) -> Result<Value<'a>> {
+    ) -> Result<Value<'env>> {
         Ok(SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0.0, |d| d.as_secs_f64())

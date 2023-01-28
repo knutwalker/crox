@@ -6,16 +6,16 @@ use crate::{
 use std::{cmp::Ordering, fmt, ops::Deref, rc::Rc};
 
 #[derive(Clone, Debug, Default)]
-pub enum Value<'a> {
+pub enum Value<'env> {
     #[default]
     Nil,
     Bool(bool),
     Number(f64),
-    Str(&'a str),
-    Fn(&'a Function<'a>),
-    Instance(&'a Instance<'a>),
-    Class(&'a Class<'a>),
-    Callable(Rc<dyn Callable<'a>>),
+    Str(&'env str),
+    Fn(&'env Function<'env>),
+    Instance(&'env Instance<'env>),
+    Class(&'env Class<'env>),
+    Callable(Rc<dyn Callable<'env>>),
 }
 
 impl<'env> Value<'env> {
@@ -179,22 +179,22 @@ impl<'env> Value<'env> {
     }
 }
 
-pub type Valued<'a> = Node<Value<'a>>;
+pub type Valued<'env> = Node<Value<'env>>;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Ast<'a> {
-    values: Vec<Valued<'a>>,
+pub struct Ast<'env> {
+    values: Vec<Valued<'env>>,
     pub timings: Timings,
 }
 
-impl<'a> Ast<'a> {
-    pub fn new(values: Vec<Valued<'a>>, timings: Timings) -> Self {
+impl<'env> Ast<'env> {
+    pub fn new(values: Vec<Valued<'env>>, timings: Timings) -> Self {
         Self { values, timings }
     }
 }
 
-impl<'a> Deref for Ast<'a> {
-    type Target = [Valued<'a>];
+impl<'env> Deref for Ast<'env> {
+    type Target = [Valued<'env>];
 
     fn deref(&self) -> &Self::Target {
         &self.values
@@ -243,14 +243,14 @@ impl PartialOrd for Value<'_> {
     }
 }
 
-impl<'a> From<Literal<'a>> for Value<'a> {
-    fn from(literal: Literal<'a>) -> Self {
+impl<'env> From<Literal<'env>> for Value<'env> {
+    fn from(literal: Literal<'env>) -> Self {
         Value::from(&literal)
     }
 }
 
-impl<'a> From<&Literal<'a>> for Value<'a> {
-    fn from(literal: &Literal<'a>) -> Self {
+impl<'env> From<&Literal<'env>> for Value<'env> {
+    fn from(literal: &Literal<'env>) -> Self {
         match literal {
             Literal::Nil => Value::Nil,
             Literal::True => Value::Bool(true),
@@ -273,20 +273,20 @@ impl From<bool> for Value<'_> {
     }
 }
 
-impl<'a> From<&'a str> for Value<'a> {
-    fn from(s: &'a str) -> Self {
+impl<'env> From<&'env str> for Value<'env> {
+    fn from(s: &'env str) -> Self {
         Self::Str(s)
     }
 }
 
-impl<'a> From<&'a Function<'a>> for Value<'a> {
-    fn from(value: &'a Function<'a>) -> Self {
+impl<'env> From<&'env Function<'env>> for Value<'env> {
+    fn from(value: &'env Function<'env>) -> Self {
         Self::Fn(value)
     }
 }
 
-impl<'a> From<&'a Class<'a>> for Value<'a> {
-    fn from(value: &'a Class<'a>) -> Self {
+impl<'env> From<&'env Class<'env>> for Value<'env> {
+    fn from(value: &'env Class<'env>) -> Self {
         Self::Class(value)
     }
 }

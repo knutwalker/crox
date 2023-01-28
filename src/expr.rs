@@ -1,59 +1,59 @@
 use crate::{Bump, Ident, Node, Scoped, StmtNode};
 use std::fmt::{Debug, Display};
 
-pub type ExprNode<'a> = Node<Expr<'a>>;
-pub type BoxedExpr<'a> = Node<&'a Expr<'a>>;
+pub type ExprNode<'env> = Node<Expr<'env>>;
+pub type BoxedExpr<'env> = Node<&'env Expr<'env>>;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Expr<'a> {
-    Literal(Literal<'a>),
-    Var(Var<'a>),
-    Fun(FunctionDef<'a>),
+pub enum Expr<'env> {
+    Literal(Literal<'env>),
+    Var(Var<'env>),
+    Fun(FunctionDef<'env>),
     Assignment {
-        name: &'a str,
-        scope: &'a Scoped,
-        value: BoxedExpr<'a>,
+        name: &'env str,
+        scope: &'env Scoped,
+        value: BoxedExpr<'env>,
     },
     Unary {
         op: UnaryOp,
-        expr: BoxedExpr<'a>,
+        expr: BoxedExpr<'env>,
     },
     Logical {
-        lhs: BoxedExpr<'a>,
+        lhs: BoxedExpr<'env>,
         op: LogicalOp,
-        rhs: BoxedExpr<'a>,
+        rhs: BoxedExpr<'env>,
     },
     Binary {
-        lhs: BoxedExpr<'a>,
+        lhs: BoxedExpr<'env>,
         op: BinaryOp,
-        rhs: BoxedExpr<'a>,
+        rhs: BoxedExpr<'env>,
     },
     Call {
-        callee: BoxedExpr<'a>,
-        arguments: &'a [ExprNode<'a>],
+        callee: BoxedExpr<'env>,
+        arguments: &'env [ExprNode<'env>],
     },
     Get {
-        object: BoxedExpr<'a>,
-        name: Ident<'a>,
+        object: BoxedExpr<'env>,
+        name: Ident<'env>,
     },
     Set {
-        object: BoxedExpr<'a>,
-        name: Ident<'a>,
-        value: BoxedExpr<'a>,
+        object: BoxedExpr<'env>,
+        name: Ident<'env>,
+        value: BoxedExpr<'env>,
     },
     Super {
-        method: Ident<'a>,
-        scope: &'a Scoped,
+        method: Ident<'env>,
+        scope: &'env Scoped,
     },
     This {
-        scope: &'a Scoped,
+        scope: &'env Scoped,
     },
     Group {
-        expr: BoxedExpr<'a>,
+        expr: BoxedExpr<'env>,
     },
 }
 
-impl<'a> Expr<'a> {
+impl<'env> Expr<'env> {
     pub fn nil() -> Self {
         Self::Literal(Literal::Nil)
     }
@@ -70,19 +70,19 @@ impl<'a> Expr<'a> {
         Self::Literal(Literal::Number(num))
     }
 
-    pub fn string(s: &'a str) -> Self {
+    pub fn string(s: &'env str) -> Self {
         Self::Literal(Literal::String(s))
     }
 
-    pub fn var(name: &'a str, arena: &'a Bump) -> Self {
+    pub fn var(name: &'env str, arena: &'env Bump) -> Self {
         Self::Var(Var::new(name, arena))
     }
 
-    pub fn fun(fun: FunctionDef<'a>) -> Self {
+    pub fn fun(fun: FunctionDef<'env>) -> Self {
         Self::Fun(fun)
     }
 
-    pub fn assign(name: &'a str, value: BoxedExpr<'a>, arena: &'a Bump) -> Self {
+    pub fn assign(name: &'env str, value: BoxedExpr<'env>, arena: &'env Bump) -> Self {
         Self::Assignment {
             name,
             scope: arena.alloc(Scoped::new()),
@@ -90,25 +90,25 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn neg(expr: BoxedExpr<'a>) -> Self {
+    pub fn neg(expr: BoxedExpr<'env>) -> Self {
         Self::Unary {
             op: UnaryOp::Neg,
             expr,
         }
     }
 
-    pub fn not(expr: BoxedExpr<'a>) -> Self {
+    pub fn not(expr: BoxedExpr<'env>) -> Self {
         Self::Unary {
             op: UnaryOp::Not,
             expr,
         }
     }
 
-    pub fn unary(op: UnaryOp, expr: BoxedExpr<'a>) -> Self {
+    pub fn unary(op: UnaryOp, expr: BoxedExpr<'env>) -> Self {
         Self::Unary { op, expr }
     }
 
-    pub fn and(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
+    pub fn and(lhs: BoxedExpr<'env>, rhs: BoxedExpr<'env>) -> Self {
         Self::Logical {
             lhs,
             op: LogicalOp::And,
@@ -116,7 +116,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn or(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
+    pub fn or(lhs: BoxedExpr<'env>, rhs: BoxedExpr<'env>) -> Self {
         Self::Logical {
             lhs,
             op: LogicalOp::Or,
@@ -124,11 +124,11 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn logical(lhs: BoxedExpr<'a>, op: LogicalOp, rhs: BoxedExpr<'a>) -> Self {
+    pub fn logical(lhs: BoxedExpr<'env>, op: LogicalOp, rhs: BoxedExpr<'env>) -> Self {
         Self::Logical { lhs, op, rhs }
     }
 
-    pub fn add(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
+    pub fn add(lhs: BoxedExpr<'env>, rhs: BoxedExpr<'env>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::Add,
@@ -136,7 +136,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn sub(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
+    pub fn sub(lhs: BoxedExpr<'env>, rhs: BoxedExpr<'env>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::Sub,
@@ -144,7 +144,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn mul(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
+    pub fn mul(lhs: BoxedExpr<'env>, rhs: BoxedExpr<'env>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::Mul,
@@ -152,7 +152,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn div(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
+    pub fn div(lhs: BoxedExpr<'env>, rhs: BoxedExpr<'env>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::Div,
@@ -160,7 +160,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn equals(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
+    pub fn equals(lhs: BoxedExpr<'env>, rhs: BoxedExpr<'env>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::Equals,
@@ -168,7 +168,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn not_equals(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
+    pub fn not_equals(lhs: BoxedExpr<'env>, rhs: BoxedExpr<'env>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::NotEquals,
@@ -176,7 +176,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn less_than(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
+    pub fn less_than(lhs: BoxedExpr<'env>, rhs: BoxedExpr<'env>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::LessThan,
@@ -184,7 +184,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn less_than_or_equal(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
+    pub fn less_than_or_equal(lhs: BoxedExpr<'env>, rhs: BoxedExpr<'env>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::LessThanOrEqual,
@@ -192,7 +192,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn greater_than(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
+    pub fn greater_than(lhs: BoxedExpr<'env>, rhs: BoxedExpr<'env>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::GreaterThan,
@@ -200,7 +200,7 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn greater_than_or_equal(lhs: BoxedExpr<'a>, rhs: BoxedExpr<'a>) -> Self {
+    pub fn greater_than_or_equal(lhs: BoxedExpr<'env>, rhs: BoxedExpr<'env>) -> Self {
         Self::Binary {
             lhs,
             op: BinaryOp::GreaterThanOrEqual,
@@ -208,19 +208,19 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn binary(lhs: BoxedExpr<'a>, op: BinaryOp, rhs: BoxedExpr<'a>) -> Self {
+    pub fn binary(lhs: BoxedExpr<'env>, op: BinaryOp, rhs: BoxedExpr<'env>) -> Self {
         Self::Binary { lhs, op, rhs }
     }
 
-    pub fn call(callee: BoxedExpr<'a>, arguments: &'a [ExprNode<'a>]) -> Self {
+    pub fn call(callee: BoxedExpr<'env>, arguments: &'env [ExprNode<'env>]) -> Self {
         Self::Call { callee, arguments }
     }
 
-    pub fn get(object: BoxedExpr<'a>, name: Ident<'a>) -> Self {
+    pub fn get(object: BoxedExpr<'env>, name: Ident<'env>) -> Self {
         Self::Get { object, name }
     }
 
-    pub fn set(object: BoxedExpr<'a>, name: Ident<'a>, value: BoxedExpr<'a>) -> Self {
+    pub fn set(object: BoxedExpr<'env>, name: Ident<'env>, value: BoxedExpr<'env>) -> Self {
         Self::Set {
             object,
             name,
@@ -228,41 +228,41 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn super_(method: Ident<'a>, arena: &'a Bump) -> Self {
+    pub fn super_(method: Ident<'env>, arena: &'env Bump) -> Self {
         Self::Super {
             method,
             scope: arena.alloc(Scoped::new()),
         }
     }
 
-    pub fn this(arena: &'a Bump) -> Self {
+    pub fn this(arena: &'env Bump) -> Self {
         Self::This {
             scope: arena.alloc(Scoped::new()),
         }
     }
 
-    pub fn group(expr: BoxedExpr<'a>) -> Self {
+    pub fn group(expr: BoxedExpr<'env>) -> Self {
         Self::Group { expr }
     }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Literal<'a> {
+pub enum Literal<'env> {
     Nil,
     True,
     False,
     Number(f64),
-    String(&'a str),
+    String(&'env str),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct Var<'a> {
-    pub name: &'a str,
-    pub scope: &'a Scoped,
+pub struct Var<'env> {
+    pub name: &'env str,
+    pub scope: &'env Scoped,
 }
 
-impl<'a> Var<'a> {
-    pub fn new(name: &'a str, arena: &'a Bump) -> Self {
+impl<'env> Var<'env> {
+    pub fn new(name: &'env str, arena: &'env Bump) -> Self {
         Self {
             name,
             scope: arena.alloc(Scoped::new()),
@@ -271,13 +271,13 @@ impl<'a> Var<'a> {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct FunctionDef<'a> {
-    pub params: &'a [Ident<'a>],
-    pub body: &'a [StmtNode<'a>],
+pub struct FunctionDef<'env> {
+    pub params: &'env [Ident<'env>],
+    pub body: &'env [StmtNode<'env>],
 }
 
-impl<'a> FunctionDef<'a> {
-    pub fn new(params: &'a [Ident<'a>], body: &'a [StmtNode<'a>]) -> Self {
+impl<'env> FunctionDef<'env> {
+    pub fn new(params: &'env [Ident<'env>], body: &'env [StmtNode<'env>]) -> Self {
         Self { params, body }
     }
 }

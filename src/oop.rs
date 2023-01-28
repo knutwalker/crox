@@ -8,17 +8,17 @@ use crate::{
 };
 
 #[derive(Copy, Clone)]
-pub struct Class<'a> {
-    pub name: &'a str,
-    superclass: Option<Node<&'a Class<'a>>>,
-    members: Members<'a, &'a Function<'a>>,
+pub struct Class<'env> {
+    pub name: &'env str,
+    superclass: Option<Node<&'env Class<'env>>>,
+    members: Members<'env, &'env Function<'env>>,
 }
 
-impl<'a> Class<'a> {
+impl<'env> Class<'env> {
     pub fn new(
-        name: &'a str,
-        superclass: Option<Node<&'a Class<'a>>>,
-        members: Members<'a, &'a Function<'a>>,
+        name: &'env str,
+        superclass: Option<Node<&'env Class<'env>>>,
+        members: Members<'env, &'env Function<'env>>,
     ) -> Self {
         Self {
             name,
@@ -28,17 +28,18 @@ impl<'a> Class<'a> {
     }
 }
 
-impl<'a> Callable<'a> for Class<'a> {
+impl<'env> Callable<'env> for Class<'env> {
     fn arity(&self) -> usize {
         self.method_lookup("init").map_or(0, Callable::arity)
     }
 
+    // TODO: replace with call on Value
     fn call(
         &self,
-        ctx: &mut InterpreterContext<'a, '_>,
-        args: &[Value<'a>],
+        ctx: &mut InterpreterContext<'env, '_>,
+        args: &[Value<'env>],
         span: Span,
-    ) -> Result<Value<'a>> {
+    ) -> Result<Value<'env>> {
         let instance = Instance::new(*self);
         let instance = ctx.alloc(instance);
         if let Some(initializer) = self.method_lookup("init") {
@@ -48,27 +49,27 @@ impl<'a> Callable<'a> for Class<'a> {
     }
 }
 
-pub struct Instance<'a> {
-    // TODO: replace with &'a Class<'a>
-    class: Class<'a>,
-    fields: RefCell<HashMap<&'a str, Value<'a>>>,
+pub struct Instance<'env> {
+    // TODO: replace with &'env Class<'env>
+    class: Class<'env>,
+    fields: RefCell<HashMap<&'env str, Value<'env>>>,
 }
 
-impl<'a> Instance<'a> {
-    pub fn new(class: Class<'a>) -> Self {
+impl<'env> Instance<'env> {
+    pub fn new(class: Class<'env>) -> Self {
         Self {
             class,
             fields: RefCell::new(HashMap::new()),
         }
     }
 
-    pub fn name(&self) -> &'a str {
+    pub fn name(&self) -> &'env str {
         self.class.name
     }
 }
 
-impl<'a> Class<'a> {
-    pub fn lookup(&self, name: &'a str) -> Lookup<'_, 'a> {
+impl<'env> Class<'env> {
+    pub fn lookup(&self, name: &'env str) -> Lookup<'_, 'env> {
         if let Some(&property) = self.members.properties().find(|p| p.name == name) {
             return Lookup::Property(property);
         }
@@ -95,7 +96,7 @@ impl<'a> Class<'a> {
         Lookup::Undefined
     }
 
-    fn method_lookup(&self, name: &'a str) -> Option<&'a Function<'a>> {
+    fn method_lookup(&self, name: &'env str) -> Option<&'env Function<'env>> {
         let method = self.members.methods().find(|m| m.name == name);
         if let Some(&method) = method {
             return Some(method);
@@ -106,7 +107,7 @@ impl<'a> Class<'a> {
             .and_then(|sc| sc.item.method_lookup(name))
     }
 
-    pub fn class_method_lookup(&self, name: &'a str) -> Option<&'a Function<'a>> {
+    pub fn class_method_lookup(&self, name: &'env str) -> Option<&'env Function<'env>> {
         let method = self.members.class_methods().find(|m| m.name == name);
         if let Some(&method) = method {
             return Some(method);
@@ -118,8 +119,8 @@ impl<'a> Class<'a> {
     }
 }
 
-impl<'a> Instance<'a> {
-    pub fn lookup(&self, name: &'a str) -> Lookup<'_, 'a> {
+impl<'env> Instance<'env> {
+    pub fn lookup(&self, name: &'env str) -> Lookup<'_, 'env> {
         let field = self.fields.borrow();
         let field = Ref::filter_map(field, |f| f.get(name));
         if let Ok(field) = field {
@@ -129,7 +130,7 @@ impl<'a> Instance<'a> {
         self.class.lookup(name)
     }
 
-    pub fn insert(&self, name: &'a str, value: Value<'a>) {
+    pub fn insert(&self, name: &'env str, value: Value<'env>) {
         self.fields.borrow_mut().insert(name, value);
     }
 }
@@ -192,13 +193,13 @@ impl<'a, 'env> Lookup<'a, 'env> {
     }
 }
 
-impl<'a> std::fmt::Debug for Class<'a> {
+impl<'env> std::fmt::Debug for Class<'env> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<class {}>", self.name)
     }
 }
 
-impl<'a> std::fmt::Debug for Instance<'a> {
+impl<'env> std::fmt::Debug for Instance<'env> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<{} instance>", self.name())
     }

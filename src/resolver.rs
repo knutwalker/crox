@@ -5,14 +5,14 @@ use crate::{
 use std::marker::PhantomData;
 
 #[derive(Debug)]
-pub struct Resolver<'a> {
-    ctx: ResolveContext<'a>,
+pub struct Resolver<'env> {
+    ctx: ResolveContext<'env>,
 }
 
-pub type ResolveContext<'a> = Context<'a, Current, ()>;
+pub type ResolveContext<'env> = Context<'env, Current, ()>;
 
-impl<'a> Resolver<'a> {
-    pub fn new(arena: &'a Bump) -> Self {
+impl<'env> Resolver<'env> {
+    pub fn new(arena: &'env Bump) -> Self {
         Self {
             ctx: ResolveContext::new(Environment::empty(), arena, Current::default()),
         }
@@ -53,14 +53,17 @@ enum ClassKind {
     Subclass,
 }
 
-impl<'a> Resolver<'a> {
-    pub fn resolve_stmts_in_scope(ctx: &mut ResolveContext<'a>, stmts: &[StmtNode<'a>]) -> Result {
+impl<'env> Resolver<'env> {
+    pub fn resolve_stmts_in_scope(
+        ctx: &mut ResolveContext<'env>,
+        stmts: &[StmtNode<'env>],
+    ) -> Result {
         stmts
             .iter()
             .try_for_each(|stmt| Self::resolve_stmt(ctx, &stmt.item, stmt.span))
     }
 
-    pub fn resolve_stmt(ctx: &mut ResolveContext<'a>, stmt: &Stmt<'a>, span: Span) -> Result {
+    pub fn resolve_stmt(ctx: &mut ResolveContext<'env>, stmt: &Stmt<'env>, span: Span) -> Result {
         match stmt {
             Stmt::Expression { expr } => {
                 Self::resolve_expr(ctx, expr.item, expr.span)?;
@@ -134,7 +137,7 @@ impl<'a> Resolver<'a> {
         Ok(())
     }
 
-    pub fn resolve_expr(ctx: &mut ResolveContext<'a>, expr: &Expr<'a>, span: Span) -> Result {
+    pub fn resolve_expr(ctx: &mut ResolveContext<'env>, expr: &Expr<'env>, span: Span) -> Result {
         match expr {
             Expr::Literal(_) => {}
             Expr::Var(Var { name, scope }) => Self::resolve_local(ctx, name, scope),
@@ -197,15 +200,15 @@ impl<'a> Resolver<'a> {
         Ok(())
     }
 
-    fn resolve_local(ctx: &mut ResolveContext<'a>, name: &'a str, scope: &Scoped) {
+    fn resolve_local(ctx: &mut ResolveContext<'env>, name: &'env str, scope: &Scoped) {
         if let Ok(resolved) = ctx.env.scope_of(name) {
             scope.resolve(resolved);
         }
     }
 
     fn resolve_function(
-        ctx: &mut ResolveContext<'a>,
-        func: &FunctionDef<'a>,
+        ctx: &mut ResolveContext<'env>,
+        func: &FunctionDef<'env>,
         scope_type: ScopeKind,
     ) -> Result {
         ctx.run_with_new_scope(|ctx| {
@@ -222,7 +225,7 @@ impl<'a> Resolver<'a> {
         })
     }
 
-    fn resolve_class(ctx: &mut ResolveContext<'a>, class: &ClassDecl<'a>) -> Result {
+    fn resolve_class(ctx: &mut ResolveContext<'env>, class: &ClassDecl<'env>) -> Result {
         ctx.run_with_new_scope(|ctx| -> Result {
             for method in class.members().class_methods() {
                 Self::resolve_function(ctx, &method.item.fun, ScopeKind::ClassMethod)?;
@@ -246,25 +249,25 @@ impl<'a> Resolver<'a> {
     }
 }
 
-impl<'a> Resolver<'a> {
-    pub fn resolve_own_stmt(&mut self, stmt: &StmtNode<'a>) -> Result {
+impl<'env> Resolver<'env> {
+    pub fn resolve_own_stmt(&mut self, stmt: &StmtNode<'env>) -> Result {
         Self::resolve_stmt(&mut self.ctx, &stmt.item, stmt.span)
     }
 
-    pub fn resolve_own_expr(&mut self, expr: &ExprNode<'a>) -> Result {
+    pub fn resolve_own_expr(&mut self, expr: &ExprNode<'env>) -> Result {
         Self::resolve_expr(&mut self.ctx, &expr.item, expr.span)
     }
 }
 
 #[derive(Debug)]
-pub struct StreamResolver<'a, R, I> {
-    resolver: Resolver<'a>,
+pub struct StreamResolver<'env, R, I> {
+    resolver: Resolver<'env>,
     input: I,
     _rule: PhantomData<R>,
 }
 
-impl<'a, R, I> StreamResolver<'a, R, I> {
-    pub fn new(tokens: I, arena: &'a Bump) -> Self {
+impl<'env, R, I> StreamResolver<'env, R, I> {
+    pub fn new(tokens: I, arena: &'env Bump) -> Self {
         Self {
             resolver: Resolver::new(arena),
             input: tokens,
@@ -273,30 +276,30 @@ impl<'a, R, I> StreamResolver<'a, R, I> {
     }
 }
 
-pub fn stmt_resolver<'a, I>(
+pub fn stmt_resolver<'env, I>(
     tokens: I,
-    arena: &'a Bump,
-) -> impl Iterator<Item = Result<StmtNode<'a>>>
+    arena: &'env Bump,
+) -> impl Iterator<Item = Result<StmtNode<'env>>>
 where
-    I: IntoIterator<Item = StmtNode<'a>>,
+    I: IntoIterator<Item = StmtNode<'env>>,
 {
     StreamResolver::<StatementRule, _>::new(tokens.into_iter(), arena)
 }
 
-pub fn expr_resolver<'a, I>(
+pub fn expr_resolver<'env, I>(
     tokens: I,
-    arena: &'a Bump,
-) -> impl Iterator<Item = Result<ExprNode<'a>>>
+    arena: &'env Bump,
+) -> impl Iterator<Item = Result<ExprNode<'env>>>
 where
-    I: IntoIterator<Item = ExprNode<'a>>,
+    I: IntoIterator<Item = ExprNode<'env>>,
 {
     StreamResolver::<ExpressionRule, _>::new(tokens.into_iter(), arena)
 }
 
-impl<'a, R, I> Iterator for StreamResolver<'a, R, I>
+impl<'env, R, I> Iterator for StreamResolver<'env, R, I>
 where
     R: ResolverRule,
-    I: Iterator<Item = R::Input<'a>>,
+    I: Iterator<Item = R::Input<'env>>,
 {
     type Item = Result<I::Item>;
 
@@ -308,23 +311,23 @@ where
 }
 
 pub trait ResolverRule: Sized {
-    type Input<'a>;
+    type Input<'env>;
 
-    fn resolve<'a>(interpreter: &mut Resolver<'a>, input: &Self::Input<'a>) -> Result;
+    fn resolve<'env>(interpreter: &mut Resolver<'env>, input: &Self::Input<'env>) -> Result;
 }
 
 impl ResolverRule for ExpressionRule {
-    type Input<'a> = ExprNode<'a>;
+    type Input<'env> = ExprNode<'env>;
 
-    fn resolve<'a>(interpreter: &mut Resolver<'a>, input: &Self::Input<'a>) -> Result {
+    fn resolve<'env>(interpreter: &mut Resolver<'env>, input: &Self::Input<'env>) -> Result {
         interpreter.resolve_own_expr(input)
     }
 }
 
 impl ResolverRule for StatementRule {
-    type Input<'a> = StmtNode<'a>;
+    type Input<'env> = StmtNode<'env>;
 
-    fn resolve<'a>(interpreter: &mut Resolver<'a>, input: &Self::Input<'a>) -> Result {
+    fn resolve<'env>(interpreter: &mut Resolver<'env>, input: &Self::Input<'env>) -> Result {
         interpreter.resolve_own_stmt(input)
     }
 }

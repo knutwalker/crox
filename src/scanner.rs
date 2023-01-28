@@ -3,21 +3,21 @@ use crate::Range;
 use super::{CroxError, CroxErrorKind, CroxErrors, Result, Token, TokenType};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Source<'a> {
-    pub source: &'a str,
+pub struct Source<'env> {
+    pub source: &'env str,
 }
 
-impl<'a> Source<'a> {
-    pub fn new(source: &'a str) -> Self {
+impl<'env> Source<'env> {
+    pub fn new(source: &'env str) -> Self {
         Self { source }
     }
 
-    pub fn slice(&self, range: impl Into<Range>) -> &'a str {
+    pub fn slice(&self, range: impl Into<Range>) -> &'env str {
         &self.source[range.into()]
     }
 }
 
-impl<'a> Source<'a> {
+impl<'env> Source<'env> {
     pub fn scan_all(self) -> Result<Vec<Token>, CroxErrors> {
         let source = self.source;
         let mut oks = Vec::new();
@@ -36,9 +36,9 @@ impl<'a> Source<'a> {
     }
 }
 
-impl<'a> IntoIterator for Source<'a> {
+impl<'env> IntoIterator for Source<'env> {
     type Item = Result<Token>;
-    type IntoIter = Scanner<'a>;
+    type IntoIter = Scanner<'env>;
 
     fn into_iter(self) -> Self::IntoIter {
         Scanner::from(self)
@@ -46,13 +46,13 @@ impl<'a> IntoIterator for Source<'a> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Scanner<'a> {
-    input: &'a str,
-    source: Source<'a>,
+pub struct Scanner<'env> {
+    input: &'env str,
+    source: Source<'env>,
 }
 
-impl<'a> From<Source<'a>> for Scanner<'a> {
-    fn from(source: Source<'a>) -> Self {
+impl<'env> From<Source<'env>> for Scanner<'env> {
+    fn from(source: Source<'env>) -> Self {
         Self {
             source,
             input: source
@@ -62,7 +62,7 @@ impl<'a> From<Source<'a>> for Scanner<'a> {
     }
 }
 
-impl<'a> Iterator for Scanner<'a> {
+impl<'env> Iterator for Scanner<'env> {
     type Item = Result<Token>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -75,7 +75,7 @@ impl<'a> Iterator for Scanner<'a> {
     }
 }
 
-impl<'a> Scanner<'a> {
+impl<'env> Scanner<'env> {
     fn is_at_end(&self) -> bool {
         self.input.is_empty()
     }
@@ -211,14 +211,14 @@ impl<'a> Scanner<'a> {
         Some(self.token(typ, identifier))
     }
 
-    fn next_lexeme(&self) -> (&'a str, &'a str) {
+    fn next_lexeme(&self) -> (&'env str, &'env str) {
         let idx = (1..=self.input.len())
             .find(|&i| self.input.is_char_boundary(i))
             .unwrap();
         self.input.split_at(idx)
     }
 
-    fn next_lexeme_2(&self) -> (&'a str, &'a str) {
+    fn next_lexeme_2(&self) -> (&'env str, &'env str) {
         let idx = (1..=self.input.len())
             .filter(|&i| self.input.is_char_boundary(i))
             .take(2)
@@ -227,34 +227,34 @@ impl<'a> Scanner<'a> {
         self.input.split_at(idx)
     }
 
-    fn advance(&mut self, to: &'a str) {
+    fn advance(&mut self, to: &'env str) {
         self.input = to.trim_start_matches(|c: char| c.is_ascii_whitespace());
     }
 
-    fn token(&self, typ: TokenType, lexeme: &'a str) -> Token {
+    fn token(&self, typ: TokenType, lexeme: &'env str) -> Token {
         token(typ, lexeme, self.source.source)
     }
 
-    fn error(&mut self, lexeme: &'a str, rest: &'a str, kind: CroxErrorKind) -> CroxError {
+    fn error(&mut self, lexeme: &'env str, rest: &'env str, kind: CroxErrorKind) -> CroxError {
         self.advance(rest);
         error(lexeme, self.source.source, kind)
     }
 }
 
-fn token<'a>(typ: TokenType, token: &'a str, source: &'a str) -> Token {
+fn token<'env>(typ: TokenType, token: &'env str, source: &'env str) -> Token {
     let offset = offset_from(token, source);
     let len = token.len();
     Token::new(typ, offset, len)
 }
 
-fn error<'a>(input: &'a str, source: &'a str, kind: CroxErrorKind) -> CroxError {
+fn error<'env>(input: &'env str, source: &'env str, kind: CroxErrorKind) -> CroxError {
     let offset = offset_from(input, source);
     let len = input.len().min(1);
     let span = offset..(offset + len);
     CroxError::new(kind, span)
 }
 
-fn offset_from<'a>(input: &'a str, source: &'a str) -> usize {
+fn offset_from<'env>(input: &'env str, source: &'env str) -> usize {
     (input.as_ptr() as usize).saturating_sub(source.as_ptr() as usize)
 }
 

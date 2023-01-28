@@ -5,32 +5,32 @@ use crate::{
 };
 use std::marker::PhantomData;
 
-pub struct Interpreter<'a, 'o> {
-    context: InterpreterContext<'a, 'o>,
+pub struct Interpreter<'env, 'out> {
+    context: InterpreterContext<'env, 'out>,
 }
 
-impl<'a, 'o> Interpreter<'a, 'o> {
-    fn new(context: InterpreterContext<'a, 'o>) -> Self {
+impl<'env, 'out> Interpreter<'env, 'out> {
+    fn new(context: InterpreterContext<'env, 'out>) -> Self {
         Self { context }
     }
 }
 
-impl<'a, 'o> Interpreter<'a, 'o> {
+impl<'env, 'out> Interpreter<'env, 'out> {
     pub fn eval_stmts_in_scope(
-        ctx: &mut InterpreterContext<'a, 'o>,
-        stmts: &[StmtNode<'a>],
-    ) -> Result<'a, ()> {
-        stmts.iter().try_for_each(|stmt| -> Result<'a, ()> {
+        ctx: &mut InterpreterContext<'env, 'out>,
+        stmts: &[StmtNode<'env>],
+    ) -> Result<'env, ()> {
+        stmts.iter().try_for_each(|stmt| -> Result<'env, ()> {
             Self::eval_stmt(ctx, &stmt.item, stmt.span)?;
             Ok(())
         })
     }
 
     pub fn eval_stmt(
-        ctx: &mut InterpreterContext<'a, 'o>,
-        stmt: &Stmt<'a>,
+        ctx: &mut InterpreterContext<'env, 'out>,
+        stmt: &Stmt<'env>,
         span: Span,
-    ) -> Result<'a, Valued<'a>> {
+    ) -> Result<'env, Valued<'env>> {
         match &stmt {
             Stmt::Expression { expr } => {
                 let _ = Self::eval_expr(ctx, expr.item, expr.span)?;
@@ -122,10 +122,10 @@ impl<'a, 'o> Interpreter<'a, 'o> {
     }
 
     pub fn eval_expr(
-        ctx: &mut InterpreterContext<'a, 'o>,
-        expr: &Expr<'a>,
+        ctx: &mut InterpreterContext<'env, 'out>,
+        expr: &Expr<'env>,
         span: Span,
-    ) -> crate::Result<Valued<'a>> {
+    ) -> crate::Result<Valued<'env>> {
         let value = match expr {
             Expr::Literal(literal) => Value::from(literal),
             Expr::Var(Var { name, scope }) => ctx
@@ -221,11 +221,11 @@ impl<'a, 'o> Interpreter<'a, 'o> {
     }
 
     fn class_new(
-        ctx: &mut InterpreterContext<'a, 'o>,
-        name: &'a str,
-        class: &ClassDecl<'a>,
-        superclass: Option<Node<&'a Class<'a>>>,
-    ) -> Value<'a> {
+        ctx: &mut InterpreterContext<'env, 'out>,
+        name: &'env str,
+        class: &ClassDecl<'env>,
+        superclass: Option<Node<&'env Class<'env>>>,
+    ) -> Value<'env> {
         let class_members = class.members().map(ctx.arena, |m| {
             let name = m.item.name.item;
             let fun = m.item.fun;
@@ -239,11 +239,11 @@ impl<'a, 'o> Interpreter<'a, 'o> {
     }
 
     fn eval_super(
-        ctx: &mut InterpreterContext<'a, 'o>,
+        ctx: &mut InterpreterContext<'env, 'out>,
         scope: &Scoped,
         span: Span,
-        method: &Ident<'a>,
-    ) -> crate::Result<Node<Value<'a>>> {
+        method: &Ident<'env>,
+    ) -> crate::Result<Node<Value<'env>>> {
         let superclass = ctx
             .env
             .get("super", scope.get())
@@ -289,48 +289,48 @@ impl<'a, 'o> Interpreter<'a, 'o> {
     }
 }
 
-impl<'a, 'e> Interpreter<'a, 'e> {
-    pub fn eval_own_stmts_in_scope(&mut self, stmts: &[StmtNode<'a>]) -> Result<'a, ()> {
+impl<'env, 'out> Interpreter<'env, 'out> {
+    pub fn eval_own_stmts_in_scope(&mut self, stmts: &[StmtNode<'env>]) -> Result<'env, ()> {
         Self::eval_stmts_in_scope(&mut self.context, stmts)
     }
 
-    pub fn eval_own_stmt(&mut self, stmt: &Stmt<'a>, span: Span) -> Result<'a, Valued<'a>> {
+    pub fn eval_own_stmt(&mut self, stmt: &Stmt<'env>, span: Span) -> Result<'env, Valued<'env>> {
         Self::eval_stmt(&mut self.context, stmt, span)
     }
 
-    pub fn eval_own_expr(&mut self, expr: &ExprNode<'a>) -> crate::Result<Valued<'a>> {
+    pub fn eval_own_expr(&mut self, expr: &ExprNode<'env>) -> crate::Result<Valued<'env>> {
         Self::eval_expr(&mut self.context, &expr.item, expr.span)
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum InterpreterError<'a> {
-    Return(Value<'a>),
+pub enum InterpreterError<'env> {
+    Return(Value<'env>),
     Err(CroxError),
 }
 
-impl<'a> From<CroxError> for InterpreterError<'a> {
+impl<'env> From<CroxError> for InterpreterError<'env> {
     fn from(e: CroxError) -> Self {
         Self::Err(e)
     }
 }
 
-impl<'a> From<Value<'a>> for InterpreterError<'a> {
-    fn from(e: Value<'a>) -> Self {
+impl<'env> From<Value<'env>> for InterpreterError<'env> {
+    fn from(e: Value<'env>) -> Self {
         Self::Return(e)
     }
 }
 
-pub type Result<'a, T, E = InterpreterError<'a>> = std::result::Result<T, E>;
+pub type Result<'env, T, E = InterpreterError<'env>> = std::result::Result<T, E>;
 
-pub struct StreamInterpreter<'a, 'e, R, I> {
-    interpreter: Interpreter<'a, 'e>,
+pub struct StreamInterpreter<'env, 'out, R, I> {
+    interpreter: Interpreter<'env, 'out>,
     input: I,
     _rule: PhantomData<R>,
 }
 
-impl<'a, 'o, R, I> StreamInterpreter<'a, 'o, R, I> {
-    pub fn new(context: InterpreterContext<'a, 'o>, tokens: I) -> Self {
+impl<'env, 'out, R, I> StreamInterpreter<'env, 'out, R, I> {
+    pub fn new(context: InterpreterContext<'env, 'out>, tokens: I) -> Self {
         Self {
             interpreter: Interpreter::new(context),
             input: tokens,
@@ -339,32 +339,32 @@ impl<'a, 'o, R, I> StreamInterpreter<'a, 'o, R, I> {
     }
 }
 
-pub fn stmt_interpreter<'a: 'o, 'o, I>(
-    context: InterpreterContext<'a, 'o>,
+pub fn stmt_interpreter<'env: 'out, 'out, I>(
+    context: InterpreterContext<'env, 'out>,
     tokens: I,
-) -> impl Iterator<Item = crate::Result<Valued<'a>>> + 'o
+) -> impl Iterator<Item = crate::Result<Valued<'env>>> + 'out
 where
-    I: IntoIterator<Item = StmtNode<'a>> + 'o,
+    I: IntoIterator<Item = StmtNode<'env>> + 'out,
 {
     StreamInterpreter::<StatementRule, _>::new(context, tokens.into_iter())
 }
 
-pub fn expr_interpreter<'a: 'o, 'o, I>(
-    context: InterpreterContext<'a, 'o>,
+pub fn expr_interpreter<'env: 'out, 'out, I>(
+    context: InterpreterContext<'env, 'out>,
     tokens: I,
-) -> impl Iterator<Item = crate::Result<Valued<'a>>> + 'o
+) -> impl Iterator<Item = crate::Result<Valued<'env>>> + 'out
 where
-    I: IntoIterator<Item = ExprNode<'a>> + 'o,
+    I: IntoIterator<Item = ExprNode<'env>> + 'out,
 {
     StreamInterpreter::<ExpressionRule, _>::new(context, tokens.into_iter())
 }
 
-impl<'a, 'e, R, I> Iterator for StreamInterpreter<'a, 'e, R, I>
+impl<'env, 'out, R, I> Iterator for StreamInterpreter<'env, 'out, R, I>
 where
     R: InterpreterRule,
-    I: Iterator<Item = R::Input<'a>>,
+    I: Iterator<Item = R::Input<'env>>,
 {
-    type Item = crate::Result<R::Interpreted<'a>>;
+    type Item = crate::Result<R::Interpreted<'env>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let input = self.input.next()?;
@@ -373,35 +373,35 @@ where
 }
 
 pub trait InterpreterRule: Sized {
-    type Input<'a>;
-    type Interpreted<'a>;
+    type Input<'env>;
+    type Interpreted<'env>;
 
-    fn interpret<'a, 'e>(
-        interpreter: &mut Interpreter<'a, 'e>,
-        input: Self::Input<'a>,
-    ) -> crate::Result<Self::Interpreted<'a>>;
+    fn interpret<'env, 'out>(
+        interpreter: &mut Interpreter<'env, 'out>,
+        input: Self::Input<'env>,
+    ) -> crate::Result<Self::Interpreted<'env>>;
 }
 
 impl InterpreterRule for ExpressionRule {
-    type Input<'a> = ExprNode<'a>;
-    type Interpreted<'a> = Valued<'a>;
+    type Input<'env> = ExprNode<'env>;
+    type Interpreted<'env> = Valued<'env>;
 
-    fn interpret<'a, 'e>(
-        interpreter: &mut Interpreter<'a, 'e>,
-        input: Self::Input<'a>,
-    ) -> crate::Result<Self::Interpreted<'a>> {
+    fn interpret<'env, 'out>(
+        interpreter: &mut Interpreter<'env, 'out>,
+        input: Self::Input<'env>,
+    ) -> crate::Result<Self::Interpreted<'env>> {
         interpreter.eval_own_expr(&input)
     }
 }
 
 impl InterpreterRule for StatementRule {
-    type Input<'a> = StmtNode<'a>;
-    type Interpreted<'a> = Valued<'a>;
+    type Input<'env> = StmtNode<'env>;
+    type Interpreted<'env> = Valued<'env>;
 
-    fn interpret<'a, 'e>(
-        interpreter: &mut Interpreter<'a, 'e>,
-        input: Self::Input<'a>,
-    ) -> crate::Result<Self::Interpreted<'a>> {
+    fn interpret<'env, 'out>(
+        interpreter: &mut Interpreter<'env, 'out>,
+        input: Self::Input<'env>,
+    ) -> crate::Result<Self::Interpreted<'env>> {
         match interpreter.eval_own_stmt(&input.item, input.span) {
             Ok(value) => Ok(value),
             Err(InterpreterError::Return(value)) => Ok(value.at(input.span)),

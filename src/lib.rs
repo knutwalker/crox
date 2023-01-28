@@ -66,20 +66,20 @@ use crate::{
     value::Ast,
 };
 
-pub fn run<'a>(
+pub fn run<'env>(
     mut out: impl Write,
-    arena: &'a Bump,
-    content: &'a str,
-) -> Result<Ast<'a>, CroxErrors> {
+    arena: &'env Bump,
+    content: &'env str,
+) -> Result<Ast<'env>, CroxErrors> {
     let env = Environment::default();
     let ctx = InterpreterContext::new(env, arena, &mut out);
     run_with_env(ctx, content)
 }
 
-pub fn run_with_env<'a: 'o, 'o>(
-    ctx: InterpreterContext<'a, 'o>,
-    content: &'a str,
-) -> Result<Ast<'a>, CroxErrors> {
+pub fn run_with_env<'env: 'out, 'out>(
+    ctx: InterpreterContext<'env, 'out>,
+    content: &'env str,
+) -> Result<Ast<'env>, CroxErrors> {
     let mut timings = TimingsBuilder::new();
     let source = scan(content);
     let tokens = timings.lex(|| source.collect_all(content))?;
@@ -90,10 +90,10 @@ pub fn run_with_env<'a: 'o, 'o>(
     Ok(Ast::new(values, timings.build()))
 }
 
-pub fn eval_with_env<'a: 'o, 'o>(
-    ctx: InterpreterContext<'a, 'o>,
-    content: &'a str,
-) -> Result<Ast<'a>, CroxErrors> {
+pub fn eval_with_env<'env: 'out, 'out>(
+    ctx: InterpreterContext<'env, 'out>,
+    content: &'env str,
+) -> Result<Ast<'env>, CroxErrors> {
     let mut timings = TimingsBuilder::new();
     let source = scan(content);
     let tokens = timings.lex(|| source.collect_all(content))?;
@@ -104,7 +104,10 @@ pub fn eval_with_env<'a: 'o, 'o>(
     Ok(Ast::new(values, timings.build()))
 }
 
-pub fn parse<'a>(content: &'a str, arena: &'a Bump) -> Result<Vec<StmtNode<'a>>, CroxErrors> {
+pub fn parse<'env>(
+    content: &'env str,
+    arena: &'env Bump,
+) -> Result<Vec<StmtNode<'env>>, CroxErrors> {
     let source = scan(content);
     let tokens = source.collect_all(content)?;
     let statements = stmt_parser(source, tokens, arena).collect_all(content)?;
@@ -116,13 +119,13 @@ pub fn scan(content: &str) -> Source<'_> {
     scanner::Source::new(content)
 }
 
-pub fn run_as_script<'a>(
+pub fn run_as_script<'env>(
     fancy: bool,
     out: impl Write,
     err: impl Write,
-    arena: &'a Bump,
-    content: &'a str,
-) -> Result<Ast<'a>, i32> {
+    arena: &'env Bump,
+    content: &'env str,
+) -> Result<Ast<'env>, i32> {
     run(out, arena, content).map_err(move |e| {
         let scope = e.scope();
         report_error(fancy, err, e);
