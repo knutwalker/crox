@@ -30,12 +30,12 @@ impl<'env> Class<'env> {
     }
 
     pub fn call(
-        &self,
+        &'env self,
         ctx: &mut InterpreterContext<'env, '_>,
         args: &[Value<'env>],
         span: Span,
     ) -> Result<Value<'env>> {
-        let instance = Instance::new(*self);
+        let instance = Instance::new(self);
         let instance = ctx.alloc(instance);
         if let Some(initializer) = self.method_lookup("init") {
             initializer.bind(instance).call(ctx, args, span)?;
@@ -45,13 +45,12 @@ impl<'env> Class<'env> {
 }
 
 pub struct Instance<'env> {
-    // TODO: replace with &'env Class<'env>
-    class: Class<'env>,
+    class: &'env Class<'env>,
     fields: RefCell<HashMap<&'env str, Value<'env>>>,
 }
 
 impl<'env> Instance<'env> {
-    pub fn new(class: Class<'env>) -> Self {
+    pub fn new(class: &'env Class<'env>) -> Self {
         Self {
             class,
             fields: RefCell::new(HashMap::new()),
@@ -64,7 +63,7 @@ impl<'env> Instance<'env> {
 }
 
 impl<'env> Class<'env> {
-    pub fn lookup(&self, name: &'env str) -> Lookup<'_, 'env> {
+    pub fn lookup(&'env self, name: &'env str) -> Lookup<'env> {
         if let Some(&property) = self.members.properties().find(|p| p.name == name) {
             return Lookup::Property(property);
         }
@@ -115,7 +114,7 @@ impl<'env> Class<'env> {
 }
 
 impl<'env> Instance<'env> {
-    pub fn lookup(&self, name: &'env str) -> Lookup<'_, 'env> {
+    pub fn lookup(&'env self, name: &'env str) -> Lookup<'env> {
         let field = self.fields.borrow();
         let field = Ref::filter_map(field, |f| f.get(name));
         if let Ok(field) = field {
@@ -131,16 +130,16 @@ impl<'env> Instance<'env> {
 }
 
 #[derive(Debug)]
-pub enum Lookup<'a, 'env> {
-    Field(Ref<'a, Value<'env>>),
+pub enum Lookup<'env> {
+    Field(Ref<'env, Value<'env>>),
     Property(&'env Function<'env>),
     Method(&'env Function<'env>),
     ClassMethod,
     Undefined,
 }
 
-impl<'a, 'env> Lookup<'a, 'env> {
-    pub fn into_method(self, method: &str, span: Span) -> Result<&'a Function<'env>> {
+impl<'env> Lookup<'env> {
+    pub fn into_method(self, method: &str, span: Span) -> Result<&'env Function<'env>> {
         match self {
             Lookup::Method(method) => Ok(method),
             Lookup::Field(_) | Lookup::Property(_) => Err(CroxErrorKind::MemberIsNotAMethod {
