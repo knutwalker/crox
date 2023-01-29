@@ -3,10 +3,18 @@
 The crustacean's lox -- Following the book "Crafting interpreters" in Rust.
 
 
+To see a list of available things to do:
+
+```
+just
+```
+
+
 ### Benchmarks
 
-To run scanner benchmarks:
+To run parser benchmarks:
 
 ```
-cargo +nightly bench -- scanner::benches
+just bench-parser
 ```
+
