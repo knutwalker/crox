@@ -33,8 +33,6 @@ impl<'env> Callable<'env> {
     }
 }
 
-impl<'env> Callable<'env> {}
-
 #[derive(Clone)]
 pub struct Function<'env> {
     pub name: &'env str,

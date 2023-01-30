@@ -4,14 +4,15 @@
 #![allow(
     clippy::doc_markdown,
     clippy::enum_glob_use,
-    clippy::let_underscore_drop,
+    clippy::manual_let_else,
     clippy::match_same_arms,
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
     clippy::module_name_repetitions,
     clippy::must_use_candidate,
     clippy::return_self_not_must_use,
-    clippy::single_match_else
+    clippy::single_match_else,
+    let_underscore_drop
 )]
 
 mod builtin;

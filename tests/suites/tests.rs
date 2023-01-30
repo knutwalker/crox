@@ -75,7 +75,7 @@ impl Test {
             result.failed += 1;
             eprintln!("\nFAIL: {}", test.path().display());
             for failure in failures {
-                eprintln!("     {}", failure);
+                eprintln!("     {failure}");
             }
         }
 
@@ -272,8 +272,7 @@ impl Test {
                     if e.error != actual {
                         let cmp = pretty_assertions::StrComparison::new(&e.error, actual);
                         failures.push(format!(
-                            "Different error on line {}: (expected, actual): {}",
-                            line_no, cmp
+                            "Different error on line {line_no}: (expected, actual): {cmp}"
                         ));
                     }
 

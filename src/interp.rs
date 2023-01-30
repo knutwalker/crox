@@ -381,8 +381,8 @@ pub trait InterpreterRule: Sized {
     type Input<'env>;
     type Interpreted<'env>;
 
-    fn interpret<'env, 'out>(
-        interpreter: &mut Interpreter<'env, 'out>,
+    fn interpret<'env>(
+        interpreter: &mut Interpreter<'env, '_>,
         input: Self::Input<'env>,
     ) -> crate::Result<Self::Interpreted<'env>>;
 }
@@ -391,8 +391,8 @@ impl InterpreterRule for ExpressionRule {
     type Input<'env> = ExprNode<'env>;
     type Interpreted<'env> = Valued<'env>;
 
-    fn interpret<'env, 'out>(
-        interpreter: &mut Interpreter<'env, 'out>,
+    fn interpret<'env>(
+        interpreter: &mut Interpreter<'env, '_>,
         input: Self::Input<'env>,
     ) -> crate::Result<Self::Interpreted<'env>> {
         interpreter.eval_own_expr(&input)
@@ -403,8 +403,8 @@ impl InterpreterRule for StatementRule {
     type Input<'env> = StmtNode<'env>;
     type Interpreted<'env> = Valued<'env>;
 
-    fn interpret<'env, 'out>(
-        interpreter: &mut Interpreter<'env, 'out>,
+    fn interpret<'env>(
+        interpreter: &mut Interpreter<'env, '_>,
         input: Self::Input<'env>,
     ) -> crate::Result<Self::Interpreted<'env>> {
         match interpreter.eval_own_stmt(&input.item, input.span) {
