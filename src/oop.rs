@@ -1,9 +1,8 @@
-use std::{
-    cell::{Ref, RefCell},
-    collections::HashMap,
-};
+use std::cell::{Ref, RefCell};
 
 use crate::{CroxErrorKind, Function, InterpreterContext, Members, Node, Result, Span, Value};
+
+use ahash::{HashMap, HashMapExt};
 
 #[derive(Copy, Clone)]
 pub struct Class<'env> {
