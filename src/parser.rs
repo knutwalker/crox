@@ -729,7 +729,7 @@ impl<'env, R, T: Iterator<Item = Tok>> Parser<'env, R, T> {
             start
         };
 
-        let mut args = Args::<_, K>::new();
+        let mut args = ArgsFor::<K>::create();
 
         // not peek! because we don't want to consume the token
         match self.tokens.peek() {
@@ -876,33 +876,47 @@ impl std::fmt::Display for ExpectedFn {
     }
 }
 
-struct Args<T, K: IntoTooMany> {
-    items: Result<Vec<Node<T>>>,
-    limit: usize,
+#[derive(Copy, Clone, Debug)]
+struct ArgsFor<K> {
     _kind: PhantomData<K>,
 }
 
-impl<T, K: IntoTooMany> Args<T, K> {
+impl<K> ArgsFor<K> {
+    fn create<T>() -> Args<T, K, 255> {
+        Args::new()
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Args<T, K, const LIMIT: usize> {
+    items: Result<Vec<Node<T>>>,
+    _kind: PhantomData<K>,
+}
+
+impl<T, K> Args<T, K, 255> {
     fn new() -> Self {
         Self {
             items: Ok(Vec::new()),
-            limit: 255,
             _kind: PhantomData,
         }
     }
+}
 
+impl<T, K, const LIMIT: usize> Args<T, K, LIMIT> {
+    fn finish(self) -> Result<Vec<Node<T>>> {
+        self.items
+    }
+}
+
+impl<T, K: IntoTooMany, const LIMIT: usize> Args<T, K, LIMIT> {
     fn push(&mut self, item: Node<T>) {
         if let Ok(items) = self.items.as_mut() {
-            if items.len() >= self.limit {
+            if items.len() >= LIMIT {
                 self.items = Err(CroxErrorKind::TooMany(K::into()).at(item.span));
             } else {
                 items.push(item);
             }
         }
-    }
-
-    fn finish(self) -> Result<Vec<Node<T>>> {
-        self.items
     }
 }
 
