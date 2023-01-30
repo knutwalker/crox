@@ -18,6 +18,12 @@ run file:
 runr file:
     cargo run --release -- {{file}}
 
+# Compile and lint checking
+check:
+    cargo check
+    cargo clippy
+
+# Run all tests
 test:
     cargo test
 
@@ -59,3 +65,7 @@ flame-parser:
 flame bench:
     cargo flamegraph --bench crox --root -- --bench 'Benches/{{ if path_exists(bench) == "true" { file_stem(bench) } else { bench } }}' --profile-time 5
 
+# aliases
+alias c := check
+alias b := bench
+alias t := test
