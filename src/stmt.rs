@@ -1,4 +1,4 @@
-use crate::{BoxedExpr, Bump, FunctionDef, Ident, Node, Var};
+use crate::{BoxedExpr, Bump, Function, FunctionDef, Ident, Node, Var};
 use std::fmt::Debug;
 
 pub type StmtNode<'env> = Node<Stmt<'env>>;
@@ -113,7 +113,7 @@ impl<'env> ClassDecl<'env> {
         superclass: Option<Node<Var<'env>>>,
         members: &'env mut [Node<FunctionDecl<'env>>],
     ) -> Self {
-        let members = Members::new(members, |m| m.item.kind);
+        let members = Members::new(members);
         Self {
             name,
             superclass,
@@ -150,15 +150,15 @@ pub struct Members<'env, T> {
     class_methods: usize,
 }
 
-impl<'env, T> Members<'env, T> {
-    pub fn new(members: &'env mut [T], to_kind: impl Fn(&T) -> FunctionKind) -> Self {
-        members.sort_by_key(|m| to_kind(m));
+impl<'env, T: MemberConstructor<'env>> Members<'env, T> {
+    pub fn new(members: &'env mut [T]) -> Self {
+        members.sort_by_key(|m| (m.kind(), m.name()));
 
         let (methods, class_methods) =
             members
                 .iter()
                 .fold((0, 0), |(methods, class_methods), member| {
-                    match to_kind(member) {
+                    match member.kind() {
                         FunctionKind::Method => (methods + 1, class_methods + 1),
                         FunctionKind::ClassMethod => (methods, class_methods + 1),
                         FunctionKind::Property => (methods, class_methods),
@@ -171,6 +171,23 @@ impl<'env, T> Members<'env, T> {
             methods,
             class_methods,
         }
+    }
+}
+
+impl<'env, T: MemberItem<'env>> Members<'env, T> {
+    pub fn method(&self, name: &str) -> Option<&T> {
+        let methods = &self.members[..self.methods];
+        Self::find_by_name(methods, name)
+    }
+
+    pub fn class_method(&self, name: &str) -> Option<&T> {
+        let methods = &self.members[self.methods..self.class_methods];
+        Self::find_by_name(methods, name)
+    }
+
+    pub fn property(&self, name: &str) -> Option<&T> {
+        let methods = &self.members[self.class_methods..];
+        Self::find_by_name(methods, name)
     }
 
     pub fn methods(&self) -> impl Iterator<Item = &T> {
@@ -185,6 +202,12 @@ impl<'env, T> Members<'env, T> {
         self.members[self.class_methods..].iter()
     }
 
+    fn find_by_name<'this>(methods: &'this [T], name: &str) -> Option<&'this T> {
+        methods.iter().find(|m| m.name() == name)
+    }
+}
+
+impl<'env, T> Members<'env, T> {
     pub fn map<U>(&self, arena: &'env Bump, map: impl FnMut(&T) -> U) -> Members<'env, U> {
         let members = self.members.iter().map(map);
         let members = arena.alloc_slice_fill_iter(members);
@@ -194,5 +217,31 @@ impl<'env, T> Members<'env, T> {
             methods: self.methods,
             class_methods: self.class_methods,
         }
+    }
+}
+
+pub trait MemberItem<'env> {
+    fn name(&self) -> &'env str;
+}
+
+pub trait MemberConstructor<'env>: MemberItem<'env> {
+    fn kind(&self) -> FunctionKind;
+}
+
+impl<'env> MemberItem<'env> for Node<FunctionDecl<'env>> {
+    fn name(&self) -> &'env str {
+        self.item.name.item
+    }
+}
+
+impl<'env> MemberConstructor<'env> for Node<FunctionDecl<'env>> {
+    fn kind(&self) -> FunctionKind {
+        self.item.kind
+    }
+}
+
+impl<'env> MemberItem<'env> for &'env Function<'env> {
+    fn name(&self) -> &'env str {
+        self.name
     }
 }

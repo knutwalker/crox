@@ -64,11 +64,11 @@ impl<'env> Instance<'env> {
 
 impl<'env> Class<'env> {
     pub fn lookup(&'env self, name: &'env str) -> Lookup<'env> {
-        if let Some(&property) = self.members.properties().find(|p| p.name == name) {
+        if let Some(&property) = self.members.property(name) {
             return Lookup::Property(property);
         }
 
-        let method = self.members.methods().find(|m| m.name == name);
+        let method = self.members.method(name);
         if let Some(&method) = method {
             return Lookup::Method(method);
         }
@@ -83,7 +83,7 @@ impl<'env> Class<'env> {
             }
         }
 
-        if self.members.class_methods().any(|cm| cm.name == name) {
+        if self.members.class_method(name).is_some() {
             return Lookup::ClassMethod;
         }
 
@@ -91,7 +91,7 @@ impl<'env> Class<'env> {
     }
 
     fn method_lookup(&self, name: &'env str) -> Option<&'env Function<'env>> {
-        let method = self.members.methods().find(|m| m.name == name);
+        let method = self.members.method(name);
         if let Some(&method) = method {
             return Some(method);
         }
@@ -102,7 +102,7 @@ impl<'env> Class<'env> {
     }
 
     pub fn class_method_lookup(&self, name: &'env str) -> Option<&'env Function<'env>> {
-        let method = self.members.class_methods().find(|m| m.name == name);
+        let method = self.members.class_method(name);
         if let Some(&method) = method {
             return Some(method);
         }
