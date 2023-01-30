@@ -9,7 +9,7 @@ rust-version = "1.67"
 [dependencies]
 bumpalo = "3.12.0"
 chrono = "0.4.23"
-clap = { version = "4.1.1", default_features = false, features = ["std", "help"] }
+clap = { version = "4.1.4", default_features = false, features = ["std", "help"] }
 crossterm = "0.24"  # keep version in sync with reedline
 directories = "4.0.1"
 miette = { version = "5.5.0", features = ["fancy"] }
