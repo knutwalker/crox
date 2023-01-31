@@ -1,7 +1,7 @@
 use crate::{
     BinaryOp, Class, ClassDecl, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule, Function,
-    Ident, InterpreterContext, LogicalOp, Node, Scoped, Span, Spannable, StatementRule, Stmt,
-    StmtNode, Type, TypeSet, UnaryOp, Value, Valued, Var,
+    Ident, InterpreterContext, LogicalOp, Node, Scoped, Slotted, Span, Spannable, StatementRule,
+    Stmt, StmtNode, Type, TypeSet, UnaryOp, Value, Valued, Var,
 };
 use std::marker::PhantomData;
 
@@ -198,9 +198,9 @@ impl<'env, 'out> Interpreter<'env, 'out> {
 
                 callee.call(ctx, &arguments, span)?
             }
-            Expr::Get { object, name } => {
+            Expr::Get { object, name, slot } => {
                 let object = Self::eval_expr(ctx, object.item, object.span)?;
-                object.item.get(ctx, name, span)?
+                object.item.get(ctx, name, slot, span)?
             }
             Expr::Set {
                 object,
@@ -216,8 +216,12 @@ impl<'env, 'out> Interpreter<'env, 'out> {
                 .env
                 .get("this", scope.get())
                 .map_err(|e| CroxErrorKind::from(e).at(span))?,
-            Expr::Super { method, scope } => {
-                return Self::eval_super(ctx, scope, span, method);
+            Expr::Super {
+                method,
+                scope,
+                slot,
+            } => {
+                return Self::eval_super(ctx, scope, span, method, slot);
             }
             Expr::Group { expr } => Self::eval_expr(ctx, expr.item, expr.span)?.item,
         };
@@ -238,7 +242,7 @@ impl<'env, 'out> Interpreter<'env, 'out> {
             ctx.alloc(method)
         });
 
-        let class = Class::new(name, superclass, class_members);
+        let class = Class::new(name, superclass, class_members, ctx.arena);
         let class = ctx.alloc(class);
         Value::from(class)
     }
@@ -248,6 +252,7 @@ impl<'env, 'out> Interpreter<'env, 'out> {
         scope: &Scoped,
         span: Span,
         method: &Ident<'env>,
+        slot: &'env Slotted,
     ) -> crate::Result<Node<Value<'env>>> {
         let superclass = ctx
             .env
@@ -263,7 +268,7 @@ impl<'env, 'out> Interpreter<'env, 'out> {
         let method = match &superclass {
             Value::Class(superclass) => {
                 let method_fn = superclass
-                    .lookup(method.item)
+                    .lookup(method.item, slot)
                     .into_method(method.item, method.span)?;
                 method_fn.at(method.span)
             }

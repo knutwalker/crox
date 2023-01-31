@@ -1,6 +1,9 @@
 use std::cell::{Ref, RefCell};
 
-use crate::{CroxErrorKind, Function, InterpreterContext, Members, Node, Result, Span, Value};
+use crate::{
+    Bump, CroxErrorKind, Function, InterpreterContext, Members, Node, Result, Slot, Slotted, Span,
+    Value,
+};
 
 use ahash::{HashMap, HashMapExt};
 
@@ -9,6 +12,7 @@ pub struct Class<'env> {
     pub name: &'env str,
     superclass: Option<Node<&'env Class<'env>>>,
     members: Members<'env, &'env Function<'env>>,
+    init_slot: &'env Slotted,
 }
 
 impl<'env> Class<'env> {
@@ -16,16 +20,19 @@ impl<'env> Class<'env> {
         name: &'env str,
         superclass: Option<Node<&'env Class<'env>>>,
         members: Members<'env, &'env Function<'env>>,
+        arena: &'env Bump,
     ) -> Self {
         Self {
             name,
             superclass,
             members,
+            init_slot: arena.alloc(Slotted::new()),
         }
     }
 
     pub fn arity(&self) -> usize {
-        self.method_lookup("init").map_or(0, Function::arity)
+        self.method_lookup("init", self.init_slot)
+            .map_or(0, Function::arity)
     }
 
     pub fn call(
@@ -36,7 +43,7 @@ impl<'env> Class<'env> {
     ) -> Result<Value<'env>> {
         let instance = Instance::new(self);
         let instance = ctx.alloc(instance);
-        if let Some(initializer) = self.method_lookup("init") {
+        if let Some(initializer) = self.method_lookup("init", self.init_slot) {
             initializer.bind(instance).call(ctx, args, span)?;
         }
         Ok(Value::Instance(instance))
@@ -62,65 +69,111 @@ impl<'env> Instance<'env> {
 }
 
 impl<'env> Class<'env> {
-    pub fn lookup(&'env self, name: &'env str) -> Lookup<'env> {
-        if let Some(&property) = self.members.property(name) {
-            return Lookup::Property(property);
-        }
-
-        let method = self.members.method(name);
-        if let Some(&method) = method {
-            return Lookup::Method(method);
-        }
-
-        if let Some(superclass) = self.superclass.as_ref() {
-            match superclass.item.lookup(name) {
-                res @ (Lookup::Field(_)
-                | Lookup::Property(_)
-                | Lookup::Method(_)
-                | Lookup::ClassMethod) => return res,
-                Lookup::Undefined => {}
+    pub fn lookup(&'env self, name: &'env str, slotted: &'env Slotted) -> Lookup<'env> {
+        match self.lookup_slot(name, slotted.get()) {
+            Ok(res) => res,
+            Err(Some((res, slot))) => {
+                slotted.set(slot);
+                res
             }
+            Err(None) => Lookup::Undefined,
         }
-
-        if self.members.class_method(name).is_some() {
-            return Lookup::ClassMethod;
-        }
-
-        Lookup::Undefined
     }
 
-    fn method_lookup(&self, name: &'env str) -> Option<&'env Function<'env>> {
-        let method = self.members.method(name);
-        if let Some(&method) = method {
-            return Some(method);
-        }
-
-        self.superclass
-            .as_ref()
-            .and_then(|sc| sc.item.method_lookup(name))
+    fn lookup_slot(
+        &'env self,
+        name: &'env str,
+        slot: Slot,
+    ) -> Result<Lookup<'env>, LookupSlow<'env>> {
+        Ok(match slot {
+            Slot::Unknown => return Err(self.lookup_slow(name)),
+            Slot::ClassMethod { .. } => Lookup::ClassMethod,
+            Slot::Method { slot, distance } => {
+                Lookup::Method(self.ancestor(distance).unwrap().members.get_slot(slot))
+            }
+            Slot::Property { slot, distance } => {
+                Lookup::Property(self.ancestor(distance).unwrap().members.get_slot(slot))
+            }
+        })
     }
 
-    pub fn class_method_lookup(&self, name: &'env str) -> Option<&'env Function<'env>> {
-        let method = self.members.class_method(name);
-        if let Some(&method) = method {
-            return Some(method);
-        }
+    fn lookup_slow(&'env self, name: &'env str) -> LookupSlow<'env> {
+        self.ancestors().enumerate().find_map(|(distance, this)| {
+            match this.members.slot_of(name, distance) {
+                Slot::Unknown => None,
+                s @ Slot::ClassMethod { .. } => Some((Lookup::ClassMethod, s)),
+                s @ Slot::Method { slot, distance: _ } => {
+                    Some((Lookup::Method(this.members.get_slot(slot)), s))
+                }
+                s @ Slot::Property { slot, distance: _ } => {
+                    Some((Lookup::Property(this.members.get_slot(slot)), s))
+                }
+            }
+        })
+    }
 
-        self.superclass
-            .as_ref()
-            .and_then(|sc| sc.item.class_method_lookup(name))
+    fn method_lookup(
+        &self,
+        name: &'env str,
+        slotted: &'env Slotted,
+    ) -> Option<&'env Function<'env>> {
+        match slotted.get() {
+            Slot::Unknown => self.ancestors().enumerate().find_map(|(distance, this)| {
+                match this.members.find_method(name, distance) {
+                    s @ Slot::Method { slot, distance: _ } => {
+                        slotted.set(s);
+                        Some(*this.members.get_slot(slot))
+                    }
+                    _ => None,
+                }
+            }),
+            Slot::Method { slot, distance } => {
+                Some(self.ancestor(distance).unwrap().members.get_slot(slot))
+            }
+            Slot::ClassMethod { .. } | Slot::Property { .. } => None,
+        }
+    }
+
+    pub fn class_method_lookup(
+        &self,
+        name: &'env str,
+        slotted: &'env Slotted,
+    ) -> Option<&'env Function<'env>> {
+        match slotted.get() {
+            Slot::Unknown => self.ancestors().enumerate().find_map(|(distance, this)| {
+                match this.members.find_class_method(name, distance) {
+                    s @ Slot::ClassMethod { slot, distance: _ } => {
+                        slotted.set(s);
+                        Some(*this.members.get_slot(slot))
+                    }
+                    _ => None,
+                }
+            }),
+            Slot::ClassMethod { slot, distance } => {
+                Some(self.ancestor(distance).unwrap().members.get_slot(slot))
+            }
+            Slot::Method { .. } | Slot::Property { .. } => None,
+        }
+    }
+
+    fn ancestors(&self) -> impl Iterator<Item = &Class<'env>> {
+        std::iter::successors(Some(self), |this| this.superclass.as_ref().map(|n| n.item))
+    }
+
+    fn ancestor(&self, distance: u16) -> Option<&Class<'env>> {
+        self.ancestors().nth(distance as usize)
     }
 }
 
 impl<'env> Instance<'env> {
-    pub fn lookup(&'env self, name: &'env str) -> Lookup<'env> {
+    pub fn lookup(&'env self, name: &'env str, slot: &'env Slotted) -> Lookup<'env> {
         let field = self.fields.borrow();
         let field = Ref::filter_map(field, |f| f.get(name));
         if let Ok(field) = field {
             return Lookup::Field(field);
         }
 
-        self.class.lookup(name)
+        self.class.lookup(name, slot)
     }
 
     pub fn insert(&self, name: &'env str, value: Value<'env>) {
@@ -197,3 +250,5 @@ impl<'env> std::fmt::Debug for Instance<'env> {
         write!(f, "<{} instance>", self.name())
     }
 }
+
+type LookupSlow<'env> = Option<(Lookup<'env>, Slot)>;

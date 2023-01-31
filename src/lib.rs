@@ -22,6 +22,7 @@ mod env;
 mod error;
 mod expr;
 mod interp;
+mod members;
 mod node;
 mod oop;
 mod parser;
@@ -47,11 +48,12 @@ pub use expr::{
     BinaryOp, BoxedExpr, Expr, ExprNode, FunctionDef, Literal, LogicalOp, UnaryOp, Var,
 };
 pub use interp::{Interpreter, InterpreterError};
+pub use members::{Members, Slot, Slotted};
 pub use node::{Ident, Node, Spannable};
 pub use oop::{Class, Instance};
 pub use rule::{ExpressionRule, StatementRule};
 pub use scanner::Source;
-pub use stmt::{ClassDecl, FunctionDecl, FunctionKind, Members, Stmt, StmtNode};
+pub use stmt::{ClassDecl, FunctionDecl, FunctionKind, Stmt, StmtNode};
 pub use timing::Timings;
 pub use token::{Range, Span, Token, TokenSet, TokenType};
 pub use typer::{Type, TypeSet};

@@ -163,7 +163,11 @@ impl<'env> Resolver<'env> {
                     .iter()
                     .try_for_each(|arg| Self::resolve_expr(ctx, &arg.item, arg.span))?;
             }
-            Expr::Get { object, name: _ } => {
+            Expr::Get {
+                object,
+                name: _,
+                slot: _,
+            } => {
                 Self::resolve_expr(ctx, object.item, object.span)?;
             }
             Expr::Set {
@@ -174,7 +178,11 @@ impl<'env> Resolver<'env> {
                 Self::resolve_expr(ctx, value.item, value.span)?;
                 Self::resolve_expr(ctx, object.item, object.span)?;
             }
-            Expr::Super { method: _, scope } => {
+            Expr::Super {
+                method: _,
+                scope,
+                slot: _,
+            } => {
                 match ctx.data.class {
                     ClassKind::Global => return Err(CroxErrorKind::SuperOutsideClass.at(span)),
                     ClassKind::Class => {

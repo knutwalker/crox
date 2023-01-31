@@ -1,6 +1,6 @@
 use crate::{
     Builtins, Bump, Callable, Class, CroxError, CroxErrorKind, Function, Instance,
-    InterpreterContext, Literal, Node, Range, Result, Span, Timings, Type, TypeSet,
+    InterpreterContext, Literal, Node, Range, Result, Slotted, Span, Timings, Type, TypeSet,
 };
 
 use std::{cmp::Ordering, fmt, ops::Deref};
@@ -23,14 +23,15 @@ impl<'env> Value<'env> {
         &self,
         ctx: &mut InterpreterContext<'env, '_>,
         name: &Node<&'env str>,
+        slot: &'env Slotted,
         caller: Span,
     ) -> Result<Value<'env>> {
         match self {
             Self::Instance(instance) => instance
-                .lookup(name.item)
+                .lookup(name.item, slot)
                 .into_value(ctx, instance, name, caller),
             Self::Class(class) => class
-                .class_method_lookup(name.item)
+                .class_method_lookup(name.item, slot)
                 .map(Self::Fn)
                 .ok_or_else(|| self.invalid_type(caller, Type::Instance)),
             _ => Err(self.invalid_type(caller, Type::Instance)),

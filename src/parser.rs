@@ -505,7 +505,11 @@ impl<'env, R, T: Iterator<Item = Tok>> Parser<'env, R, T> {
                     let value = value.alloc(self.arena);
                     Expr::assign(name, value, self.arena)
                 }
-                Expr::Get { object, name } => {
+                Expr::Get {
+                    object,
+                    name,
+                    slot: _,
+                } => {
                     let value = value.alloc(self.arena);
                     Expr::set(*object, *name, value)
                 }
@@ -617,7 +621,7 @@ impl<'env, R, T: Iterator<Item = Tok>> Parser<'env, R, T> {
                     let name = self.ident(span)?;
                     let inner = expr.alloc(self.arena);
                     let span = inner.span.union(name.span);
-                    expr = Expr::get(inner, name).at(span);
+                    expr = Expr::get(inner, name, self.arena).at(span);
                 },
             });
             if next.is_none() {

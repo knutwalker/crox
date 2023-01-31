@@ -1,4 +1,4 @@
-use crate::{Bump, Ident, Node, Scoped, StmtNode};
+use crate::{Bump, Ident, Node, Scoped, Slotted, StmtNode};
 use std::fmt::{Debug, Display};
 
 pub type ExprNode<'env> = Node<Expr<'env>>;
@@ -35,6 +35,7 @@ pub enum Expr<'env> {
     Get {
         object: BoxedExpr<'env>,
         name: Ident<'env>,
+        slot: &'env Slotted,
     },
     Set {
         object: BoxedExpr<'env>,
@@ -44,6 +45,7 @@ pub enum Expr<'env> {
     Super {
         method: Ident<'env>,
         scope: &'env Scoped,
+        slot: &'env Slotted,
     },
     This {
         scope: &'env Scoped,
@@ -216,8 +218,12 @@ impl<'env> Expr<'env> {
         Self::Call { callee, arguments }
     }
 
-    pub fn get(object: BoxedExpr<'env>, name: Ident<'env>) -> Self {
-        Self::Get { object, name }
+    pub fn get(object: BoxedExpr<'env>, name: Ident<'env>, arena: &'env Bump) -> Self {
+        Self::Get {
+            object,
+            name,
+            slot: arena.alloc(Slotted::default()),
+        }
     }
 
     pub fn set(object: BoxedExpr<'env>, name: Ident<'env>, value: BoxedExpr<'env>) -> Self {
@@ -232,6 +238,7 @@ impl<'env> Expr<'env> {
         Self::Super {
             method,
             scope: arena.alloc(Scoped::new()),
+            slot: arena.alloc(Slotted::default()),
         }
     }
 
