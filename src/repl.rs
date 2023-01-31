@@ -1,6 +1,5 @@
 pub use std::io::Result;
 use std::{
-    borrow::Cow,
     env,
     io::{self, ErrorKind},
     string::ToString,
@@ -9,21 +8,19 @@ use std::{
 use chrono::Utc;
 use clap::{Arg, ArgMatches, Command};
 use core::ops::{ControlFlow, Deref, DerefMut, Index};
-use crossterm::style::Color;
 use crox::{Bump, Config, CroxError, CroxErrorKind, TokenType};
 use directories::ProjectDirs;
 use reedline::{
-    default_emacs_keybindings, ColumnarMenu, DefaultHinter, EditCommand, Emacs, KeyCode,
-    KeyModifiers, PromptEditMode, PromptHistorySearch, PromptHistorySearchStatus, PromptViMode,
-    Reedline, ReedlineEvent, ReedlineMenu, SearchDirection, SearchQuery, Signal, Span,
-    SqliteBackedHistory, Suggestion, ValidationResult,
+    default_emacs_keybindings, ColumnarMenu, DefaultHinter, DefaultPrompt, DefaultPromptSegment,
+    EditCommand, Emacs, KeyCode, KeyModifiers, Reedline, ReedlineEvent, ReedlineMenu,
+    SearchDirection, SearchQuery, Signal, Span, SqliteBackedHistory, Suggestion, ValidationResult,
 };
 
 use crate::frontend::Frontend;
 
 pub struct Repl {
     line_editor: Changeable<Reedline>,
-    prompt: Prompt,
+    prompt: DefaultPrompt,
     validator_enabled: bool,
     clear_history_at_end: bool,
     command: Command,
@@ -107,9 +104,14 @@ impl Repl {
         let line_editor = line_editor(&command)?;
         let line_editor = Changeable::new(line_editor);
 
+        let prompt = DefaultPrompt {
+            left_prompt: DefaultPromptSegment::Empty,
+            right_prompt: DefaultPromptSegment::Empty,
+        };
+
         Ok(Self {
             line_editor,
-            prompt: Prompt,
+            prompt,
             validator_enabled: true,
             clear_history_at_end: false,
             config: SetConfig::default(),
@@ -877,53 +879,5 @@ impl<T> DerefMut for Changeable<T> {
             Self::Value(value) => value,
             Self::Placeholder => panic!("using value while it's being changed"),
         }
-    }
-}
-
-struct Prompt;
-
-impl reedline::Prompt for Prompt {
-    fn render_prompt_left(&self) -> Cow<'_, str> {
-        "".into()
-    }
-
-    fn render_prompt_right(&self) -> Cow<'_, str> {
-        "".into()
-    }
-
-    fn render_prompt_indicator(&self, prompt_mode: PromptEditMode) -> Cow<'_, str> {
-        match prompt_mode {
-            PromptEditMode::Vi(PromptViMode::Insert) => ": ".into(),
-            PromptEditMode::Custom(str) => format!("({str})").into(),
-            _ => "> ".into(),
-        }
-    }
-
-    fn render_prompt_multiline_indicator(&self) -> Cow<'_, str> {
-        "..".into()
-    }
-
-    fn render_prompt_history_search_indicator(
-        &self,
-        history_search: PromptHistorySearch,
-    ) -> Cow<'_, str> {
-        match history_search.status {
-            PromptHistorySearchStatus::Passing => "bck-i-search: ".into(),
-            PromptHistorySearchStatus::Failing => {
-                format!("failing bck-i-search: {}", history_search.term).into()
-            }
-        }
-    }
-
-    fn get_prompt_color(&self) -> Color {
-        Color::Reset
-    }
-
-    fn get_indicator_color(&self) -> Color {
-        Color::Reset
-    }
-
-    fn get_prompt_right_color(&self) -> Color {
-        Color::Reset
     }
 }
