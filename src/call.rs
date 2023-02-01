@@ -1,6 +1,6 @@
 use crate::{
-    Builtins, Class, CroxErrorKind, Environment, FunctionDef, Instance, Interpreter,
-    InterpreterContext, InterpreterError, Result, Scope, Span, Value,
+    Builtins, Class, CroxErrorKind, Environment, FunctionDef, Instance, InterpreterContext,
+    InterpreterError, Result, Scope, Span, Value,
 };
 
 #[derive(Copy, Clone, Debug)]
@@ -86,7 +86,7 @@ impl<'env> Function<'env> {
                 ctx.env.define(param.item, *arg);
             }
 
-            let res = Interpreter::eval_stmts_in_scope(ctx, self.fun.body);
+            let res = ctx.eval_stmts_in_scope(self.fun.body);
             let res = match res {
                 Ok(()) => Value::Nil,
                 Err(InterpreterError::Return(val)) => val,

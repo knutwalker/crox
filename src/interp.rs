@@ -1,39 +1,24 @@
 use crate::{
-    BinaryOp, Class, ClassDecl, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule, Function,
-    Ident, InterpreterContext, LogicalOp, Node, Scoped, Slotted, Span, Spannable, StatementRule,
-    Stmt, StmtNode, Type, TypeSet, UnaryOp, Value, Valued, Var,
+    BinaryOp, Class, ClassDecl, Context, CroxError, CroxErrorKind, Expr, ExprNode, ExpressionRule,
+    Function, Ident, LogicalOp, Node, Scoped, Slotted, Span, Spannable, StatementRule, Stmt,
+    StmtNode, Type, TypeSet, UnaryOp, Value, Valued, Var,
 };
-use std::marker::PhantomData;
+use std::{io::Write, marker::PhantomData};
 
-pub struct Interpreter<'env, 'out> {
-    context: InterpreterContext<'env, 'out>,
-}
+pub type InterpreterContext<'env, 'out> = Context<'env, &'out mut dyn Write>;
 
-impl<'env, 'out> Interpreter<'env, 'out> {
-    fn new(context: InterpreterContext<'env, 'out>) -> Self {
-        Self { context }
-    }
-}
-
-impl<'env, 'out> Interpreter<'env, 'out> {
-    pub fn eval_stmts_in_scope(
-        ctx: &mut InterpreterContext<'env, 'out>,
-        stmts: &[StmtNode<'env>],
-    ) -> Result<'env, ()> {
+impl<'env, 'out> InterpreterContext<'env, 'out> {
+    pub fn eval_stmts_in_scope(&mut self, stmts: &[StmtNode<'env>]) -> Result<'env, ()> {
         stmts.iter().try_for_each(|stmt| -> Result<'env, ()> {
-            Self::eval_stmt(ctx, &stmt.item, stmt.span)?;
+            self.eval_stmt(&stmt.item, stmt.span)?;
             Ok(())
         })
     }
 
-    pub fn eval_stmt(
-        ctx: &mut InterpreterContext<'env, 'out>,
-        stmt: &Stmt<'env>,
-        span: Span,
-    ) -> Result<'env, Valued<'env>> {
+    pub fn eval_stmt(&mut self, stmt: &Stmt<'env>, span: Span) -> Result<'env, Valued<'env>> {
         match &stmt {
             Stmt::Expression { expr } => {
-                let _ = Self::eval_expr(ctx, expr.item, expr.span)?;
+                let _ = self.eval_expr(expr.item, expr.span)?;
             }
             Stmt::Class(class) => {
                 let superclass = class
@@ -41,7 +26,7 @@ impl<'env, 'out> Interpreter<'env, 'out> {
                     .as_ref()
                     .map(|s| {
                         let superclass = s.map(Expr::Var);
-                        let superclass = Self::eval_expr(ctx, &superclass.item, superclass.span)?;
+                        let superclass = self.eval_expr(&superclass.item, superclass.span)?;
                         match superclass.item {
                             Value::Class(class) => Ok(class.at(superclass.span)),
                             _ => Err(CroxErrorKind::SuperClassIsNotAClass.at(s.span)),
@@ -50,50 +35,51 @@ impl<'env, 'out> Interpreter<'env, 'out> {
                     .transpose()?;
 
                 let name = class.name.item;
-                ctx.env.define(name, Value::Nil);
+                self.env.define(name, Value::Nil);
 
                 let class = if let Some(the_superclass) = superclass {
-                    ctx.run_with_new_scope(|ctx| {
+                    self.run_with_new_scope(|ctx| {
                         let the_superclass = the_superclass.item;
                         let the_superclass = Value::Class(the_superclass);
                         ctx.env.define("super", the_superclass);
 
-                        Self::class_new(ctx, name, class, superclass)
+                        ctx.class_new(name, class, superclass)
                     })
                 } else {
-                    Self::class_new(ctx, name, class, superclass)
+                    self.class_new(name, class, superclass)
                 };
-                ctx.env.define(name, class);
+                self.env.define(name, class);
             }
             Stmt::Function(func) => {
                 let name = func.name.item;
-                let func = Function::new(name, func.fun, ctx.env.clone());
-                let func = ctx.alloc(func);
+                let func = Function::new(name, func.fun, self.env.clone());
+                let func = self.alloc(func);
                 let func = Value::from(func);
-                ctx.env.define(name, func);
+                self.env.define(name, func);
             }
             Stmt::If {
                 condition,
                 then_,
                 else_,
             } => {
-                if Self::eval_expr(ctx, condition.item, condition.span)?
+                if self
+                    .eval_expr(condition.item, condition.span)?
                     .item
                     .as_bool()
                 {
-                    Self::eval_stmt(ctx, then_.item, then_.span)?;
+                    self.eval_stmt(then_.item, then_.span)?;
                 } else if let Some(else_) = else_ {
-                    Self::eval_stmt(ctx, else_.item, else_.span)?;
+                    self.eval_stmt(else_.item, else_.span)?;
                 }
             }
             Stmt::Print { expr } => {
-                let val = Self::eval_expr(ctx, expr.item, expr.span)?.item;
-                writeln!(ctx.data, "{val}").unwrap();
+                let val = self.eval_expr(expr.item, expr.span)?.item;
+                writeln!(self.data, "{val}").unwrap();
             }
             Stmt::Return { expr } => {
                 return Err(InterpreterError::Return(
                     expr.as_ref()
-                        .map(|e| Self::eval_expr(ctx, e.item, e.span))
+                        .map(|e| self.eval_expr(e.item, e.span))
                         .transpose()?
                         .map_or(Value::Nil, |v| v.item),
                 ))
@@ -101,69 +87,64 @@ impl<'env, 'out> Interpreter<'env, 'out> {
             Stmt::Var { name, initializer } => {
                 let value = initializer
                     .as_ref()
-                    .map(|e| Self::eval_expr(ctx, e.item, e.span))
+                    .map(|e| self.eval_expr(e.item, e.span))
                     .transpose()?
                     .map(|v| v.item);
-                ctx.env.define(name.item, value);
+                self.env.define(name.item, value);
             }
             Stmt::While { condition, body } => {
-                while Self::eval_expr(ctx, condition.item, condition.span)?
+                while self
+                    .eval_expr(condition.item, condition.span)?
                     .item
                     .as_bool()
                 {
-                    Self::eval_stmt(ctx, body.item, body.span)?;
+                    self.eval_stmt(body.item, body.span)?;
                 }
             }
             Stmt::Block { stmts } => {
-                ctx.run_with_new_scope(|ctx| Self::eval_stmts_in_scope(ctx, stmts))?;
+                self.run_with_new_scope(|ctx| ctx.eval_stmts_in_scope(stmts))?;
             }
         }
 
         Ok(Value::Nil.at(span))
     }
 
-    pub fn eval_expr(
-        ctx: &mut InterpreterContext<'env, 'out>,
-        expr: &Expr<'env>,
-        span: Span,
-    ) -> crate::Result<Valued<'env>> {
+    pub fn eval_expr(&mut self, expr: &Expr<'env>, span: Span) -> crate::Result<Valued<'env>> {
         let value = match expr {
             Expr::Literal(literal) => Value::from(literal),
-            Expr::Var(Var { name, scope }) => ctx
+            Expr::Var(Var { name, scope }) => self
                 .env
                 .get(name, scope.get())
                 .map_err(|e| CroxErrorKind::from(e).at(span))?,
             Expr::Fun(func) => {
-                let func = Function::new("<anon>", *func, ctx.env.clone());
-                let func = ctx.alloc(func);
+                let func = Function::new("<anon>", *func, self.env.clone());
+                let func = self.alloc(func);
                 Value::from(func)
             }
             Expr::Assignment { name, scope, value } => {
-                let value = Self::eval_expr(ctx, value.item, value.span)?.item;
-                ctx.env
+                let value = self.eval_expr(value.item, value.span)?.item;
+                self.env
                     .assign(name, value, scope.get())
                     .map_err(|e| CroxErrorKind::from(e).at(span))?
             }
             Expr::Unary { op, expr } => {
-                let value = Self::eval_expr(ctx, expr.item, expr.span)?.item;
+                let value = self.eval_expr(expr.item, expr.span)?.item;
                 match op {
                     UnaryOp::Neg => value.neg(expr.span)?,
                     UnaryOp::Not => value.not(),
                 }
             }
             Expr::Logical { lhs, op, rhs } => {
-                let lhs = Self::eval_expr(ctx, lhs.item, lhs.span)?.item;
+                let lhs = self.eval_expr(lhs.item, lhs.span)?.item;
                 match op {
                     LogicalOp::And if !lhs.as_bool() => lhs,
                     LogicalOp::Or if lhs.as_bool() => lhs,
-                    LogicalOp::And | LogicalOp::Or => {
-                        Self::eval_expr(ctx, rhs.item, rhs.span)?.item
-                    }
+                    LogicalOp::And | LogicalOp::Or => self.eval_expr(rhs.item, rhs.span)?.item,
                 }
             }
             Expr::Binary { lhs, op, rhs } => {
-                let lhs = Self::eval_expr(ctx, lhs.item, lhs.span)?;
-                let rhs = Self::eval_expr(ctx, rhs.item, rhs.span)?;
+                let lhs = self.eval_expr(lhs.item, lhs.span)?;
+                let rhs = self.eval_expr(rhs.item, rhs.span)?;
                 match op {
                     BinaryOp::Equals => lhs.item.eq(&rhs.item),
                     BinaryOp::NotEquals => lhs.item.not_eq(&rhs.item),
@@ -171,21 +152,21 @@ impl<'env, 'out> Interpreter<'env, 'out> {
                     BinaryOp::LessThanOrEqual => lhs.item.lte(&rhs)?,
                     BinaryOp::GreaterThan => lhs.item.gt(&rhs)?,
                     BinaryOp::GreaterThanOrEqual => lhs.item.gte(&rhs)?,
-                    BinaryOp::Add => lhs.item.add(&rhs, lhs.span, Some(ctx.arena))?,
+                    BinaryOp::Add => lhs.item.add(&rhs, lhs.span, Some(self.arena))?,
                     BinaryOp::Sub => lhs.item.sub(&rhs, lhs.span)?,
                     BinaryOp::Mul => lhs.item.mul(&rhs, lhs.span)?,
                     BinaryOp::Div => lhs.item.div(&rhs, lhs.span)?,
                 }
             }
             Expr::Call { callee, arguments } => {
-                let callee = Self::eval_expr(ctx, callee.item, callee.span)?;
+                let callee = self.eval_expr(callee.item, callee.span)?;
                 let span = callee.span;
 
                 let callee = callee.item.as_callable(callee.span)?;
 
                 let arguments = arguments
                     .iter()
-                    .map(|arg| Self::eval_expr(ctx, &arg.item, arg.span).map(|v| v.item))
+                    .map(|arg| self.eval_expr(&arg.item, arg.span).map(|v| v.item))
                     .collect::<crate::Result<Vec<_>>>()?;
 
                 if callee.arity() != arguments.len() {
@@ -196,23 +177,23 @@ impl<'env, 'out> Interpreter<'env, 'out> {
                     .at(span));
                 }
 
-                callee.call(ctx, &arguments, span)?
+                callee.call(self, &arguments, span)?
             }
             Expr::Get { object, name, slot } => {
-                let object = Self::eval_expr(ctx, object.item, object.span)?;
-                object.item.get(ctx, name, slot, span)?
+                let object = self.eval_expr(object.item, object.span)?;
+                object.item.get(self, name, slot, span)?
             }
             Expr::Set {
                 object,
                 name,
                 value,
             } => {
-                let object = Self::eval_expr(ctx, object.item, object.span)?;
-                let value = Self::eval_expr(ctx, value.item, value.span)?.item;
+                let object = self.eval_expr(object.item, object.span)?;
+                let value = self.eval_expr(value.item, value.span)?.item;
                 object.item.set(name.item, value, span)?;
                 value
             }
-            Expr::This { scope } => ctx
+            Expr::This { scope } => self
                 .env
                 .get("this", scope.get())
                 .map_err(|e| CroxErrorKind::from(e).at(span))?,
@@ -221,47 +202,47 @@ impl<'env, 'out> Interpreter<'env, 'out> {
                 scope,
                 slot,
             } => {
-                return Self::eval_super(ctx, scope, span, method, slot);
+                return self.eval_super(scope, span, method, slot);
             }
-            Expr::Group { expr } => Self::eval_expr(ctx, expr.item, expr.span)?.item,
+            Expr::Group { expr } => self.eval_expr(expr.item, expr.span)?.item,
         };
 
         Ok(value.at(span))
     }
 
     fn class_new(
-        ctx: &mut InterpreterContext<'env, 'out>,
+        &mut self,
         name: &'env str,
         class: &ClassDecl<'env>,
         superclass: Option<Node<&'env Class<'env>>>,
     ) -> Value<'env> {
-        let class_members = class.members().map(ctx.arena, |m| {
+        let class_members = class.members().map(self.arena, |m| {
             let name = m.item.name.item;
             let fun = m.item.fun;
-            let method = Function::method(name, fun, ctx.env.clone());
-            ctx.alloc(method)
+            let method = Function::method(name, fun, self.env.clone());
+            self.alloc(method)
         });
 
-        let class = Class::new(name, superclass, class_members, ctx.arena);
-        let class = ctx.alloc(class);
+        let class = Class::new(name, superclass, class_members, self.arena);
+        let class = self.alloc(class);
         Value::from(class)
     }
 
     fn eval_super(
-        ctx: &mut InterpreterContext<'env, 'out>,
+        &mut self,
         scope: &Scoped,
         span: Span,
         method: &Ident<'env>,
         slot: &'env Slotted,
     ) -> crate::Result<Node<Value<'env>>> {
-        let superclass = ctx
+        let superclass = self
             .env
             .get("super", scope.get())
             .map_err(|e| CroxErrorKind::from(e).at(span))?;
         let this_scope = scope.get_at_offset(-1).unwrap_or_else(|| {
             panic!("[ICE] scope for `super` needs to be properly resolved, but it was {scope:?}")
         });
-        let this = ctx
+        let this = self
             .env
             .get("this", this_scope)
             .map_err(|e| CroxErrorKind::from(e).at(span))?;
@@ -293,23 +274,13 @@ impl<'env, 'out> Interpreter<'env, 'out> {
 
         let span = method.span;
         let method = method.item.bind(this);
-        let method = ctx.alloc(method);
+        let method = self.alloc(method);
         let value = Value::from(method);
         Ok(value.at(span))
     }
-}
 
-impl<'env, 'out> Interpreter<'env, 'out> {
-    pub fn eval_own_stmts_in_scope(&mut self, stmts: &[StmtNode<'env>]) -> Result<'env, ()> {
-        Self::eval_stmts_in_scope(&mut self.context, stmts)
-    }
-
-    pub fn eval_own_stmt(&mut self, stmt: &Stmt<'env>, span: Span) -> Result<'env, Valued<'env>> {
-        Self::eval_stmt(&mut self.context, stmt, span)
-    }
-
-    pub fn eval_own_expr(&mut self, expr: &ExprNode<'env>) -> crate::Result<Valued<'env>> {
-        Self::eval_expr(&mut self.context, &expr.item, expr.span)
+    pub fn alloc<T>(&self, value: T) -> &'env T {
+        self.arena.alloc(value)
     }
 }
 
@@ -334,7 +305,7 @@ impl<'env> From<Value<'env>> for InterpreterError<'env> {
 pub type Result<'env, T, E = InterpreterError<'env>> = std::result::Result<T, E>;
 
 pub struct StreamInterpreter<'env, 'out, R, I> {
-    interpreter: Interpreter<'env, 'out>,
+    context: InterpreterContext<'env, 'out>,
     input: I,
     _rule: PhantomData<R>,
 }
@@ -342,7 +313,7 @@ pub struct StreamInterpreter<'env, 'out, R, I> {
 impl<'env, 'out, R, I> StreamInterpreter<'env, 'out, R, I> {
     pub fn new(context: InterpreterContext<'env, 'out>, tokens: I) -> Self {
         Self {
-            interpreter: Interpreter::new(context),
+            context,
             input: tokens,
             _rule: PhantomData,
         }
@@ -378,7 +349,7 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         let input = self.input.next()?;
-        Some(R::interpret(&mut self.interpreter, input))
+        Some(R::interpret(&mut self.context, input))
     }
 }
 
@@ -387,7 +358,7 @@ pub trait InterpreterRule: Sized {
     type Interpreted<'env>;
 
     fn interpret<'env>(
-        interpreter: &mut Interpreter<'env, '_>,
+        context: &mut InterpreterContext<'env, '_>,
         input: Self::Input<'env>,
     ) -> crate::Result<Self::Interpreted<'env>>;
 }
@@ -397,10 +368,10 @@ impl InterpreterRule for ExpressionRule {
     type Interpreted<'env> = Valued<'env>;
 
     fn interpret<'env>(
-        interpreter: &mut Interpreter<'env, '_>,
+        context: &mut InterpreterContext<'env, '_>,
         input: Self::Input<'env>,
     ) -> crate::Result<Self::Interpreted<'env>> {
-        interpreter.eval_own_expr(&input)
+        context.eval_expr(&input.item, input.span)
     }
 }
 
@@ -409,10 +380,10 @@ impl InterpreterRule for StatementRule {
     type Interpreted<'env> = Valued<'env>;
 
     fn interpret<'env>(
-        interpreter: &mut Interpreter<'env, '_>,
+        context: &mut InterpreterContext<'env, '_>,
         input: Self::Input<'env>,
     ) -> crate::Result<Self::Interpreted<'env>> {
-        match interpreter.eval_own_stmt(&input.item, input.span) {
+        match context.eval_stmt(&input.item, input.span) {
             Ok(value) => Ok(value),
             Err(InterpreterError::Return(value)) => Ok(value.at(input.span)),
             Err(InterpreterError::Err(e)) => Err(e),

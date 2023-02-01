@@ -1,12 +1,9 @@
 use std::{
     fmt::Debug,
-    io::Write,
     ops::{Deref, DerefMut},
 };
 
 use crate::{Bump, Environment, Value};
-
-pub type InterpreterContext<'env, 'out> = Context<'env, &'out mut dyn Write>;
 
 pub struct Context<'env, Data, V = Value<'env>> {
     pub env: Environment<'env, V>,
@@ -40,16 +37,6 @@ impl<'env, Data, V> Context<'env, Data, V> {
     pub fn swap_env(&mut self, new_env: Environment<'env, V>) -> SwapGuard<'_, 'env, Data, V> {
         let old_env = std::mem::replace(&mut self.env, new_env);
         SwapGuard(self, Some(Field::Env(old_env)))
-    }
-}
-
-impl<'env, 'out> InterpreterContext<'env, 'out> {
-    pub fn alloc<T>(&self, value: T) -> &'env T {
-        self.arena.alloc(value)
-    }
-
-    pub fn alloc_mut<T>(&self, value: T) -> &'env mut T {
-        self.arena.alloc(value)
     }
 }
 
