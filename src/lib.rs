@@ -41,13 +41,13 @@ use std::io::Write;
 pub use builtin::Builtins;
 pub use bumpalo::Bump;
 pub use call::{Callable, Function};
-pub use context::{Context, InterpreterContext};
+pub use context::Context;
 pub use env::{Environment, Scope, Scoped};
 pub use error::{CroxError, CroxErrorKind, CroxErrors, Result, TooMany};
 pub use expr::{
     BinaryOp, BoxedExpr, Expr, ExprNode, FunctionDef, Literal, LogicalOp, UnaryOp, Var,
 };
-pub use interp::{Interpreter, InterpreterError};
+pub use interp::{InterpreterContext, InterpreterError};
 pub use members::{Members, Slot, Slotted};
 pub use node::{Ident, Node, Spannable};
 pub use oop::{Class, Instance};
@@ -58,7 +58,7 @@ pub use timing::Timings;
 pub use token::{Range, Span, Token, TokenSet, TokenType};
 pub use typer::{Type, TypeSet};
 pub use util::{EnumSet, ValueEnum};
-pub use value::{Value, Valued};
+pub use value::{Ast, Value, Valued};
 
 use crate::{
     error::{CroxErrorScope, ErrorsCollector},
@@ -66,7 +66,6 @@ use crate::{
     parser::{expr_parser, stmt_parser},
     resolver::{expr_resolver, stmt_resolver},
     timing::TimingsBuilder,
-    value::Ast,
 };
 
 pub fn run<'env>(

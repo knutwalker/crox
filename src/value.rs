@@ -5,7 +5,7 @@ use crate::{
 
 use std::{cmp::Ordering, fmt, ops::Deref};
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub enum Value<'env> {
     #[default]
     Nil,
@@ -13,6 +13,7 @@ pub enum Value<'env> {
     Number(f64),
     Str(&'env str),
     Fn(&'env Function<'env>),
+    Method(Function<'env>),
     Instance(&'env Instance<'env>),
     Class(&'env Class<'env>),
     Builtin(Builtins),
@@ -48,11 +49,12 @@ impl<'env> Value<'env> {
         }
     }
 
-    pub fn as_callable(&self, span: Span) -> Result<Callable<'env>> {
+    pub fn as_callable(self, span: Span) -> Result<Callable<'env>> {
         match self {
             Self::Fn(fun) => Ok(Callable::Fn(fun)),
+            Self::Method(fun) => Ok(Callable::Method(fun)),
             Self::Class(class) => Ok(Callable::Class(class)),
-            Self::Builtin(builtins) => Ok(Callable::Builtin(*builtins)),
+            Self::Builtin(builtins) => Ok(Callable::Builtin(builtins)),
             _ => Err(self.invalid_type(span, Type::Callable)),
         }
     }
@@ -205,6 +207,11 @@ impl PartialEq for Value<'_> {
             (Self::Number(lhs), Self::Number(rhs)) => lhs == rhs,
             (Self::Str(lhs), Self::Str(rhs)) => lhs == rhs,
             (Self::Builtin(lhs), Self::Builtin(rhs)) => lhs == rhs,
+            (lhs @ Self::Method(_), rhs @ Self::Method(_)) => {
+                let lhs = std::ptr::addr_of!(*lhs).cast::<()>();
+                let rhs = std::ptr::addr_of!(*rhs).cast::<()>();
+                std::ptr::eq(lhs, rhs)
+            }
             (Self::Fn(lhs), Self::Fn(rhs)) => {
                 let lhs = std::ptr::addr_of!(**lhs).cast::<()>();
                 let rhs = std::ptr::addr_of!(**rhs).cast::<()>();
@@ -229,6 +236,7 @@ impl PartialOrd for Value<'_> {
             (Self::Nil, Self::Nil) => Some(Ordering::Equal),
             (Self::Builtin(_), Self::Builtin(_)) if self == other => Some(Ordering::Equal),
             (Self::Fn(_), Self::Fn(_)) if self == other => Some(Ordering::Equal),
+            (Self::Method(_), Self::Method(_)) if self == other => Some(Ordering::Equal),
             (Self::Class(_), Self::Class(_)) if self == other => Some(Ordering::Equal),
             _ => None,
         }
@@ -277,6 +285,12 @@ impl<'env> From<&'env Function<'env>> for Value<'env> {
     }
 }
 
+impl<'env> From<Function<'env>> for Value<'env> {
+    fn from(value: Function<'env>) -> Self {
+        Self::Method(value)
+    }
+}
+
 impl<'env> From<&'env Class<'env>> for Value<'env> {
     fn from(value: &'env Class<'env>) -> Self {
         Self::Class(value)
@@ -291,6 +305,7 @@ impl fmt::Display for Value<'_> {
             Value::Number(n) => fmt::Display::fmt(n, f),
             Value::Str(s) => fmt::Display::fmt(s, f),
             Value::Fn(fun) => fmt::Debug::fmt(fun, f),
+            Value::Method(fun) => fmt::Debug::fmt(fun, f),
             Value::Builtin(fun) => fmt::Debug::fmt(fun, f),
             Value::Instance(inst) => fmt::Debug::fmt(inst, f),
             Value::Class(inst) => fmt::Debug::fmt(inst, f),

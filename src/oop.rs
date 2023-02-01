@@ -217,14 +217,13 @@ impl<'env> Lookup<'env> {
         caller: Span,
     ) -> Result<Value<'env>> {
         match self {
-            Lookup::Field(field) => Ok(*field),
+            Lookup::Field(field) => Ok(field.clone()),
             Lookup::Property(property) => {
                 let property = property.bind(instance);
                 property.call(ctx, &[], caller)
             }
             Lookup::Method(method) => {
                 let method = method.bind(instance);
-                let method = ctx.alloc(method);
                 Ok(Value::from(method))
             }
             Lookup::ClassMethod => Err(CroxErrorKind::ClassMemberOnInstance {

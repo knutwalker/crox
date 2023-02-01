@@ -53,7 +53,6 @@ impl<'env, 'out> InterpreterContext<'env, 'out> {
             Stmt::Function(func) => {
                 let name = func.name.item;
                 let func = Function::new(name, func.fun, self.env.clone());
-                let func = self.alloc(func);
                 let func = Value::from(func);
                 self.env.define(name, func);
             }
@@ -118,7 +117,6 @@ impl<'env, 'out> InterpreterContext<'env, 'out> {
                 .map_err(|e| CroxErrorKind::from(e).at(span))?,
             Expr::Fun(func) => {
                 let func = Function::new("<anon>", *func, self.env.clone());
-                let func = self.alloc(func);
                 Value::from(func)
             }
             Expr::Assignment { name, scope, value } => {
@@ -190,7 +188,7 @@ impl<'env, 'out> InterpreterContext<'env, 'out> {
             } => {
                 let object = self.eval_expr(object.item, object.span)?;
                 let value = self.eval_expr(value.item, value.span)?.item;
-                object.item.set(name.item, value, span)?;
+                object.item.set(name.item, value.clone(), span)?;
                 value
             }
             Expr::This { scope } => self
@@ -274,7 +272,6 @@ impl<'env, 'out> InterpreterContext<'env, 'out> {
 
         let span = method.span;
         let method = method.item.bind(this);
-        let method = self.alloc(method);
         let value = Value::from(method);
         Ok(value.at(span))
     }

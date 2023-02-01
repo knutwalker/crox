@@ -3,9 +3,10 @@ use crate::{
     InterpreterError, Result, Scope, Span, Value,
 };
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub enum Callable<'env> {
     Fn(&'env Function<'env>),
+    Method(Function<'env>),
     Class(&'env Class<'env>),
     Builtin(Builtins),
 }
@@ -13,9 +14,10 @@ pub enum Callable<'env> {
 impl<'env> Callable<'env> {
     pub fn arity(&self) -> usize {
         match self {
-            Callable::Fn(function) => function.arity(),
-            Callable::Class(class) => class.arity(),
-            Callable::Builtin(builtins) => builtins.arity(),
+            Self::Fn(function) => function.arity(),
+            Self::Method(function) => function.arity(),
+            Self::Class(class) => class.arity(),
+            Self::Builtin(builtins) => builtins.arity(),
         }
     }
 
@@ -26,9 +28,10 @@ impl<'env> Callable<'env> {
         span: Span,
     ) -> Result<Value<'env>> {
         match self {
-            Callable::Fn(function) => function.call(ctx, args, span),
-            Callable::Class(class) => class.call(ctx, args, span),
-            Callable::Builtin(builtins) => builtins.call(),
+            Self::Fn(function) => function.call(ctx, args, span),
+            Self::Method(function) => function.call(ctx, args, span),
+            Self::Class(class) => class.call(ctx, args, span),
+            Self::Builtin(builtins) => builtins.call(),
         }
     }
 }
@@ -83,7 +86,7 @@ impl<'env> Function<'env> {
     ) -> Result<Value<'env>> {
         ctx.run_with_scope(self.closure.new_scope(), |ctx| {
             for (param, arg) in self.fun.params.iter().zip(args) {
-                ctx.env.define(param.item, *arg);
+                ctx.env.define(param.item, arg.clone());
             }
 
             let res = ctx.eval_stmts_in_scope(self.fun.body);
