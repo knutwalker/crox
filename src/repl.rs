@@ -76,7 +76,11 @@ impl Repl {
                     KeyCode::Enter,
                     ReedlineEvent::Edit(vec![EditCommand::InsertNewline]),
                 );
-                keybindings.add_binding(KeyModifiers::SHIFT, KeyCode::Enter, ReedlineEvent::Enter);
+                keybindings.add_binding(
+                    KeyModifiers::CONTROL,
+                    KeyCode::Char('y'),
+                    ReedlineEvent::Submit,
+                );
                 Emacs::new(keybindings)
             };
 
