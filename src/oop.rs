@@ -1,4 +1,7 @@
-use std::cell::{Ref, RefCell};
+use std::{
+    cell::{Ref, RefCell},
+    rc::Rc,
+};
 
 use crate::{
     Bump, CroxErrorKind, Function, InterpreterContext, Members, Node, Result, Slot, Slotted, Span,
@@ -42,9 +45,11 @@ impl<'env> Class<'env> {
         span: Span,
     ) -> Result<Value<'env>> {
         let instance = Instance::new(self);
-        let instance = ctx.alloc(instance);
+        let instance = Rc::new(instance);
         if let Some(initializer) = self.method_lookup("init", self.init_slot) {
-            initializer.bind(instance).call(ctx, args, span)?;
+            initializer
+                .bind(Rc::clone(&instance))
+                .call(ctx, args, span)?;
         }
         Ok(Value::Instance(instance))
     }
@@ -69,7 +74,7 @@ impl<'env> Instance<'env> {
 }
 
 impl<'env> Class<'env> {
-    pub fn lookup(&'env self, name: &'env str, slotted: &'env Slotted) -> Lookup<'env> {
+    pub fn lookup(&self, name: &'env str, slotted: &'env Slotted) -> Lookup<'_, 'env> {
         match self.lookup_slot(name, slotted.get()) {
             Ok(res) => res,
             Err(Some((res, slot))) => {
@@ -81,10 +86,10 @@ impl<'env> Class<'env> {
     }
 
     fn lookup_slot(
-        &'env self,
+        &self,
         name: &'env str,
         slot: Slot,
-    ) -> Result<Lookup<'env>, LookupSlow<'env>> {
+    ) -> Result<Lookup<'_, 'env>, LookupSlow<'_, 'env>> {
         Ok(match slot {
             Slot::Unknown => return Err(self.lookup_slow(name)),
             Slot::ClassMethod { .. } => Lookup::ClassMethod,
@@ -97,7 +102,7 @@ impl<'env> Class<'env> {
         })
     }
 
-    fn lookup_slow(&'env self, name: &'env str) -> LookupSlow<'env> {
+    fn lookup_slow(&self, name: &'env str) -> LookupSlow<'_, 'env> {
         self.ancestors().enumerate().find_map(|(distance, this)| {
             match this.members.slot_of(name, distance) {
                 Slot::Unknown => None,
@@ -166,7 +171,7 @@ impl<'env> Class<'env> {
 }
 
 impl<'env> Instance<'env> {
-    pub fn lookup(&'env self, name: &'env str, slot: &'env Slotted) -> Lookup<'env> {
+    pub fn lookup(&self, name: &'env str, slot: &'env Slotted) -> Lookup<'_, 'env> {
         let field = self.fields.borrow();
         let field = Ref::filter_map(field, |f| f.get(name));
         if let Ok(field) = field {
@@ -182,15 +187,15 @@ impl<'env> Instance<'env> {
 }
 
 #[derive(Debug)]
-pub enum Lookup<'env> {
-    Field(Ref<'env, Value<'env>>),
+pub enum Lookup<'a, 'env> {
+    Field(Ref<'a, Value<'env>>),
     Property(&'env Function<'env>),
     Method(&'env Function<'env>),
     ClassMethod,
     Undefined,
 }
 
-impl<'env> Lookup<'env> {
+impl<'a, 'env> Lookup<'a, 'env> {
     pub fn into_method(self, method: &str, span: Span) -> Result<&'env Function<'env>> {
         match self {
             Lookup::Method(method) => Ok(method),
@@ -212,18 +217,18 @@ impl<'env> Lookup<'env> {
     pub fn into_value(
         self,
         ctx: &mut InterpreterContext<'env, '_>,
-        instance: &'env Instance<'env>,
+        instance: &Rc<Instance<'env>>,
         name: &Node<&'env str>,
         caller: Span,
     ) -> Result<Value<'env>> {
         match self {
             Lookup::Field(field) => Ok(field.clone()),
             Lookup::Property(property) => {
-                let property = property.bind(instance);
+                let property = property.bind(Rc::clone(instance));
                 property.call(ctx, &[], caller)
             }
             Lookup::Method(method) => {
-                let method = method.bind(instance);
+                let method = method.bind(Rc::clone(instance));
                 Ok(Value::from(method))
             }
             Lookup::ClassMethod => Err(CroxErrorKind::ClassMemberOnInstance {
@@ -250,4 +255,4 @@ impl<'env> std::fmt::Debug for Instance<'env> {
     }
 }
 
-type LookupSlow<'env> = Option<(Lookup<'env>, Slot)>;
+type LookupSlow<'a, 'env> = Option<(Lookup<'a, 'env>, Slot)>;

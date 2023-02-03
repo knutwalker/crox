@@ -14,7 +14,7 @@ pub enum Value<'env> {
     Str(&'env str),
     Fn(&'env Function<'env>),
     Method(Rc<Function<'env>>),
-    Instance(&'env Instance<'env>),
+    Instance(Rc<Instance<'env>>),
     Class(&'env Class<'env>),
     Builtin(Builtins),
 }

@@ -65,7 +65,7 @@ impl<'env> Function<'env> {
         }
     }
 
-    pub fn bind(&self, instance: &'env Instance<'env>) -> Self {
+    pub fn bind(&self, instance: Rc<Instance<'env>>) -> Self {
         let closure = self.closure.new_scope();
         closure.define("this", Value::Instance(instance));
         Self {
