@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::{
     Builtins, Class, CroxErrorKind, Environment, FunctionDef, Instance, InterpreterContext,
     InterpreterError, Result, Scope, Span, Value,
@@ -6,7 +8,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub enum Callable<'env> {
     Fn(&'env Function<'env>),
-    Method(Function<'env>),
+    Method(Rc<Function<'env>>),
     Class(&'env Class<'env>),
     Builtin(Builtins),
 }

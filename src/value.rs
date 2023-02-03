@@ -3,7 +3,7 @@ use crate::{
     InterpreterContext, Literal, Node, Range, Result, Slotted, Span, Timings, Type, TypeSet,
 };
 
-use std::{cmp::Ordering, fmt, ops::Deref};
+use std::{cmp::Ordering, fmt, ops::Deref, rc::Rc};
 
 #[derive(Clone, Debug, Default)]
 pub enum Value<'env> {
@@ -13,7 +13,7 @@ pub enum Value<'env> {
     Number(f64),
     Str(&'env str),
     Fn(&'env Function<'env>),
-    Method(Function<'env>),
+    Method(Rc<Function<'env>>),
     Instance(&'env Instance<'env>),
     Class(&'env Class<'env>),
     Builtin(Builtins),
@@ -207,9 +207,9 @@ impl PartialEq for Value<'_> {
             (Self::Number(lhs), Self::Number(rhs)) => lhs == rhs,
             (Self::Str(lhs), Self::Str(rhs)) => lhs == rhs,
             (Self::Builtin(lhs), Self::Builtin(rhs)) => lhs == rhs,
-            (lhs @ Self::Method(_), rhs @ Self::Method(_)) => {
-                let lhs = std::ptr::addr_of!(*lhs).cast::<()>();
-                let rhs = std::ptr::addr_of!(*rhs).cast::<()>();
+            (Self::Method(lhs), Self::Method(rhs)) => {
+                let lhs = std::ptr::addr_of!(**lhs).cast::<()>();
+                let rhs = std::ptr::addr_of!(**rhs).cast::<()>();
                 std::ptr::eq(lhs, rhs)
             }
             (Self::Fn(lhs), Self::Fn(rhs)) => {
@@ -287,7 +287,7 @@ impl<'env> From<&'env Function<'env>> for Value<'env> {
 
 impl<'env> From<Function<'env>> for Value<'env> {
     fn from(value: Function<'env>) -> Self {
-        Self::Method(value)
+        Self::Method(Rc::new(value))
     }
 }
 
