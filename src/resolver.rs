@@ -4,20 +4,7 @@ use crate::{
 };
 use std::marker::PhantomData;
 
-#[derive(Debug)]
-pub struct Resolver<'env> {
-    ctx: ResolveContext<'env>,
-}
-
-pub type ResolveContext<'env> = Context<'env, Current, ()>;
-
-impl<'env> Resolver<'env> {
-    pub fn new(arena: &'env Bump) -> Self {
-        Self {
-            ctx: ResolveContext::new(Environment::empty(), arena, Current::default()),
-        }
-    }
-}
+pub type ResolverContext<'env> = Context<'env, Current, ()>;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Current {
@@ -53,173 +40,172 @@ enum ClassKind {
     Subclass,
 }
 
-impl<'env> Resolver<'env> {
-    pub fn resolve_stmts_in_scope(
-        ctx: &mut ResolveContext<'env>,
-        stmts: &[StmtNode<'env>],
-    ) -> Result {
+impl<'env> ResolverContext<'env> {
+    pub fn empty(arena: &'env Bump) -> Self {
+        Self::new(Environment::empty(), arena, Current::default())
+    }
+}
+
+impl<'env> ResolverContext<'env> {
+    pub fn resolve_stmts_in_scope(&mut self, stmts: &[StmtNode<'env>]) -> Result {
         stmts
             .iter()
-            .try_for_each(|stmt| Self::resolve_stmt(ctx, &stmt.item, stmt.span))
+            .try_for_each(|stmt| self.resolve_stmt(&stmt.item, stmt.span))
     }
 
-    pub fn resolve_stmt(ctx: &mut ResolveContext<'env>, stmt: &Stmt<'env>, span: Span) -> Result {
+    pub fn resolve_stmt(&mut self, stmt: &Stmt<'env>, span: Span) -> Result {
         match stmt {
             Stmt::Expression { expr } => {
-                Self::resolve_expr(ctx, expr.item, expr.span)?;
+                self.resolve_expr(expr.item, expr.span)?;
             }
             Stmt::Class(class) => {
-                ctx.env.define(class.name.item, ());
-                let mut guard = ctx.swap_data(ctx.data.with_class(ClassKind::Class));
+                self.env.define(class.name.item, ());
+                let mut guard = self.swap_data(self.data.with_class(ClassKind::Class));
                 if let Some(superclass) = &class.superclass {
                     if superclass.item.name == class.name.item {
                         return Err(CroxErrorKind::InheritsSelf.at(superclass.span));
                     }
 
-                    Self::resolve_local(&mut guard, superclass.item.name, superclass.item.scope);
+                    guard.resolve_local(superclass.item.name, superclass.item.scope);
 
                     let new_data = guard.data.with_class(ClassKind::Subclass);
                     let mut inner_guard = guard.swap_data(new_data);
 
                     inner_guard.run_with_new_scope(|ctx| {
                         ctx.env.define("super", ());
-                        Self::resolve_class(ctx, class)
+                        ctx.resolve_class(class)
                     })?;
                 } else {
-                    Self::resolve_class(&mut guard, class)?;
+                    guard.resolve_class(class)?;
                 }
             }
             Stmt::Function(func) => {
-                ctx.env.define(func.name.item, ());
-                Self::resolve_function(ctx, &func.fun, ScopeKind::Function)?;
+                self.env.define(func.name.item, ());
+                Self::resolve_function(self, &func.fun, ScopeKind::Function)?;
             }
             Stmt::If {
                 condition,
                 then_,
                 else_,
             } => {
-                Self::resolve_expr(ctx, condition.item, condition.span)?;
-                Self::resolve_stmt(ctx, then_.item, then_.span)?;
+                self.resolve_expr(condition.item, condition.span)?;
+                self.resolve_stmt(then_.item, then_.span)?;
                 if let Some(else_) = else_ {
-                    Self::resolve_stmt(ctx, else_.item, else_.span)?;
+                    self.resolve_stmt(else_.item, else_.span)?;
                 }
             }
             Stmt::Print { expr } => {
-                Self::resolve_expr(ctx, expr.item, expr.span)?;
+                self.resolve_expr(expr.item, expr.span)?;
             }
             Stmt::Return { expr } => {
-                if ctx.data.scope == ScopeKind::TopLevel {
+                if self.data.scope == ScopeKind::TopLevel {
                     return Err(CroxErrorKind::ReturnFromTopLevel.at(span));
                 }
                 if let Some(expr) = expr.as_ref() {
-                    if ctx.data.scope == ScopeKind::Initializer {
+                    if self.data.scope == ScopeKind::Initializer {
                         return Err(CroxErrorKind::ReturnFromInitializer.at(span));
                     }
-                    Self::resolve_expr(ctx, expr.item, expr.span)?;
+                    self.resolve_expr(expr.item, expr.span)?;
                 }
             }
             Stmt::Var { name, initializer } => {
                 // The book splits this into two steps to make shadowing an error.
                 // In Crox, we allow shadowing.
                 if let Some(init) = initializer.as_ref() {
-                    Self::resolve_expr(ctx, init.item, init.span)?;
+                    self.resolve_expr(init.item, init.span)?;
                 }
-                ctx.env.define_local(name.item, ());
+                self.env.define_local(name.item, ());
             }
             Stmt::While { condition, body } => {
-                Self::resolve_expr(ctx, condition.item, condition.span)?;
-                Self::resolve_stmt(ctx, body.item, body.span)?;
+                self.resolve_expr(condition.item, condition.span)?;
+                self.resolve_stmt(body.item, body.span)?;
             }
             Stmt::Block { stmts } => {
-                ctx.run_with_new_scope(|ctx| Self::resolve_stmts_in_scope(ctx, stmts))?;
+                self.run_with_new_scope(|ctx| ctx.resolve_stmts_in_scope(stmts))?;
             }
         };
         Ok(())
     }
 
-    pub fn resolve_expr(ctx: &mut ResolveContext<'env>, expr: &Expr<'env>, span: Span) -> Result {
+    pub fn resolve_expr(&mut self, expr: &Expr<'env>, span: Span) -> Result {
         match expr {
             Expr::Literal(_) => {}
-            Expr::Var(Var { name, scope }) => Self::resolve_local(ctx, name, scope),
-            Expr::Fun(func) => Self::resolve_function(ctx, func, ScopeKind::Function)?,
+            Expr::Var(Var { name, scope }) => self.resolve_local(name, scope),
+            Expr::Fun(func) => self.resolve_function(func, ScopeKind::Function)?,
             Expr::Assignment { name, scope, value } => {
-                Self::resolve_expr(ctx, value.item, value.span)?;
-                Self::resolve_local(ctx, name, scope);
+                self.resolve_expr(value.item, value.span)?;
+                self.resolve_local(name, scope);
             }
             Expr::Unary { expr, .. } => {
-                Self::resolve_expr(ctx, expr.item, expr.span)?;
+                self.resolve_expr(expr.item, expr.span)?;
             }
             Expr::Logical { lhs, rhs, .. } => {
-                Self::resolve_expr(ctx, lhs.item, lhs.span)?;
-                Self::resolve_expr(ctx, rhs.item, rhs.span)?;
+                self.resolve_expr(lhs.item, lhs.span)?;
+                self.resolve_expr(rhs.item, rhs.span)?;
             }
             Expr::Binary { lhs, rhs, .. } => {
-                Self::resolve_expr(ctx, lhs.item, lhs.span)?;
-                Self::resolve_expr(ctx, rhs.item, rhs.span)?;
+                self.resolve_expr(lhs.item, lhs.span)?;
+                self.resolve_expr(rhs.item, rhs.span)?;
             }
             Expr::Call { callee, arguments } => {
-                Self::resolve_expr(ctx, callee.item, callee.span)?;
+                self.resolve_expr(callee.item, callee.span)?;
                 arguments
                     .iter()
-                    .try_for_each(|arg| Self::resolve_expr(ctx, &arg.item, arg.span))?;
+                    .try_for_each(|arg| self.resolve_expr(&arg.item, arg.span))?;
             }
             Expr::Get {
                 object,
                 name: _,
                 slot: _,
             } => {
-                Self::resolve_expr(ctx, object.item, object.span)?;
+                self.resolve_expr(object.item, object.span)?;
             }
             Expr::Set {
                 object,
                 name: _,
                 value,
             } => {
-                Self::resolve_expr(ctx, value.item, value.span)?;
-                Self::resolve_expr(ctx, object.item, object.span)?;
+                self.resolve_expr(value.item, value.span)?;
+                self.resolve_expr(object.item, object.span)?;
             }
             Expr::Super {
                 method: _,
                 scope,
                 slot: _,
             } => {
-                match ctx.data.class {
+                match self.data.class {
                     ClassKind::Global => return Err(CroxErrorKind::SuperOutsideClass.at(span)),
                     ClassKind::Class => {
                         return Err(CroxErrorKind::SuperInClassWithoutSuperclass.at(span))
                     }
                     ClassKind::Subclass => {}
                 }
-                Self::resolve_local(ctx, "super", scope);
+                self.resolve_local("super", scope);
             }
             Expr::This { scope } => {
-                if ctx.data.class == ClassKind::Global {
+                if self.data.class == ClassKind::Global {
                     return Err(CroxErrorKind::ThisOutsideClass.at(span));
                 }
-                if ctx.data.scope == ScopeKind::ClassMethod {
+                if self.data.scope == ScopeKind::ClassMethod {
                     return Err(CroxErrorKind::ThisInClassMethod.at(span));
                 }
-                Self::resolve_local(ctx, "this", scope);
+                self.resolve_local("this", scope);
             }
             Expr::Group { expr } => {
-                Self::resolve_expr(ctx, expr.item, expr.span)?;
+                self.resolve_expr(expr.item, expr.span)?;
             }
         };
         Ok(())
     }
 
-    fn resolve_local(ctx: &mut ResolveContext<'env>, name: &'env str, scope: &Scoped) {
-        if let Ok(resolved) = ctx.env.scope_of(name) {
+    fn resolve_local(&mut self, name: &'env str, scope: &Scoped) {
+        if let Ok(resolved) = self.env.scope_of(name) {
             scope.resolve(resolved);
         }
     }
 
-    fn resolve_function(
-        ctx: &mut ResolveContext<'env>,
-        func: &FunctionDef<'env>,
-        scope_type: ScopeKind,
-    ) -> Result {
-        ctx.run_with_new_scope(|ctx| {
+    fn resolve_function(&mut self, func: &FunctionDef<'env>, scope_type: ScopeKind) -> Result {
+        self.run_with_new_scope(|ctx| {
             let mut guard = ctx.swap_data(ctx.data.with_scope(scope_type));
 
             for param in func.params.iter() {
@@ -228,19 +214,19 @@ impl<'env> Resolver<'env> {
                     .define_local_unique(param.item, ())
                     .map_err(|e| CroxErrorKind::from(e).at(param.span))?;
             }
-            Self::resolve_stmts_in_scope(&mut guard, func.body)?;
+            guard.resolve_stmts_in_scope(func.body)?;
             Ok(())
         })
     }
 
-    fn resolve_class(ctx: &mut ResolveContext<'env>, class: &ClassDecl<'env>) -> Result {
-        ctx.run_with_new_scope(|ctx| -> Result {
+    fn resolve_class(&mut self, class: &ClassDecl<'env>) -> Result {
+        self.run_with_new_scope(|ctx| -> Result {
             for method in class.members().class_methods() {
-                Self::resolve_function(ctx, &method.item.fun, ScopeKind::ClassMethod)?;
+                ctx.resolve_function(&method.item.fun, ScopeKind::ClassMethod)?;
             }
             ctx.env.define("this", ());
             for property in class.members().properties() {
-                Self::resolve_function(ctx, &property.item.fun, ScopeKind::Method)?;
+                ctx.resolve_function(&property.item.fun, ScopeKind::Method)?;
             }
             for method in class.members().methods() {
                 let scope_kind = if method.item.name.item == "init" {
@@ -248,7 +234,7 @@ impl<'env> Resolver<'env> {
                 } else {
                     ScopeKind::Method
                 };
-                Self::resolve_function(ctx, &method.item.fun, scope_kind)?;
+                ctx.resolve_function(&method.item.fun, scope_kind)?;
             }
 
             Ok(())
@@ -257,19 +243,9 @@ impl<'env> Resolver<'env> {
     }
 }
 
-impl<'env> Resolver<'env> {
-    pub fn resolve_own_stmt(&mut self, stmt: &StmtNode<'env>) -> Result {
-        Self::resolve_stmt(&mut self.ctx, &stmt.item, stmt.span)
-    }
-
-    pub fn resolve_own_expr(&mut self, expr: &ExprNode<'env>) -> Result {
-        Self::resolve_expr(&mut self.ctx, &expr.item, expr.span)
-    }
-}
-
 #[derive(Debug)]
 pub struct StreamResolver<'env, R, I> {
-    resolver: Resolver<'env>,
+    context: ResolverContext<'env>,
     input: I,
     _rule: PhantomData<R>,
 }
@@ -277,7 +253,7 @@ pub struct StreamResolver<'env, R, I> {
 impl<'env, R, I> StreamResolver<'env, R, I> {
     pub fn new(tokens: I, arena: &'env Bump) -> Self {
         Self {
-            resolver: Resolver::new(arena),
+            context: ResolverContext::empty(arena),
             input: tokens,
             _rule: PhantomData,
         }
@@ -313,7 +289,7 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         let input = self.input.next()?;
-        let res = R::resolve(&mut self.resolver, &input).map(|_| input);
+        let res = R::resolve(&mut self.context, &input).map(|_| input);
         Some(res)
     }
 }
@@ -321,21 +297,21 @@ where
 pub trait ResolverRule: Sized {
     type Input<'env>;
 
-    fn resolve<'env>(interpreter: &mut Resolver<'env>, input: &Self::Input<'env>) -> Result;
+    fn resolve<'env>(context: &mut ResolverContext<'env>, input: &Self::Input<'env>) -> Result;
 }
 
 impl ResolverRule for ExpressionRule {
     type Input<'env> = ExprNode<'env>;
 
-    fn resolve<'env>(interpreter: &mut Resolver<'env>, input: &Self::Input<'env>) -> Result {
-        interpreter.resolve_own_expr(input)
+    fn resolve<'env>(context: &mut ResolverContext<'env>, input: &Self::Input<'env>) -> Result {
+        context.resolve_expr(&input.item, input.span)
     }
 }
 
 impl ResolverRule for StatementRule {
     type Input<'env> = StmtNode<'env>;
 
-    fn resolve<'env>(interpreter: &mut Resolver<'env>, input: &Self::Input<'env>) -> Result {
-        interpreter.resolve_own_stmt(input)
+    fn resolve<'env>(context: &mut ResolverContext<'env>, input: &Self::Input<'env>) -> Result {
+        context.resolve_stmt(&input.item, input.span)
     }
 }
